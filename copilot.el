@@ -118,7 +118,7 @@
   (list :source (concat (buffer-substring-no-properties (point-min) (point-max)) "\n")
         :tabSize tab-width
         :indentSize tab-width
-        :insertSpaces (if indent-tabs-mode t :false)
+        :insertSpaces (if indent-tabs-mode :false t)
         :path (buffer-file-name)
         :relativePath (file-name-nondirectory (buffer-file-name))
         :languageId (assoc-default major-mode copilot--language-id)

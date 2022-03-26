@@ -114,7 +114,7 @@
         :relativePath (file-name-nondirectory (buffer-file-name))
         :languageId (or (assoc-default major-mode copilot--language-id) (substring (symbol-name major-mode) 0 -5))
         :position (list :line (1- (line-number-at-pos))
-                        :character (current-column))))
+                        :character (length (buffer-substring-no-properties (point-at-bol) (point))))))
 
 (defun copilot--get-candidates (callback)
   (copilot--agent-request "getCompletions"

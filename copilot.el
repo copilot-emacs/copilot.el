@@ -79,11 +79,6 @@
           copilot--callbacks)
     (copilot--send-request request)))
 
-;; (defun copilot--agent-http-request (url options)
-;;   (copilot--agent-request "httpRequest"
-;;                                   (append (list :url url
-;;                                                 :timeout 30000)
-;;                                           options)))
 
 (defun copilot--process-filter (process output)
   "Process filter for Copilot agent. Only care about responses with id."
@@ -102,17 +97,13 @@
                         (alist-get 'result)))
            (id (alist-get 'id body)))
       (setq copilot--output-buffer nil)
-      (if (not id)
-          (-> result prin1-to-string message)
+      (when id
         (copilot--provide-candidates result (alist-get id copilot--callbacks))
         (assq-delete-all id copilot--callbacks)))))
 
 
 (defconst copilot--language-id
-  '((c-mode . "c")
-    (c++-mode . "cpp")
-    (emacs-lisp-mode . "lisp")
-    (python-mode . "python")))
+  '((emacs-lisp-mode . "lisp")))
 
 (defun copilot--generate-doc ()
   (list :source (concat (buffer-substring-no-properties (point-min) (point-max)) "\n")
@@ -121,7 +112,7 @@
         :insertSpaces (if indent-tabs-mode :false t)
         :path (buffer-file-name)
         :relativePath (file-name-nondirectory (buffer-file-name))
-        :languageId (assoc-default major-mode copilot--language-id)
+        :languageId (or (assoc-default major-mode copilot--language-id) (substring (symbol-name major-mode) 0 -5))
         :position (list :line (1- (line-number-at-pos))
                         :character (current-column))))
 
@@ -129,10 +120,6 @@
   (copilot--agent-request "getCompletions"
                           (list :doc (copilot--generate-doc))
                           callback))
-
-;; (defun debug-copilot ()
-;;   (interactive)
-;;   (copilot--get-candidates (lambda (x) (message "%S" x))))
 
 
 (defun copilot--provide-candidates (result callback)

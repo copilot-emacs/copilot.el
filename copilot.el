@@ -1,6 +1,5 @@
 ;; -*- coding: utf-8; lexical-binding: t; -*-
 (require 'cl-lib)
-(require 'company)
 (require 'json)
 (require 's)
 
@@ -9,14 +8,6 @@
    (or load-file-name
        (buffer-file-name))))
 
-;;
-;; Customization
-;;
-
-(defgroup copilot nil
-  "Options for copilot"
-  :group 'company
-  :prefix "copilot-")
 
 (defvar copilot--process nil
   "Copilot agent process")
@@ -169,7 +160,6 @@
   (when copilot-overlay
     (delete-overlay copilot-overlay)
     (setq copilot-overlay nil)))
-
 
 (defun copilot-accept-completion ()
   (interactive)

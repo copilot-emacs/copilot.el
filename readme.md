@@ -37,6 +37,13 @@ Follow instructions in copilot.vim to setup copilot (run `:Copilot setup` inside
 
 5. Enjoy!
 
+## Roadmap
+
++ [ ] Setup Copilot without Neovim
++ [ ] Cycle through suggestions
++ [ ] Add package to MELPA
++ [ ] Test compatibility with vanilla Emacs and other auto completion packages
+
 ## Thanks
 
 These projects helped me a lot:

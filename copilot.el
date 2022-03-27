@@ -2,6 +2,7 @@
 (require 'cl-lib)
 (require 'company)
 (require 'json)
+(require 's)
 
 (defconst copilot--base-dir
   (file-name-directory
@@ -97,7 +98,7 @@
                         (alist-get 'result)))
            (id (alist-get 'id body)))
       (setq copilot--output-buffer nil)
-      (when id
+      (when (equal id copilot--request-id)
         (copilot--provide-candidates result (alist-get id copilot--callbacks))
         (assq-delete-all id copilot--callbacks)))))
 
@@ -134,50 +135,34 @@
 
 (defvar-local copilot-overlay nil)
 
-(defun copilot-display-overlay-str (str line col)
-  "Show STR in overlay at LINE and COL."
+(defun copilot-display-overlay-completion (completion line col)
+  "Show COMPLETION in overlay at LINE and COL."
   (copilot-clear-overlay)
   (save-excursion
     (widen)
     (goto-char (point-min))
-    (let* (ov start end)
-      (forward-line line)
-      (forward-char col)
-      ;; remove common prefix
-      (let ((line (thing-at-point 'line))
-            (first-char (lambda (s)
-                          (substring s 0 1))))
-        (when (and (not (seq-empty-p line))
-                   (equal "\n" (substring line -1)))
-          (setq line (substring line 0 -1)))
-        (while (and (not (seq-empty-p line))
-                    (not (seq-empty-p str))
-                    (equal (funcall first-char line) (funcall first-char str)))
-          (setq line (substring line 1))
-          (setq str (substring str 1))
-          (forward-char 1))
-        (setq copilot-saved-line line))
-      (unless (seq-empty-p str)
-        (setq start (point))
-        (setq ov (make-overlay start
-                               (line-end-position)
-                               nil
-                               t
-                               t))
-        ;; (overlay-put ov 'face 'copilot-overlay-face)
-        (overlay-put ov 'completion str)
-        ;; (overlay-put ov 'copilot-overlay t)
-        ;; (overlay-put ov 'cursor t)
-        (let* ((p-str (propertize str 'face 'copilot-overlay-face))
-               (display (substring p-str 0 1))
-               (after-string (substring p-str 1)))
-          (if (equal (overlay-start ov) (overlay-end ov))
-              (progn
-                (put-text-property 0 1 'cursor t p-str)
-                (overlay-put ov 'after-string p-str))
-            (overlay-put ov 'display display)
-            (overlay-put ov 'after-string after-string))
-          (setq copilot-overlay ov))))))
+    (forward-line line)
+    (forward-char col)
+
+    ;; remove common prefix
+    (let* ((cur-line (s-chop-suffix "\n" (thing-at-point 'line)))
+            (common-prefix-len (length (s-shared-start completion cur-line))))
+      (setq completion (substring completion common-prefix-len))
+      (forward-char common-prefix-len))
+
+    (unless (s-blank? completion)
+      (let* ((ov (make-overlay (point) (point-at-eol) nil t t))
+             (p-completion (propertize completion 'face 'copilot-overlay-face))
+             (display (substring p-completion 0 1))
+             (after-string (substring p-completion 1)))
+        (overlay-put ov 'completion completion)
+        (if (equal (overlay-start ov) (overlay-end ov))
+            (progn
+              (put-text-property 0 1 'cursor t p-completion)
+              (overlay-put ov 'after-string p-completion))
+          (overlay-put ov 'display display)
+          (overlay-put ov 'after-string after-string))
+        (setq copilot-overlay ov)))))
 
 (defun copilot-clear-overlay ()
   "Clear all overlays from this buffer."
@@ -189,10 +174,10 @@
 (defun copilot-accept-completion ()
   (interactive)
   (when copilot-overlay
-    (let ((str (overlay-get copilot-overlay 'completion)))
+    (let ((completion (overlay-get copilot-overlay 'completion)))
       (copilot-clear-overlay)
       (delete-region (point) (line-end-position))
-      (insert str)
+      (insert completion)
       t)))
 
 (defun copilot-complete ()
@@ -206,8 +191,7 @@
                 (start (alist-get 'start range))
                 (start-line (alist-get 'line start))
                 (start-char (alist-get 'character start)))
-           (copilot-display-overlay-str text start-line
-                                        start-char)))))))
+           (copilot-display-overlay-completion text start-line start-char)))))))
 
 
 (defconst copilot--hooks

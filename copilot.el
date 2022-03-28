@@ -324,3 +324,5 @@
                  (start-line (alist-get 'line start))
                  (start-char (alist-get 'character start)))
             (copilot-display-overlay-completion text start-line start-char))))))))
+
+(provide 'copilot)

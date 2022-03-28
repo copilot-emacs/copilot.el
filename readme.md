@@ -53,6 +53,22 @@ Inside your `dotspacemacs/user-config`:
                                  (copilot-complete))))
 ```
 
+### Straight
+
+```elisp
+(use-package copilot
+  :straight (:host github :repo "zerolfx/copilot.el"
+                   :files ("dist" "copilot.el"))
+  :ensure t
+  ;; :hook (kill-emacs . copilot--kill-process)
+  :config
+  ; provide completion when typing
+  (add-hook 'post-command-hook (lambda ()
+                                 (copilot-clear-overlay)
+                                 (when (evil-insert-state-p)
+                                   (copilot-complete)))))
+```
+
 ## Commands
 
 ### copilot-diagnose

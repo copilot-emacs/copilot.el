@@ -162,6 +162,9 @@
 (defconst copilot--client-id "Iv1.b507a08c87ecfe98"
   "Copilot client id, copied from copilot.vim")
 
+(defconst copilot--terms-version "2021-10-14"
+  "Copilot terms version, copied from copilot.vim")
+
 (defconst copilot--config-root
   (let ((root (concat (or (getenv "XDG_CONFIG_HOME")
                           (if (eq system-type 'windows-nt)
@@ -174,6 +177,9 @@
 
 (defconst copilot--config-hosts
   (concat copilot--config-root "/hosts.json"))
+
+(defconst copilot--config-terms
+  (concat copilot--config-root "/terms.json"))
 
 (defun copilot-login ()
   "Login to Copilot."
@@ -220,8 +226,13 @@
         (if (equal status 403)
             (message "You don't have access to GitHub Copilot. Join the waitlist by visiting https://copilot.github.com")
           (when (yes-or-no-p "I agree to these telemetry terms as part of the GitHub Copilot technical preview.\nhttps://github.co/copilot-telemetry-terms")
-            (message "Login success!")
-            (copilot--oauth-save (copilot--oauth-user access-token) access-token)))))))
+            (let ((user (copilot--oauth-user access-token)))
+              (when user
+                (with-temp-file copilot--config-hosts
+                  (insert (json-encode `(:github.com (:user ,user :oauth_token ,access-token)))))
+                (with-temp-file copilot--config-terms
+                  (insert (json-encode `((,user . (("version" . ,copilot--terms-version)))))))
+                (message "Copilot: Authenticated as GitHub user %s" user)))))))))
 
 
 (defun copilot--oauth-user (access-token)
@@ -233,12 +244,6 @@
     (if (not (equal (alist-get 'status result) 200))
         (message "Failed to get user info.")
       (alist-get 'login result))))
-
-(defun copilot--oauth-save (user access-token)
-  "Save GitHub username and access-token."
-  (when (and user access-token)
-    (with-temp-file copilot--config-hosts
-      (insert (json-encode `(:github.com (:user ,user :oauth_token ,access-token)))))))
 
 ;;
 ;; diagnose

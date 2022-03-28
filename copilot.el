@@ -3,14 +3,25 @@
 (require 'json)
 (require 's)
 
+
+(defgroup copilot nil
+  "Copilot."
+  :group 'completion
+  :prefix "copilot-")
+
+(defcustom copilot-idle-delay 0.1
+  "Time in seconds to wait before starting completion."
+  :type 'float
+  :group 'copilot)
+
 (defconst copilot--base-dir
   (file-name-directory
    (or load-file-name
-       (buffer-file-name))))
+       (buffer-file-name)))
+  "Directory containing this file.")
 
 (defconst copilot--request-timeout 5
   "Timeout for blocking requests to Copilot, in seconds.")
-
 
 (defvar copilot--process nil
   "Copilot agent process object.")
@@ -24,6 +35,12 @@
 (defvar copilot--output-buffer nil
   "Buffer for process outputs.")
 
+(defvar copilot--request-timer nil
+  "Timer for sending delayed requests.")
+
+;;
+;; agent
+;;
 
 (defun copilot--start-process ()
   "Start Copilot process"
@@ -57,6 +74,9 @@
   (unless copilot--process
     (copilot--start-process))
   (when copilot--process
+    (when copilot--request-timer
+      (cancel-timer copilot--request-timer)
+      (setq copilot--request-timer nil))
     (let* ((body (json-serialize request))
            (content (concat "Content-Length: "
                             (int-to-string (length body))
@@ -65,8 +85,9 @@
       ;; (message "-----request-----")
       ;; (message "%s" body)
       ;; (message "-----------------")
-      (process-send-string copilot--process content))))
-
+      (setq copilot--request-timer
+            (run-with-timer copilot-idle-delay nil
+                            (lambda () (process-send-string copilot--process content)))))))
 
 (defun copilot--agent-request (method params callback)
   "Send request and register callback."
@@ -102,25 +123,35 @@
 
 (defun copilot--process-filter (process output)
   "Process filter for Copilot agent. Only care about responses with id."
-  ;; (message "-----output-----")
-  ;; (message "%S" output)
-  ;; (message "----------------")
   (setq copilot--output-buffer (concat copilot--output-buffer output))
-  (when (equal (substring copilot--output-buffer -1)
-               "}")
-    (let* ((body (-> copilot--output-buffer
-                     (split-string "\n")
-                     last
-                     car
-                     json-read-from-string))
-           (result (->> body
-                        (alist-get 'result)))
-           (err (->> body (alist-get 'error)))
-           (id (alist-get 'id body)))
-      (setq copilot--output-buffer nil)
-      (when (equal id copilot--request-id)
-        (funcall (alist-get id copilot--callbacks) (cons (cons 'error err) result))
-        (assq-delete-all id copilot--callbacks)))))
+  ;; (message "-----output-----")
+  ;; (message "%S" copilot--output-buffer)
+  ;; (message "----------------")
+  (let ((header-match (s-match "Content-Length: \\([0-9]+\\)\n\n" copilot--output-buffer)))
+    (if (and (not header-match) (> (length copilot--output-buffer) 50))
+        (progn (setq copilot--output-buffer nil)
+               (message "Copilot agent output buffer reset."))
+      (when header-match
+        (let* ((header (car header-match))
+              (content-length (string-to-number (cadr header-match)))
+              (full-length (+ (length header) content-length)))
+          (when (>= (length copilot--output-buffer) full-length)
+            (let ((content (substring copilot--output-buffer (length header) full-length)))
+              (setq copilot--output-buffer (substring copilot--output-buffer full-length))
+              (copilot--process-response content)
+              ; rerun filter to process remaining output
+              (copilot--process-filter process nil))))))))
+
+(defun copilot--process-response (content)
+  ;; (message "%S" content)
+  (let* ((content (json-read-from-string content))
+         (result (alist-get 'result content))
+         (err (alist-get 'error content))
+         (id (alist-get 'id content)))
+    (when (equal id copilot--request-id)
+      (funcall (alist-get id copilot--callbacks)
+               (cons (cons 'error err) result))
+      (assq-delete-all id copilot--callbacks))))
 
 ;;
 ;; login

@@ -14,7 +14,7 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 1. Install [Node.js](https://nodejs.org/en/download/) 12 or newer.
 
-2. Clone this repo.
+2. Clone this repo (or install package via `straight.el`, see [example](#straight)).
 
 3. Modify your emacs configuration to load and setup `copilot.el`. (See examples below.)
 
@@ -51,6 +51,21 @@ Inside your `dotspacemacs/user-config`:
                                (copilot-clear-overlay)
                                (when (evil-insert-state-p)
                                  (copilot-complete))))
+```
+
+### Straight
+
+```elisp
+(use-package copilot
+  :straight (:host github :repo "zerolfx/copilot.el"
+                   :files ("dist" "copilot.el"))
+  :ensure t
+  :config
+  ; provide completion when typing
+  (add-hook 'post-command-hook (lambda ()
+                                 (copilot-clear-overlay)
+                                 (when (evil-insert-state-p)
+                                   (copilot-complete)))))
 ```
 
 ## Commands

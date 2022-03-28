@@ -9,8 +9,8 @@
   :group 'completion
   :prefix "copilot-")
 
-(defcustom copilot-idle-delay 0.1
-  "Time in seconds to wait before starting completion."
+(defcustom copilot-idle-delay 0
+  "Time in seconds to wait before starting completion. Complete immediately if set to 0."
   :type 'float
   :group 'copilot)
 
@@ -85,9 +85,11 @@
       ;; (message "-----request-----")
       ;; (message "%s" body)
       ;; (message "-----------------")
-      (setq copilot--request-timer
-            (run-with-timer copilot-idle-delay nil
-                            (lambda () (process-send-string copilot--process content)))))))
+      (if (> copilot-idle-delay 0)
+          (setq copilot--request-timer
+                (run-with-timer copilot-idle-delay nil
+                                (lambda () (process-send-string copilot--process content))))
+        (process-send-string copilot--process content)))))
 
 (defun copilot--agent-request (method params callback)
   "Send request and register callback."

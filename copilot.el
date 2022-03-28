@@ -13,31 +13,37 @@
 
 
 (defvar copilot--process nil
-  "Copilot agent process")
+  "Copilot agent process object.")
 
 (defvar copilot--request-id 0
-  "Request Id to distinguish requests. Required by RPC.")
+  "Request Id to distinguish requests.")
 
 (defvar copilot--callbacks nil
-  "(id . callback) alist")
+  "(request-id . callback) alist")
 
 (defvar copilot--output-buffer nil
-  "Buffer for process output.")
+  "Buffer for process outputs.")
+
 
 (defun copilot--start-process ()
   "Start Copilot process"
-  (setq copilot--process
-        (make-process
-         :name "copilot-agent"
-         :command (list "node"
-                        (concat copilot--base-dir "/dist/agent.js")
-                        )
-         :coding 'utf-8
-         :connection-type 'pipe
-         :filter 'copilot--process-filter
-         ;; :sentinel 'copilot--process-sentinel
-         :noquery t))
-  (message "Copilot agent started."))
+  (if (not (locate-file "node" exec-path))
+      (message "Could not find node executable")
+    (let ((node-version
+           (->> (shell-command-to-string "node --version") (s-trim) (s-chop-prefix "v") (string-to-number))))
+      (if (< node-version 12)
+          (message "Node 12+ required but found %s" node-version)
+        (setq copilot--process
+              (make-process
+              :name "copilot-agent"
+              :command (list "node"
+                              (concat copilot--base-dir "/dist/agent.js"))
+              :coding 'utf-8
+              :connection-type 'pipe
+              :filter 'copilot--process-filter
+              ;; :sentinel 'copilot--process-sentinel
+              :noquery t))
+        (message "Copilot agent started.")))))
 
 
 (defun copilot--kill-process ()
@@ -75,12 +81,24 @@
     (copilot--send-request request)))
 
 (defun copilot--agent-http-request (url params callback)
+  "Send HTTP request and register callback."
   (copilot--agent-request "httpRequest"
                           (append (list :url url
                                         :timeout 30000)
                                   params)
                           (lambda (result)
                             (->> result (alist-get 'body) json-read-from-string (cons (cons 'status (alist-get 'status result))) (funcall callback)))))
+
+(defun copilot--blocking (f &rest args)
+  "Run F with ARGS and wait for response. F can be copilot--agent-request or copilot--agent-http-request."
+  (let ((result nil)
+        (count 0))
+    (apply f (append args (list (lambda (r)
+                                  (setq result r)))))
+    (while (and (null result) (< (* 0.1 count) copilot--request-timeout))
+      (sleep-for 0.1)
+      (cl-incf count))
+    result))
 
 (defun copilot--process-filter (process output)
   "Process filter for Copilot agent. Only care about responses with id."
@@ -119,22 +137,13 @@
                       "/github-copilot")))
     (make-directory root t)
     root)
-  "Copilot config root")
+  "Copilot config root.")
 
 (defconst copilot--config-hosts
   (concat copilot--config-root "/hosts.json"))
 
-(defun copilot--blocking (f &rest args)
-  (let ((result nil)
-        (count 0))
-    (apply f (append args (list (lambda (r)
-                                  (setq result r)))))
-    (while (and (null result) (< (* 0.1 count) copilot--request-timeout))
-      (sleep-for 0.1)
-      (cl-incf count))
-    result))
-
 (defun copilot-login ()
+  "Login to Copilot."
   (interactive)
   (copilot--agent-http-request "https://github.com/login/device/code"
                                `(:method "POST"
@@ -147,15 +156,16 @@
          (verification-uri (alist-get 'verification_uri result))
          (user-code (alist-get 'user_code result))
          (interval (alist-get 'interval result)))
-    (when (read-from-minibuffer (format "First copy your one-time code: %s. Press ENTER to continue." user-code))
-      (if (display-graphic-p)
-          (progn
-            (read-from-minibuffer "Press ENTER to open GitHub in your browser")
-            (browse-url verification-uri)
-            (read-from-minibuffer "Press ENTER if you finish authorizing."))
-        (read-from-minibuffer "Please open %s in your browser. Press ENTER if you finish authorizing." verification-uri))
-      (message "Verifying...")
-      (copilot--login-verify device-code))))
+    (if (display-graphic-p)
+        (progn
+          (gui-set-selection 'CLIPBOARD user-code)
+          (read-from-minibuffer (format "Your one-time code %s is copied. Press ENTER to open GitHub in your browser." user-code))
+          (browse-url verification-uri)
+          (read-from-minibuffer "Press ENTER if you finish authorizing."))
+      (read-from-minibuffer (format "First copy your one-time code: %s. Press ENTER to continue." user-code))
+      (read-from-minibuffer "Please open %s in your browser. Press ENTER if you finish authorizing." verification-uri))
+    (message "Verifying...")
+    (copilot--login-verify device-code)))
 
 
 (defun copilot--login-verify (device-code)
@@ -176,11 +186,13 @@
             (status (alist-get 'status copilot-access-result)))
         (if (equal status 403)
             (message "You don't have access to GitHub Copilot. Join the waitlist by visiting https://copilot.github.com")
-          (message "Login success!")
-          (copilot--oauth-save (copilot--oauth-user access-token) access-token))))))
+          (when (yes-or-no-p "I agree to these telemetry terms as part of the GitHub Copilot technical preview.\nhttps://github.co/copilot-telemetry-terms")
+            (message "Login success!")
+            (copilot--oauth-save (copilot--oauth-user access-token) access-token)))))))
 
 
 (defun copilot--oauth-user (access-token)
+  "Get user name by access token."
   (let ((result (copilot--blocking #'copilot--agent-http-request
                                    "https://api.github.com/user"
                                    `(:method "GET"
@@ -189,10 +201,11 @@
         (message "Failed to get user info.")
       (alist-get 'login result))))
 
-
 (defun copilot--oauth-save (user access-token)
-  (with-temp-file copilot--config-hosts
-    (insert (json-encode `(:github.com (:user ,user :oauth_token ,access-token))))))
+  "Save GitHub username and access-token."
+  (when (and user access-token)
+    (with-temp-file copilot--config-hosts
+      (insert (json-encode `(:github.com (:user ,user :oauth_token ,access-token)))))))
 
 ;;
 ;; diagnose

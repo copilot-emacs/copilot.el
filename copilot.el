@@ -229,12 +229,11 @@
 (defun copilot-diagnose ()
   "Diagnose copilot."
   (interactive)
-  (if (not copilot--enabled)
-      (message "Copilot enabled: No"))
-    (message "Copilot enabled: Yes, Network: %s, Access: %s"
-            (copilot--diagnose-network)
-            (copilot--diagnose-access)))
-
+  (copilot--start-process)
+  (message "Copilot agent: %s, Network: %s, Access: %s"
+           (if copilot--process "Running" "Not running")
+           (copilot--diagnose-network)
+           (copilot--diagnose-access)))
 
 ;;
 ;; Auto completion
@@ -325,33 +324,3 @@
                  (start-line (alist-get 'line start))
                  (start-char (alist-get 'character start)))
             (copilot-display-overlay-completion text start-line start-char))))))))
-
-
-(defconst copilot--hooks
-  '((evil-insert-state-entry-hook copilot-complete)
-    (evil-insert-state-exit-hook copilot-clear-overlay)
-    (post-self-insert-hook copilot-complete))
-  "Hooks for auto completion.")
-
-(defvar copilot--enabled nil
-  "Whether copilot is enabled.")
-
-(defun copilot-enable ()
-  (interactive)
-  (unless copilot--enabled
-    (copilot--start-process)
-    (dolist (hook copilot--hooks)
-      (add-hook (car hook) (cadr hook)))
-    (setq copilot--enabled t)))
-
-
-(defun copilot-disable ()
-  (interactive)
-  (when copilot--enabled
-    (copilot--kill-process)
-    (dolist (hook copilot--hooks)
-      (remove-hook (car hook)
-                   (cadr hook)))
-    (setq copilot--enabled nil)))
-
-(provide 'copilot)

@@ -266,15 +266,21 @@
 (defvar-local copilot-overlay nil)
 
 (defun copilot-display-overlay-completion (completion line col)
-  "Show COMPLETION in overlay at LINE and COL."
+  "Show COMPLETION in overlay at LINE and COL. For Copilot, COL is always 0."
   (copilot-clear-overlay)
   (save-excursion
     (widen)
     (goto-char (point-min))
-    (forward-line line)
-    (forward-char col)
+    (if (= (line-end-position line) (1- (point-max)))
+        ; special case if the last line is empty
+        (progn
+          (goto-char (point-max))
+          (newline)
+          (forward-char -1))
+      (forward-line line)
+      (forward-char col))
 
-    ;; remove common prefix
+    ; remove common prefix
     (let* ((cur-line (s-chop-suffix "\n" (thing-at-point 'line)))
             (common-prefix-len (length (s-shared-start completion cur-line))))
       (setq completion (substring completion common-prefix-len))

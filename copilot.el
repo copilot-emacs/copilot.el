@@ -270,9 +270,6 @@
 ;; Auto completion
 ;;
 
-(defconst copilot--language-id
-  '((emacs-lisp-mode . "lisp")))
-
 (defun copilot--generate-doc ()
   (list :source (concat (buffer-substring-no-properties (point-min) (point-max)) "\n")
         :tabSize tab-width
@@ -280,7 +277,7 @@
         :insertSpaces (if indent-tabs-mode :false t)
         :path (buffer-file-name)
         :relativePath (file-name-nondirectory (buffer-file-name))
-        :languageId (or (assoc-default major-mode copilot--language-id) (substring (symbol-name major-mode) 0 -5))
+        :languageId (s-chop-suffix "-mode" (symbol-name major-mode))
         :position (list :line (1- (line-number-at-pos))
                         :character (length (buffer-substring-no-properties (point-at-bol) (point))))))
 

@@ -12,34 +12,62 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 ## Installation
 
-1. Install Neovim and [copilot.vim](https://github.com/github/copilot.vim) plugin.
-Follow instructions in copilot.vim to setup copilot (run `:Copilot setup` inside Neovim).
+1. Install [Node.js](https://nodejs.org/en/download/) 12 or newer.
 
 2. Clone this repo.
 
-3. Copy `copilot.vim/copilot/dist` directory to `copilot.el` repo root.
-
-4. Modify your emacs configuration to load and setup `copilot.el`
+3. Modify your emacs configuration to load and setup `copilot.el`.
 
 ```elisp
-;; Configuration example for Spacemacs (inside your user-config):
+; Configuration example for Spacemacs (inside your user-config):
 
-;; Load copilot.el, modify this path to your local path.
+; Load copilot.el, modify this path to your local path.
 (load-file "~/.emacs.d/copilot.el")
 
-;; Use tab for completion. Assumes that you use company-mode for completion.
+; Use tab for completion. Assumes that you use company-mode for completion.
 (define-key company-mode-map (kbd "<tab>") (lambda ()
                                               (interactive)
                                               (or (copilot-accept-completion) (company-indent-or-complete-common nil))))
-;; Enable copilot
+; Enable copilot
 (copilot-enable)
 ```
 
+4. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose`.
+
 5. Enjoy!
+
+## Commands
+
+### copilot-diagnose
+
+Check the current status of the plugin.
+
+### copilot-login
+
+Login to GitHub, required for using the plugin.
+
+### copilot-accept-completion
+
+Accept the current completion. You need to bind this to some key.
+
+### copilot-complete
+
+Try to complete at the current point.
+
+### copilot-clear-overlay
+
+Clear copilot overlay in the current buffer.
+
+### copilot-enable / copilot-disable
+
+Enable/disable predefined hooks for copilot-complete and copilot-clear-overlay.
+
+You can use the plugin without copilot-enable by hooking above commands manually.
+
 
 ## Roadmap
 
-+ [ ] Setup Copilot without Neovim
++ [x] Setup Copilot without Neovim
 + [ ] Cycle through suggestions
 + [ ] Add package to MELPA
 + [ ] Test compatibility with vanilla Emacs and other auto completion packages

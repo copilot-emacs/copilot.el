@@ -283,7 +283,7 @@
         (setq copilot-overlay ov)))))
 
 (defun copilot-clear-overlay ()
-  "Clear all overlays from this buffer."
+  (interactive)
   (when copilot-overlay
     (delete-overlay copilot-overlay)
     (setq copilot-overlay nil)))
@@ -298,6 +298,7 @@
       t)))
 
 (defun copilot-complete ()
+  (interactive)
   (copilot-clear-overlay)
   (when (buffer-file-name)
     (copilot--get-candidates

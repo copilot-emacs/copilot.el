@@ -2,6 +2,7 @@
 (require 'cl-lib)
 (require 'json)
 (require 's)
+(require 'dash)
 
 
 (defgroup copilot nil
@@ -193,8 +194,7 @@
 (defun copilot--login-callback (result)
   (let* ((device-code (alist-get 'device_code result))
          (verification-uri (alist-get 'verification_uri result))
-         (user-code (alist-get 'user_code result))
-         (interval (alist-get 'interval result)))
+         (user-code (alist-get 'user_code result)))
     (if (display-graphic-p)
         (progn
           (gui-set-selection 'CLIPBOARD user-code)

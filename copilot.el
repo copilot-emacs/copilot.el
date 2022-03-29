@@ -202,7 +202,7 @@
           (browse-url verification-uri)
           (read-from-minibuffer "Press ENTER if you finish authorizing."))
       (read-from-minibuffer (format "First copy your one-time code: %s. Press ENTER to continue." user-code))
-      (read-from-minibuffer "Please open %s in your browser. Press ENTER if you finish authorizing." verification-uri))
+      (read-from-minibuffer (format "Please open %s in your browser. Press ENTER if you finish authorizing." verification-uri)))
     (message "Verifying...")
     (copilot--login-verify device-code)))
 

@@ -43,19 +43,24 @@
 ;; agent
 ;;
 
+(defconst copilot--node
+  (if (eq system-type 'windows-nt)
+      "node.exe"
+    "node"))
+
 (defun copilot--start-process ()
   "Start Copilot process"
-  (if (not (locate-file "node" exec-path))
+  (if (not (locate-file copilot--node exec-path))
       (message "Could not find node executable")
     (let ((node-version
-           (->> (shell-command-to-string "node --version") (s-trim) (s-chop-prefix "v") (string-to-number))))
+           (->> (shell-command-to-string (concat copilot--node " --version")) (s-trim) (s-chop-prefix "v") (string-to-number))))
       (if (< node-version 12)
           (message "Node 12+ required but found %s" node-version)
         (setq copilot--process
               (make-process
               :name "copilot-agent"
-              :command (list "node"
-                              (concat copilot--base-dir "/dist/agent.js"))
+              :command (list copilot--node
+                             (concat copilot--base-dir "/dist/agent.js"))
               :coding 'utf-8
               :connection-type 'pipe
               :filter 'copilot--process-filter
@@ -169,7 +174,7 @@
 (defconst copilot--config-root
   (let ((root (concat (or (getenv "XDG_CONFIG_HOME")
                           (if (eq system-type 'windows-nt)
-                              (expand-file-name "~/Appdata/Local")
+                              (expand-file-name "~/../Local")
                             (expand-file-name "~/.config")))
                       "/github-copilot")))
     (make-directory root t)

@@ -44,7 +44,9 @@ Inside your `dotspacemacs/user-config`:
   (delq 'company-preview-if-just-one-frontend company-frontends)
   ; enable tab completion
   (define-key company-mode-map (kbd "<tab>") 'my-tab)
-  (define-key company-active-map (kbd "<tab>") 'my-tab))
+  (define-key company-mode-map (kbd "TAB") 'my-tab)
+  (define-key company-active-map (kbd "<tab>") 'my-tab)
+  (define-key company-active-map (kbd "TAB") 'my-tab))
 
 ; provide completion when typing
 (add-hook 'post-command-hook (lambda ()

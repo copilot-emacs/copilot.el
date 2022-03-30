@@ -272,11 +272,13 @@
 (defun copilot-diagnose ()
   "Diagnose copilot."
   (interactive)
-  (copilot--start-process)
-  (message "Copilot agent: %s, Network: %s, Access: %s"
-           (if copilot--process "Running" "Not running")
-           (copilot--diagnose-network)
-           (copilot--diagnose-access)))
+  (unless copilot--process
+    (copilot--start-process))
+  (if (not copilot--process)
+      (message "Copilot agent is not running.")
+    (message "Copilot agent: Running, Network: %s, Access: %s"
+            (copilot--diagnose-network)
+            (copilot--diagnose-access))))
 
 ;;
 ;; Auto completion

@@ -15,14 +15,19 @@
   :type 'float
   :group 'copilot)
 
+(defcustom copilot-log-max message-log-max
+  "Maximum number of lines to keep in the *copilot-log* buffer."
+  :group 'copilot
+  :type 'integer)
+
+(defconst copilot--log-name "*copilot-log*"
+  "Name of the copilot log buffer.")
+
 (defconst copilot--base-dir
   (file-name-directory
    (or load-file-name
        (buffer-file-name)))
   "Directory containing this file.")
-
-(defconst copilot--request-timeout 5
-  "Timeout for blocking requests to Copilot, in seconds.")
 
 (defvar copilot--process nil
   "Copilot agent process object.")
@@ -38,6 +43,33 @@
 
 (defvar copilot--request-timer nil
   "Timer for sending delayed requests.")
+
+
+;;
+;; log
+;;
+
+
+(defun copilot--log (format &rest args)
+  (when copilot-log-max
+    (let ((log-buffer (get-buffer copilot--log-name))
+          (inhibit-read-only t))
+      (unless log-buffer
+        (setq log-buffer (get-buffer-create copilot--log-name))
+        (with-current-buffer log-buffer
+          (view-mode 1)))
+      (with-current-buffer log-buffer
+        (save-excursion
+          (let ((msg (apply 'format format args)))
+            (goto-char (point-max))
+            (insert "\n")
+            (insert msg))
+          (let ((lines (count-lines (point-min) (point-max))))
+            (when (and (integerp copilot-log-max)
+                       (> lines copilot-log-max))
+              (goto-char (point-min))
+              (forward-line (- lines copilot-log-max))
+              (delete-region (point-min) (point)))))))))
 
 ;;
 ;; agent
@@ -88,57 +120,73 @@
                             (int-to-string (length body))
                             "\r\n\r\n"
                             body)))
-      ;; (message "-----request-----")
-      ;; (message "%s" body)
-      ;; (message "-----------------")
       (if (> copilot-idle-delay 0)
           (setq copilot--request-timer
                 (run-with-timer copilot-idle-delay nil
                                 (lambda () (process-send-string copilot--process content))))
         (process-send-string copilot--process content)))))
 
-(defun copilot--agent-request (method params callback)
+(defun copilot--agent-request (method params)
   "Send request and register callback."
-  (cl-incf copilot--request-id)
-  (let ((request (list :method method
-                       :params params
-                       :id copilot--request-id)))
+  (lambda (callback)
+    (cl-incf copilot--request-id)
+    (let ((request (list :method method
+                        :params params
+                        :id copilot--request-id)))
 
-    (push (cons copilot--request-id
-                callback)
-          copilot--callbacks)
-    (copilot--send-request request)))
+      (push (cons copilot--request-id
+                  callback)
+            copilot--callbacks)
+      (copilot--send-request request))))
 
-(defun copilot--agent-http-request (url params callback)
+
+(defun copilot--let-request-fold-left (fn forms bindings)
+  (let ((res forms))
+    (dolist (binding bindings)
+      (setq res (funcall fn res binding)))
+    res))
+
+(defmacro copilot--let-req (bindings &rest forms)
+  (declare (indent 1))
+  (copilot--let-request-fold-left (lambda (res binding)
+                                    `(funcall ,(cadr binding)
+                                              (lambda (,(car binding))
+                                                ,res)))
+                                  `(progn ,@forms)
+                                  (reverse bindings)))
+
+(defmacro copilot--let-req-async (bindings &rest forms)
+  (declare (indent 1))
+  `(lambda (callback)
+     (copilot--let-req ,bindings (funcall callback (progn ,@forms)))))
+
+(defun copilot--agent-http-request (url params)
   "Send HTTP request and register callback."
-  (copilot--agent-request "httpRequest"
-                          (append (list :url url
-                                        :timeout 30000)
-                                  params)
-                          (lambda (result)
-                            (->> result (alist-get 'body) json-read-from-string (cons (cons 'status (alist-get 'status result))) (funcall callback)))))
+  (copilot--let-req-async
+      ((result
+        (copilot--agent-request "httpRequest"
+                                (append params
+                                        (list :url url
+                                              :timeout 30000)))))
+    (let ((status (alist-get 'status result))
+          (body (alist-get 'body result)))
+      (unless (equal status 200)
+        (copilot--log "[ERROR] HTTP request failed with status %s\n[ERROR] HTTP Response: %S\n" status result))
+      (when body
+        (->> body
+            json-read-from-string
+            (cons (cons 'status status)))))))
 
-(defun copilot--blocking (f &rest args)
-  "Run F with ARGS and wait for response. F can be copilot--agent-request or copilot--agent-http-request."
-  (let ((result nil)
-        (count 0))
-    (apply f (append args (list (lambda (r)
-                                  (setq result r)))))
-    (while (and (null result) (< (* 0.1 count) copilot--request-timeout))
-      (sleep-for 0.1)
-      (cl-incf count))
-    result))
 
 (defun copilot--process-filter (process output)
   "Process filter for Copilot agent. Only care about responses with id."
   (setq copilot--output-buffer (concat copilot--output-buffer output))
-  ;; (message "-----output-----")
-  ;; (message "%S" copilot--output-buffer)
-  ;; (message "----------------")
-  (let ((header-match (s-match "Content-Length: \\([0-9]+\\)\n\n" copilot--output-buffer)))
+  (let ((header-match (s-match "Content-Length: \\([0-9]+\\)\r?\n\r?\n" copilot--output-buffer)))
     (if (and (not header-match) (> (length copilot--output-buffer) 50))
-        (progn (setq copilot--output-buffer nil)
-               (message "Copilot agent output buffer reset."))
+        (progn
+          (copilot--log "[Warning] Copilot agent output buffer reset.")
+          (copilot--log "[Warning] Before reset:%S\n" copilot--output-buffer)
+          (setq copilot--output-buffer nil))
       (when header-match
         (let* ((header (car header-match))
               (content-length (string-to-number (cadr header-match)))
@@ -151,11 +199,12 @@
               (copilot--process-filter process nil))))))))
 
 (defun copilot--process-response (content)
-  ;; (message "%S" content)
   (let* ((content (json-read-from-string content))
          (result (alist-get 'result content))
          (err (alist-get 'error content))
          (id (alist-get 'id content)))
+    (when err
+      (copilot--log "[ERROR] Error in response: %S\n[ERROR] Response:%S\n" err content))
     (when (equal id copilot--request-id)
       (funcall (alist-get id copilot--callbacks)
                (cons (cons 'error err) result))
@@ -190,11 +239,11 @@
 (defun copilot-login ()
   "Login to Copilot."
   (interactive)
-  (copilot--agent-http-request "https://github.com/login/device/code"
-                               `(:method "POST"
-                                         :headers (:Accept "application/json")
-                                         :json (:client_id ,copilot--client-id :scope "user:read"))
-                               #'copilot--login-callback))
+  (funcall (copilot--agent-http-request "https://github.com/login/device/code"
+                                        `(:method "POST"
+                                                  :headers (:Accept "application/json"):json
+                                                  (:client_id ,copilot--client-id :scope "user:read")))
+           'copilot--login-callback))
 
 (defun copilot--login-callback (result)
   (let* ((device-code (alist-get 'device_code result))
@@ -213,61 +262,72 @@
 
 
 (defun copilot--login-verify (device-code)
-  (copilot--agent-http-request (format "https://github.com/login/oauth/access_token?grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=%s&client_id=%s"
-                                       device-code copilot--client-id)
-                               '(:method "GET"
-                                         :headers (:Accept "application/json"))
-                               #'copilot--login-verify-callback))
+  (funcall (copilot--agent-http-request (format "https://github.com/login/oauth/access_token?grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=%s&client_id=%s"
+                                                device-code copilot--client-id)
+                                        '(:method "GET"
+                                                  :headers (:Accept "application/json")))
+           'copilot--login-verify-callback))
 
 (defun copilot--login-verify-callback (result)
   (let ((access-token (alist-get 'access_token result)))
     (if (not access-token)
         (message "Login failed.")
-      (let* ((copilot-access-result (copilot--blocking #'copilot--agent-http-request
-                                                       "https://api.github.com/copilot_internal/token"
-                                                       `(:method "GET"
-                                                                 :headers (:Authorization ,(concat "Bearer " access-token)))))
-            (status (alist-get 'status copilot-access-result)))
-        (if (equal status 403)
-            (message "You don't have access to GitHub Copilot. Join the waitlist by visiting https://copilot.github.com")
-          (when (yes-or-no-p "I agree to these telemetry terms as part of the GitHub Copilot technical preview.\nhttps://github.co/copilot-telemetry-terms")
-            (let ((user (copilot--oauth-user access-token)))
-              (when user
-                (with-temp-file copilot--config-hosts
-                  (insert (json-encode `(:github.com (:user ,user :oauth_token ,access-token)))))
-                (with-temp-file copilot--config-terms
-                  (insert (json-encode `((,user . (("version" . ,copilot--terms-version)))))))
-                (message "Copilot: Authenticated as GitHub user %s" user)))))))))
+      (copilot--let-req
+          ((copilot-access-result (copilot--agent-http-request
+                                   "https://api.github.com/copilot_internal/token"
+                                   `(:method "GET"
+                                             :headers (:Authorization ,(concat "Bearer " access-token))))))
+        (let ((status (alist-get 'status copilot-access-result)))
+          (if (equal status 403)
+              (message "You don't have access to GitHub Copilot. Join the waitlist by visiting https://copilot.github.com")
+            (when (yes-or-no-p "I agree to these telemetry terms as part of the GitHub Copilot technical preview.\nhttps://github.co/copilot-telemetry-terms")
+              (copilot--let-req ((user (copilot--oauth-user access-token)))
+                (message "USER %S" user)
+                (when user
+                  (with-temp-file copilot--config-hosts
+                    (insert (json-encode `(:github.com (:user ,user :oauth_token ,access-token)))))
+                  (with-temp-file copilot--config-terms
+                    (insert (json-encode `((,user . (("version" . ,copilot--terms-version)))))))
+                  (message "Copilot: Authenticated as GitHub user %s" user))))))))))
 
 
 (defun copilot--oauth-user (access-token)
   "Get user name by access token."
-  (let ((result (copilot--blocking #'copilot--agent-http-request
-                                   "https://api.github.com/user"
-                                   `(:method "GET"
-                                             :headers (:Authorization ,(concat "Bearer " access-token))))))
-    (if (not (equal (alist-get 'status result) 200))
-        (message "Failed to get user info.")
-      (alist-get 'login result))))
+  (copilot--let-req-async
+      ((result (copilot--agent-http-request "https://api.github.com/user"
+                                            `(:method "GET"
+                                                      :headers (:Authorization ,(concat "Bearer " access-token))))))
+    (message "RESULT: %S" result)
+    (if (equal (alist-get 'status result) 200)
+        (alist-get 'login result)
+      (message "Failed to get user info.")
+      nil)))
+
 
 ;;
 ;; diagnose
 ;;
 
 (defun copilot--diagnose-network ()
-  (let ((result (copilot--blocking #'copilot--agent-http-request
-                                   "https://copilot-proxy.githubusercontent.com/_ping"
-                                   '(:method "GET"))))
-    (cond ((not result) "Server connectivity error")
-          ((equal (alist-get 'status result) 466) "Server error")
-          (t "OK"))))
+  (copilot--let-req-async ((result (copilot--agent-http-request "https://copilot-proxy.githubusercontent.com/_ping"
+                                                                '(:timeout 5000 :method "GET"))))
+    (cond
+     ((not result) "Server connectivity error")
+     ((equal (alist-get 'status result) 466) "Server error")
+     (t "OK"))))
 
 (defun copilot--diagnose-access ()
-  (let* ((result (copilot--blocking #'copilot--agent-request
-                                    "getCompletions"
-                                    '(:doc (:source "" :path "" :relativePath "" :languageId "" :position (:line 0 :character 0)))))
-         (err (alist-get 'error result)))
-    (if err (format "error: %S" err) "OK")))
+  (copilot--let-req-async ((result (copilot--agent-request "getCompletions"
+                                                           '(:doc (:source ""
+                                                                   :path ""
+                                                                   :relativePath ""
+                                                                   :languageId ""
+                                                                   :position (:line 0 :character 0))))))
+
+    (let ((err (alist-get 'error result)))
+      (if err
+          (format "error: %S" err)
+        "OK"))))
 
 (defun copilot-diagnose ()
   "Diagnose copilot."
@@ -276,9 +336,11 @@
     (copilot--start-process))
   (if (not copilot--process)
       (message "Copilot agent is not running.")
-    (message "Copilot agent: Running, Network: %s, Access: %s"
-            (copilot--diagnose-network)
-            (copilot--diagnose-access))))
+    (copilot--let-req ((network (copilot--diagnose-network))
+                       (access (copilot--diagnose-access)))
+      (message "Copilot agent: Running, Network: %s, Access: %s"
+               network
+               access))))
 
 ;;
 ;; Auto completion
@@ -299,16 +361,16 @@
                         :character (length (buffer-substring-no-properties (point-at-bol) (point))))))
 
 (defun copilot--get-completion (callback)
-  (copilot--agent-request "getCompletions"
-                          (list :doc (copilot--generate-doc))
-                          callback))
+  (funcall (copilot--agent-request "getCompletions"
+                                   (list :doc (copilot--generate-doc)))
+           callback))
 
 (defun copilot--get-completions-cycling (callback)
   (if copilot--completion-cache
       (funcall callback copilot--completion-cache)
-    (copilot--agent-request "getCompletionsCycling"
-                            (list :doc (copilot--generate-doc))
-                            callback)))
+    (funcall (copilot--agent-request "getCompletionsCycling"
+                                     (list :doc (copilot--generate-doc)))
+             callback)))
 
 (defun copilot--cycle-completion (direction)
   (lambda (result)

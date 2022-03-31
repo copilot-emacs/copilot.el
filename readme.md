@@ -6,7 +6,7 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 **Warning:** This plugin is unofficial and based on binaries provided by [copilot.vim](https://github.com/github/copilot.vim).
 
-**Warning:** This plugin is under development.
+**Warning:** This plugin is under development. The name of commands and variables may change in the future.
 
 **Note:** You need access to Copilot technical preview to use this plugin.
 
@@ -92,11 +92,16 @@ Try to complete at the current point. You need to hook some function to this.
 
 Clear copilot overlay in the current buffer. You may need to hook some function to this.
 
+### copilot-next-completion / copilot-previous-completion
+
+Cycle through the completion list. You may need to bind this to some key.
+
 
 ## Roadmap
 
 + [x] Setup Copilot without Neovim
-+ [ ] Cycle through suggestions
++ [x] Cycle through suggestions
++ [ ] Add Copilot minor-mode
 + [ ] Add package to MELPA
 + [ ] Test compatibility with vanilla Emacs and other auto completion packages
 

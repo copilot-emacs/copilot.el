@@ -334,6 +334,7 @@
              (display (substring p-completion 0 1))
              (after-string (substring p-completion 1)))
         (overlay-put ov 'completion completion)
+        (overlay-put ov 'start (point))
         (if (equal (overlay-start ov) (overlay-end ov))
             (progn
               (put-text-property 0 1 'cursor t p-completion)
@@ -351,9 +352,10 @@
 (defun copilot-accept-completion ()
   (interactive)
   (when copilot-overlay
-    (let ((completion (overlay-get copilot-overlay 'completion)))
+    (let ((completion (overlay-get copilot-overlay 'completion))
+          (start (overlay-get copilot-overlay 'start)))
       (copilot-clear-overlay)
-      (delete-region (point) (line-end-position))
+      (delete-region start (line-end-position))
       (insert completion)
       t)))
 

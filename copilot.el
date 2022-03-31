@@ -85,7 +85,7 @@
       (setq copilot--request-timer nil))
     (let* ((body (json-serialize request))
            (content (concat "Content-Length: "
-                            (int-to-string (length body))
+                            (int-to-string (string-bytes body))
                             "\r\n\r\n"
                             body)))
       ;; (message "-----request-----")

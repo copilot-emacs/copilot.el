@@ -284,6 +284,9 @@
 ;; Auto completion
 ;;
 
+(defvar-local copilot--completion-cache nil)
+(defvar-local copilot--completion-idx 0)
+
 (defun copilot--generate-doc ()
   (list :source (concat (buffer-substring-no-properties (point-min) (point-max)) "\n")
         :tabSize tab-width
@@ -295,17 +298,56 @@
         :position (list :line (1- (line-number-at-pos))
                         :character (length (buffer-substring-no-properties (point-at-bol) (point))))))
 
-(defun copilot--get-candidates (callback)
+(defun copilot--get-completion (callback)
   (copilot--agent-request "getCompletions"
                           (list :doc (copilot--generate-doc))
                           callback))
+
+(defun copilot--get-completions-cycling (callback)
+  (if copilot--completion-cache
+      (funcall callback copilot--completion-cache)
+    (copilot--agent-request "getCompletionsCycling"
+                            (list :doc (copilot--generate-doc))
+                            callback)))
+
+(defun copilot--cycle-completion (direction)
+  (lambda (result)
+    (unless copilot--completion-cache
+      (setq copilot--completion-cache result))
+    (let ((completions (cl-remove-duplicates (alist-get 'completions result)
+                                             :key (lambda (x) (alist-get 'text x))
+                                             :test 'equal)))
+      (cond ((seq-empty-p completions)
+             (message "No completion is available."))
+            ((= (length completions) 1)
+             (message "Only one completion is available."))
+            (t
+             (let ((idx (mod (+ copilot--completion-idx direction) (length completions))))
+               (setq copilot--completion-idx idx)
+               (let ((completion (elt completions idx)))
+                 (copilot--show-completion completion))))))))
+
+(defun copilot-next-completion ()
+  (interactive)
+  (when copilot--overlay
+    (copilot--get-completions-cycling (copilot--cycle-completion 1))))
+
+(defun copilot-previous-completion ()
+  (interactive)
+  (when copilot--overlay
+    (copilot--get-completions-cycling (copilot--cycle-completion -1))))
+
+
+;;
+;; UI
+;;
 
 
 (defface copilot-overlay-face
   '((t :inherit shadow))
   "Face for Copilot overlay")
 
-(defvar-local copilot-overlay nil)
+(defvar-local copilot--overlay nil)
 
 (defun copilot-display-overlay-completion (completion line col)
   "Show COMPLETION in overlay at LINE and COL. For Copilot, COL is always 0."
@@ -341,38 +383,45 @@
               (overlay-put ov 'after-string p-completion))
           (overlay-put ov 'display display)
           (overlay-put ov 'after-string after-string))
-        (setq copilot-overlay ov)))))
+        (setq copilot--overlay ov)))))
 
 (defun copilot-clear-overlay ()
   (interactive)
-  (when copilot-overlay
-    (delete-overlay copilot-overlay)
-    (setq copilot-overlay nil)))
+  (when copilot--overlay
+    (delete-overlay copilot--overlay)
+    (setq copilot--overlay nil)))
 
 (defun copilot-accept-completion ()
   (interactive)
-  (when copilot-overlay
-    (let ((completion (overlay-get copilot-overlay 'completion))
-          (start (overlay-get copilot-overlay 'start)))
+  (when copilot--overlay
+    (let ((completion (overlay-get copilot--overlay 'completion))
+          (start (overlay-get copilot--overlay 'start)))
       (copilot-clear-overlay)
       (delete-region start (line-end-position))
       (insert completion)
       t)))
 
+(defun copilot--show-completion (completion)
+  (when completion
+    (let* ((text (alist-get 'text completion))
+           (range (alist-get 'range completion))
+           (start (alist-get 'start range))
+           (start-line (alist-get 'line start))
+           (start-char (alist-get 'character start)))
+      (copilot-display-overlay-completion text start-line start-char))))
+
 (defun copilot-complete ()
   (interactive)
   (copilot-clear-overlay)
+
+  (setq copilot--completion-cache nil)
+  (setq copilot--completion-idx 0)
+
   (when (buffer-file-name)
-    (copilot--get-candidates
+    (copilot--get-completion
      (lambda (result)
        (let* ((completions (alist-get 'completions result))
               (completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
-        (when completion
-          (let* ((text (alist-get 'text completion))
-                 (range (alist-get 'range completion))
-                 (start (alist-get 'start range))
-                 (start-line (alist-get 'line start))
-                 (start-char (alist-get 'character start)))
-            (copilot-display-overlay-completion text start-line start-char))))))))
+          (copilot--show-completion completion))))))
 
 (provide 'copilot)

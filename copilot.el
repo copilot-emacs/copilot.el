@@ -129,7 +129,7 @@
 (defun copilot--agent-request (method params)
   "Send request and register callback."
   (lambda (callback)
-    (cl-incf copilot--request-id)
+   (cl-incf copilot--request-id)
     (let ((request (list :method method
                         :params params
                         :id copilot--request-id)))
@@ -210,7 +210,8 @@
          (id (alist-get 'id content)))
     (when err
       (copilot--log "[ERROR] Error in response: %S\n[ERROR] Response:%S\n" err content))
-    (when (equal id copilot--request-id)
+    (if (not id)
+        (copilot--log "[INFO] Discard message: %S" content)
       (funcall (alist-get id copilot--callbacks)
                (cons (cons 'error err) result))
       (assq-delete-all id copilot--callbacks))))

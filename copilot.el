@@ -188,7 +188,7 @@
 (defun copilot--process-filter (process output)
   "Process filter for Copilot agent. Only care about responses with id."
   (setq copilot--output-buffer (concat copilot--output-buffer output))
-  (let ((header-match (s-match "Content-Length: \\([0-9]+\\)\r?\n\r?\n" copilot--output-buffer)))
+  (let ((header-match (s-match "^Content-Length: \\([0-9]+\\)\r?\n\r?\n" copilot--output-buffer)))
     (if (and (not header-match) (> (length copilot--output-buffer) 50))
         (progn
           (copilot--log "[Warning] Copilot agent output buffer reset.")

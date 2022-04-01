@@ -89,15 +89,14 @@
       (if (< node-version 12)
           (message "Node 12+ required but found %s" node-version)
         (setq copilot--process
-              (make-process
-              :name "copilot-agent"
-              :command (list copilot--node
-                             (concat copilot--base-dir "/dist/agent.js"))
-              :coding 'utf-8
-              :connection-type 'pipe
-              :filter 'copilot--process-filter
-              ;; :sentinel 'copilot--process-sentinel
-              :noquery t))
+              (make-process :name "copilot-agent"
+                            :command (list copilot--node
+                                           (concat copilot--base-dir "/dist/agent.js"))
+                            :coding 'utf-8
+                            :connection-type 'pipe
+                            :filter 'copilot--process-filter
+                            :sentinel 'copilot--process-sentinel
+                            :noquery t))
         (message "Copilot agent started.")))))
 
 
@@ -106,6 +105,9 @@
   (when copilot--process
     (delete-process copilot--process)
     (setq copilot--process nil)))
+
+(defun copilot--process-sentinel (process event)
+  (copilot--log "[PROCESS] %s" event))
 
 (defun copilot--send-request (request)
   "Send REQUEST to Copilot agent."
@@ -211,7 +213,7 @@
     (when err
       (copilot--log "[ERROR] Error in response: %S\n[ERROR] Response:%S\n" err content))
     (if (not id)
-        (copilot--log "[INFO] Discard message: %S" content)
+        (copilot--log "[INFO] Discard message without id: %S" content)
       (funcall (alist-get id copilot--callbacks)
                (cons (cons 'error err) result))
       (assq-delete-all id copilot--callbacks))))
@@ -489,6 +491,7 @@
   (when (buffer-file-name)
     (copilot--get-completion
      (lambda (result)
+     (copilot--log "[INFO] Completion: %S" result)
        (let* ((completions (alist-get 'completions result))
               (completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
           (copilot--show-completion completion))))))

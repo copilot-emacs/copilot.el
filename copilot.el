@@ -320,7 +320,7 @@
     (cond
      ((not result) "Server connectivity error")
      ((equal (alist-get 'status result) 466) "Server error")
-     (t "OK"))))
+     (t nil))))
 
 (defun copilot--diagnose-access ()
   (copilot--let-req-async ((result (copilot--agent-request "getCompletions"
@@ -336,17 +336,18 @@
         "OK"))))
 
 (defun copilot-diagnose ()
-  "Diagnose copilot."
+  "Restart and diagnose copilot."
   (interactive)
-  (unless copilot--process
-    (copilot--start-process))
+  (when copilot--process
+    (copilot--kill-process))
+  (copilot--start-process)
   (if (not copilot--process)
       (message "Copilot agent is not running.")
-    (copilot--let-req ((network (copilot--diagnose-network))
-                       (access (copilot--diagnose-access)))
-      (message "Copilot agent: Running, Network: %s, Access: %s"
-               network
-               access))))
+    (copilot--let-req ((network (copilot--diagnose-network)))
+      (if network
+          (message "Network: %s" network)
+        (copilot--let-req ((access (copilot--diagnose-access)))
+          (message "Copilot: %s" access))))))
 
 ;;
 ;; Auto completion

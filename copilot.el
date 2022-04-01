@@ -1,9 +1,10 @@
-;; -*- coding: utf-8; lexical-binding: t; -*-
+;;; copilot.el --- An unofficial Copilot plugin for Emacs  -*- lexical-binding:t -*-
+
+;;; Code:
 (require 'cl-lib)
 (require 'json)
 (require 's)
 (require 'dash)
-
 
 (defgroup copilot nil
   "Copilot."
@@ -36,7 +37,7 @@
   "Request Id to distinguish requests.")
 
 (defvar copilot--callbacks nil
-  "(request-id . callback) alist")
+  "An alist in the form of (request-id . callback).")
 
 (defvar copilot--output-buffer nil
   "Buffer for process outputs.")
@@ -44,13 +45,13 @@
 (defvar copilot--request-timer nil
   "Timer for sending delayed requests.")
 
-
 ;;
 ;; log
 ;;
 
 
 (defun copilot--log (format &rest args)
+  "Log a (format FORMAT ARGS) message to the copilot log buffer."
   (when copilot-log-max
     (let ((log-buffer (get-buffer copilot--log-name))
           (inhibit-read-only t))
@@ -78,14 +79,17 @@
 (defconst copilot--node
   (if (eq system-type 'windows-nt)
       "node.exe"
-    "node"))
+    "node")
+  "Node executable name.")
 
 (defun copilot--start-process ()
-  "Start Copilot process"
+  "Start the copilot agent process."
   (if (not (locate-file copilot--node exec-path))
       (message "Could not find node executable")
-    (let ((node-version
-           (->> (shell-command-to-string (concat copilot--node " --version")) (s-trim) (s-chop-prefix "v") (string-to-number))))
+    (let ((node-version (->> (shell-command-to-string (concat copilot--node " --version"))
+                             (s-trim)
+                             (s-chop-prefix "v")
+                             (string-to-number))))
       (if (< node-version 12)
           (message "Node 12+ required but found %s" node-version)
         (setq copilot--process
@@ -106,7 +110,8 @@
     (delete-process copilot--process)
     (setq copilot--process nil)))
 
-(defun copilot--process-sentinel (process event)
+(defun copilot--process-sentinel (_ event)
+  "Process sentinel for the copilot agent process. Simply logs the EVENT."
   (copilot--log "[PROCESS] %s" event))
 
 (defun copilot--send-request (request)
@@ -129,10 +134,10 @@
         (process-send-string copilot--process content)))))
 
 (defun copilot--agent-request (method params)
-  "Send request and register callback."
+  "Send a request with METHOD and PARAMS to the copilot agent."
   (lambda (callback)
    (cl-incf copilot--request-id)
-    (let ((request (list :method method
+   (let ((request (list :method method
                         :params params
                         :id copilot--request-id)))
 
@@ -142,28 +147,31 @@
       (copilot--send-request request))))
 
 
-(defun copilot--let-request-fold-left (fn forms bindings)
+(defun copilot--let-fold-left (fn forms bindings)
+  "Fold left over the forms in FORMS using FN with the bindings in BINDINGS."
   (let ((res forms))
     (dolist (binding bindings)
       (setq res (funcall fn res binding)))
     res))
 
 (defmacro copilot--let-req (bindings &rest forms)
+  "Bind async functions with callbacks in BINDINGS and evaluate FORMS."
   (declare (indent 1))
-  (copilot--let-request-fold-left (lambda (res binding)
-                                    `(funcall ,(cadr binding)
-                                              (lambda (,(car binding))
-                                                ,res)))
+  (copilot--let-fold-left (lambda (res binding)
+                            `(funcall ,(cadr binding)
+                                      (lambda (,(car binding))
+                                        ,res)))
                                   `(progn ,@forms)
                                   (reverse bindings)))
 
 (defmacro copilot--let-req-async (bindings &rest forms)
+  "Bind async functions with callbacks in BINDINGS and evaluate FORMS. Return a promise."
   (declare (indent 1))
   `(lambda (callback)
      (copilot--let-req ,bindings (funcall callback (progn ,@forms)))))
 
 (defun copilot--agent-http-request (url params)
-  "Send HTTP request and register callback."
+  "Send an http request to URL with PARAMS via Copilot agent."
   (copilot--let-req-async
       ((result
         (copilot--agent-request "httpRequest"
@@ -180,13 +188,14 @@
             (cons (cons 'status status)))))))
 
 (defmacro copilot--substring-raw (string &rest args)
+  "Return (substring STRING ARGS) in `raw-text' coding system."
   `(-> ,string
        (encode-coding-string 'raw-text)
        (substring ,@args)
        (decode-coding-string 'utf-8)))
 
 (defun copilot--process-filter (process output)
-  "Process filter for Copilot agent. Only care about responses with id."
+  "Process OUTPUT of Copilot agent PROCESS."
   (setq copilot--output-buffer (concat copilot--output-buffer output))
   (let ((header-match (s-match "^Content-Length: \\([0-9]+\\)\r?\n\r?\n" copilot--output-buffer)))
     (if (and (not header-match) (> (length copilot--output-buffer) 50))
@@ -206,6 +215,7 @@
               (copilot--process-filter process nil))))))))
 
 (defun copilot--process-response (content)
+  "Process a response message with CONTENT."
   (let* ((content (json-read-from-string content))
          (result (alist-get 'result content))
          (err (alist-get 'error content))
@@ -223,14 +233,15 @@
 ;;
 
 (defconst copilot--client-id "Iv1.b507a08c87ecfe98"
-  "Copilot client id, copied from copilot.vim")
+  "Copilot client id, copied from copilot.vim.")
 
 (defconst copilot--terms-version "2021-10-14"
-  "Copilot terms version, copied from copilot.vim")
+  "Copilot terms version, copied from copilot.vim.")
 
 (defconst copilot--config-root
   (let ((root (concat (or (getenv "XDG_CONFIG_HOME")
                           (if (eq system-type 'windows-nt)
+                              ; should be %APPDATALOCAL% (~ expands to %APPDATA% in Windows)
                               (expand-file-name "~/../Local")
                             (expand-file-name "~/.config")))
                       "/github-copilot")))
@@ -254,6 +265,7 @@
            'copilot--login-callback))
 
 (defun copilot--login-callback (result)
+  "Callback for login request. RESULT is the response."
   (let* ((device-code (alist-get 'device_code result))
          (verification-uri (alist-get 'verification_uri result))
          (user-code (alist-get 'user_code result)))
@@ -270,6 +282,7 @@
 
 
 (defun copilot--login-verify (device-code)
+  "Verify login with DEVICE-CODE."
   (funcall (copilot--agent-http-request (format "https://github.com/login/oauth/access_token?grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=%s&client_id=%s"
                                                 device-code copilot--client-id)
                                         '(:method "GET"
@@ -277,9 +290,10 @@
            'copilot--login-verify-callback))
 
 (defun copilot--login-verify-callback (result)
+  "Callback for login verification request. RESULT is the response."
   (let ((access-token (alist-get 'access_token result)))
     (if (not access-token)
-        (message "Login failed.")
+        (message "Login failed. Server responds with %S." result)
       (copilot--let-req
           ((copilot-access-result (copilot--agent-http-request
                                    "https://api.github.com/copilot_internal/token"
@@ -290,7 +304,6 @@
               (message "You don't have access to GitHub Copilot. Join the waitlist by visiting https://copilot.github.com")
             (when (yes-or-no-p "I agree to these telemetry terms as part of the GitHub Copilot technical preview.\nhttps://github.co/copilot-telemetry-terms")
               (copilot--let-req ((user (copilot--oauth-user access-token)))
-                (message "USER %S" user)
                 (when user
                   (with-temp-file copilot--config-hosts
                     (insert (json-encode `(:github.com (:user ,user :oauth_token ,access-token)))))
@@ -300,7 +313,7 @@
 
 
 (defun copilot--oauth-user (access-token)
-  "Get user name by access token."
+  "Get user name by ACCESS-TOKEN."
   (copilot--let-req-async
       ((result (copilot--agent-http-request "https://api.github.com/user"
                                             `(:method "GET"
@@ -317,6 +330,7 @@
 ;;
 
 (defun copilot--diagnose-network ()
+  "Diagnose network."
   (copilot--let-req-async ((result (copilot--agent-http-request "https://copilot-proxy.githubusercontent.com/_ping"
                                                                 '(:timeout 5000 :method "GET"))))
     (cond
@@ -325,6 +339,7 @@
      (t nil))))
 
 (defun copilot--diagnose-access ()
+  "Diagnose Copilot access with a dummy completion request."
   (copilot--let-req-async ((result (copilot--agent-request "getCompletions"
                                                            '(:doc (:source ""
                                                                    :path ""
@@ -359,6 +374,7 @@
 (defvar-local copilot--completion-idx 0)
 
 (defun copilot--generate-doc ()
+  "Generate doc param for completion request."
   (list :source (concat (buffer-substring-no-properties (point-min) (point-max)) "\n")
         :tabSize tab-width
         :indentSize tab-width
@@ -370,11 +386,13 @@
                         :character (length (buffer-substring-no-properties (point-at-bol) (point))))))
 
 (defun copilot--get-completion (callback)
+  "Get completion with CALLBACK."
   (funcall (copilot--agent-request "getCompletions"
                                    (list :doc (copilot--generate-doc)))
            callback))
 
 (defun copilot--get-completions-cycling (callback)
+  "Get completion cycling options with CALLBACK."
   (if copilot--completion-cache
       (funcall callback copilot--completion-cache)
     (funcall (copilot--agent-request "getCompletionsCycling"
@@ -382,6 +400,7 @@
              callback)))
 
 (defun copilot--cycle-completion (direction)
+  "Cycle completion with DIRECTION."
   (lambda (result)
     (unless copilot--completion-cache
       (setq copilot--completion-cache result))
@@ -392,18 +411,20 @@
              (message "No completion is available."))
             ((= (length completions) 1)
              (message "Only one completion is available."))
-            (t
-             (let ((idx (mod (+ copilot--completion-idx direction) (length completions))))
-               (setq copilot--completion-idx idx)
-               (let ((completion (elt completions idx)))
-                 (copilot--show-completion completion))))))))
+            (t (let ((idx (mod (+ copilot--completion-idx direction)
+                               (length completions))))
+                 (setq copilot--completion-idx idx)
+                 (let ((completion (elt completions idx)))
+                   (copilot--show-completion completion))))))))
 
 (defun copilot-next-completion ()
+  "Cycle to next completion."
   (interactive)
   (when copilot--overlay
     (copilot--get-completions-cycling (copilot--cycle-completion 1))))
 
 (defun copilot-previous-completion ()
+  "Cycle to previous completion."
   (interactive)
   (when copilot--overlay
     (copilot--get-completions-cycling (copilot--cycle-completion -1))))
@@ -418,7 +439,8 @@
   '((t :inherit shadow))
   "Face for Copilot overlay")
 
-(defvar-local copilot--overlay nil)
+(defvar-local copilot--overlay nil
+  "Overlay for Copilot completion.")
 
 (defun copilot-display-overlay-completion (completion line col)
   "Show COMPLETION in overlay at LINE and COL. For Copilot, COL is always 0."
@@ -457,12 +479,14 @@
         (setq copilot--overlay ov)))))
 
 (defun copilot-clear-overlay ()
+  "Clear Copilot overlay."
   (interactive)
   (when copilot--overlay
     (delete-overlay copilot--overlay)
     (setq copilot--overlay nil)))
 
 (defun copilot-accept-completion ()
+  "Accept completion. Return t if there is a completion."
   (interactive)
   (when copilot--overlay
     (let ((completion (overlay-get copilot--overlay 'completion))
@@ -473,6 +497,7 @@
       t)))
 
 (defun copilot--show-completion (completion)
+  "Show COMPLETION."
   (when completion
     (let* ((text (alist-get 'text completion))
            (range (alist-get 'range completion))
@@ -482,6 +507,7 @@
       (copilot-display-overlay-completion text start-line start-char))))
 
 (defun copilot-complete ()
+  "Complete at the current point."
   (interactive)
   (copilot-clear-overlay)
 
@@ -497,3 +523,4 @@
           (copilot--show-completion completion))))))
 
 (provide 'copilot)
+;;; copilot.el ends here

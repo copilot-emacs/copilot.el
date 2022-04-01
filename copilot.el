@@ -177,6 +177,11 @@
             json-read-from-string
             (cons (cons 'status status)))))))
 
+(defmacro copilot--substring-raw (string &rest args)
+  `(-> ,string
+       (encode-coding-string 'raw-text)
+       (substring ,@args)
+       (decode-coding-string 'utf-8)))
 
 (defun copilot--process-filter (process output)
   "Process filter for Copilot agent. Only care about responses with id."
@@ -192,8 +197,8 @@
               (content-length (string-to-number (cadr header-match)))
               (full-length (+ (length header) content-length)))
           (when (>= (length copilot--output-buffer) full-length)
-            (let ((content (substring copilot--output-buffer (length header) full-length)))
-              (setq copilot--output-buffer (substring copilot--output-buffer full-length))
+            (let ((content (copilot--substring-raw copilot--output-buffer (length header) full-length)))
+              (setq copilot--output-buffer (copilot--substring-raw copilot--output-buffer full-length))
               (copilot--process-response content)
               ; rerun filter to process remaining output
               (copilot--process-filter process nil))))))))

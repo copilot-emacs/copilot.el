@@ -117,7 +117,7 @@
       (setq copilot--request-timer nil))
     (let* ((body (json-serialize request))
            (content (concat "Content-Length: "
-                            (int-to-string (length body))
+                            (int-to-string (string-bytes body))
                             "\r\n\r\n"
                             body)))
       (if (> copilot-idle-delay 0)
@@ -129,7 +129,7 @@
 (defun copilot--agent-request (method params)
   "Send request and register callback."
   (lambda (callback)
-    (cl-incf copilot--request-id)
+   (cl-incf copilot--request-id)
     (let ((request (list :method method
                         :params params
                         :id copilot--request-id)))
@@ -177,6 +177,11 @@
             json-read-from-string
             (cons (cons 'status status)))))))
 
+(defmacro copilot--substring-raw (string &rest args)
+  `(-> ,string
+       (encode-coding-string 'raw-text)
+       (substring ,@args)
+       (decode-coding-string 'utf-8)))
 
 (defun copilot--process-filter (process output)
   "Process filter for Copilot agent. Only care about responses with id."
@@ -192,8 +197,8 @@
               (content-length (string-to-number (cadr header-match)))
               (full-length (+ (length header) content-length)))
           (when (>= (length copilot--output-buffer) full-length)
-            (let ((content (substring copilot--output-buffer (length header) full-length)))
-              (setq copilot--output-buffer (substring copilot--output-buffer full-length))
+            (let ((content (copilot--substring-raw copilot--output-buffer (length header) full-length)))
+              (setq copilot--output-buffer (copilot--substring-raw copilot--output-buffer full-length))
               (copilot--process-response content)
               ; rerun filter to process remaining output
               (copilot--process-filter process nil))))))))
@@ -205,7 +210,8 @@
          (id (alist-get 'id content)))
     (when err
       (copilot--log "[ERROR] Error in response: %S\n[ERROR] Response:%S\n" err content))
-    (when (equal id copilot--request-id)
+    (if (not id)
+        (copilot--log "[INFO] Discard message: %S" content)
       (funcall (alist-get id copilot--callbacks)
                (cons (cons 'error err) result))
       (assq-delete-all id copilot--callbacks))))

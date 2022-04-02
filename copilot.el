@@ -5,6 +5,7 @@
 (require 'json)
 (require 's)
 (require 'dash)
+(require 'editorconfig)
 
 (defgroup copilot nil
   "Copilot."
@@ -370,14 +371,34 @@
 ;; Auto completion
 ;;
 
+(defconst copilot--indentation-alist
+  (append '((latex-mode tex-indent-basic)
+            (nxml-mode nxml-child-indent)
+            (python-mode python-indent py-indent-offset python-indent-offset)
+            (web-mode web-mode-markup-indent-offset web-mode-html-offset))
+          editorconfig-indentation-alist)
+  "Alist of `major-mode' to indentation map with optional fallbacks.")
+
 (defvar-local copilot--completion-cache nil)
 (defvar-local copilot--completion-idx 0)
+
+(defun copilot--infer-indentation-offset ()
+  "Infer indentation offset."
+  (or (let ((mode major-mode))
+        (while (and (not (assq mode copilot--indentation-alist))
+                    (setq mode (get mode 'derived-mode-parent))))
+        (when mode
+          (cl-some (lambda (s)
+                     (when (boundp s)
+                       (symbol-value s)))
+                   (alist-get mode copilot--indentation-alist))))
+      tab-width))
 
 (defun copilot--generate-doc ()
   "Generate doc param for completion request."
   (list :source (concat (buffer-substring-no-properties (point-min) (point-max)) "\n")
-        :tabSize tab-width
-        :indentSize tab-width
+        :tabSize (copilot--infer-indentation-offset)
+        :indentSize (copilot--infer-indentation-offset)
         :insertSpaces (if indent-tabs-mode :false t)
         :path (buffer-file-name)
         :relativePath (file-name-nondirectory (buffer-file-name))

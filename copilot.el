@@ -1,5 +1,7 @@
 ;;; copilot.el --- An unofficial Copilot plugin for Emacs  -*- lexical-binding:t -*-
 
+;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2"))
+
 ;;; Code:
 (require 'cl-lib)
 (require 'json)

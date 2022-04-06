@@ -14,24 +14,54 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 1. Install [Node.js](https://nodejs.org/en/download/) 12 or newer.
 
-2. Clone this repo (or install package via `straight.el`, see [example](#straight)).
+2. Install package via `straight.el`, or clone this repository and load `copilot.el` manually. (See examples below.)
 
-3. Modify your emacs configuration to load and setup `copilot.el`. (See examples below.)
+3. Modify your emacs configuration to setup `copilot.el`. (See examples below.)
 
 4. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose`.
 
 5. Enjoy!
 
-## Example Configuration
+## Example Configurations
 
-### Spacemacs + company-mode
+### Load `copilot.el`
 
-Inside your `dotspacemacs/user-config`:
+#### Load via `straight.el` (recommended)
+
+
+```elisp
+(use-package copilot
+  :straight (:host github :repo "zerolfx/copilot.el"
+                   :files ("dist" "copilot.el"))
+  :ensure t
+  :config
+  ; provide completion when typing
+  (add-hook 'post-command-hook (lambda ()
+                                 (copilot-clear-overlay)
+                                 (when (evil-insert-state-p)
+                                   (copilot-complete)))))
+```
+
+#### Load manually
 
 ```elisp
 ; Load copilot.el, modify this path to your local path.
+; Please make sure you have these dependencies installed: dash, s, editorconfig
 (load-file "~/.emacs.d/copilot.el")
+; provide completion when typing
+(add-hook 'post-command-hook (lambda ()
+                               (copilot-clear-overlay)
+                               (when (evil-insert-state-p)
+                                 (copilot-complete))))
+```
 
+
+### Accept completion keybindings
+
+#### with `company-mode`
+
+
+```elisp
 ; complete by copilot first, then company-mode
 (defun my-tab ()
   (interactive)
@@ -47,27 +77,6 @@ Inside your `dotspacemacs/user-config`:
   (define-key company-mode-map (kbd "TAB") 'my-tab)
   (define-key company-active-map (kbd "<tab>") 'my-tab)
   (define-key company-active-map (kbd "TAB") 'my-tab))
-
-; provide completion when typing
-(add-hook 'post-command-hook (lambda ()
-                               (copilot-clear-overlay)
-                               (when (evil-insert-state-p)
-                                 (copilot-complete))))
-```
-
-### Straight
-
-```elisp
-(use-package copilot
-  :straight (:host github :repo "zerolfx/copilot.el"
-                   :files ("dist" "copilot.el"))
-  :ensure t
-  :config
-  ; provide completion when typing
-  (add-hook 'post-command-hook (lambda ()
-                                 (copilot-clear-overlay)
-                                 (when (evil-insert-state-p)
-                                   (copilot-complete)))))
 ```
 
 ## Commands

@@ -563,6 +563,7 @@
   "Minor mode for Copilot."
   :init-value nil
   :lighter " Copilot"
+  (copilot-clear-overlay)
   (add-hook 'post-command-hook 'copilot--complete-post-command))
 
 (defun copilot--complete-post-command ()

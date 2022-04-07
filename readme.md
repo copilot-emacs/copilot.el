@@ -35,11 +35,8 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
                    :files ("dist" "copilot.el"))
   :ensure t
   :config
-  ; provide completion when typing
-  (add-hook 'post-command-hook (lambda ()
-                                 (copilot-clear-overlay)
-                                 (when (evil-insert-state-p)
-                                   (copilot-complete)))))
+  ; provide completion when programming
+  (add-hook 'prog-mode-hook 'copilot-mode))
 ```
 
 #### Load manually
@@ -48,11 +45,8 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 ; Load copilot.el, modify this path to your local path.
 ; Please make sure you have these dependencies installed: dash, s, editorconfig
 (load-file "~/.emacs.d/copilot.el")
-; provide completion when typing
-(add-hook 'post-command-hook (lambda ()
-                               (copilot-clear-overlay)
-                               (when (evil-insert-state-p)
-                                 (copilot-complete))))
+; provide completion when programming
+(add-hook 'prog-mode-hook 'copilot-mode)
 ```
 
 
@@ -89,6 +83,10 @@ Check the current status of the plugin.
 
 Login to GitHub, required for using the plugin.
 
+### copilot-mode
+
+Enable/disable copilot mode.
+
 ### copilot-accept-completion
 
 Accept the current completion. You need to bind this to some key.
@@ -110,7 +108,7 @@ Cycle through the completion list. You may need to bind this to some key.
 
 + [x] Setup Copilot without Neovim
 + [x] Cycle through suggestions
-+ [ ] Add Copilot minor-mode
++ [x] Add Copilot minor-mode
 + [ ] Add package to MELPA
 + [ ] Test compatibility with vanilla Emacs and other auto completion packages
 

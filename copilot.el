@@ -549,21 +549,35 @@
 ;; minor mode
 ;;
 
+(defcustom copilot-disable-predicates nil
+  "A list of predicate functions with no argument to disable Copilot. Copilot will be disabled if any predicate returns t."
+  :type 'list
+  :group 'copilot)
+
+(defcustom copilot-enable-predicates nil
+  "A list of predicate functions with no argument to enable Copilot. Copilot will be enabled only if all predicates return t."
+  :type 'list
+  :group 'copilot)
+
 (define-minor-mode copilot-mode
   "Minor mode for Copilot."
   :init-value nil
   :lighter " Copilot"
   (add-hook 'post-command-hook 'copilot--complete-post-command))
 
-
 (defun copilot--complete-post-command ()
   "Complete in post-command hook."
   (when copilot-mode
     (unless (and (symbolp this-command)
-                (s-starts-with-p "copilot-" (symbol-name this-command)))
+                 (s-starts-with-p "copilot-" (symbol-name this-command)))
       (copilot-clear-overlay)
-      (when (evil-insert-state-p)
-        (copilot-complete)))))
+      (when (and (cl-every (lambda (pred)
+                             (if (functionp pred) (funcall pred) t))
+                          copilot-enable-predicates)
+                 (cl-notany (lambda (pred)
+                              (if (functionp pred) (funcall pred) f))
+                            copilot-disable-predicates))
+          (copilot-complete)))))
 
 (provide 'copilot)
 ;;; copilot.el ends here

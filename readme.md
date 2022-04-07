@@ -14,17 +14,15 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 1. Install [Node.js](https://nodejs.org/en/download/) 12 or newer.
 
-2. Install package via `straight.el`, or clone this repository and load `copilot.el` manually. (See examples below.)
+2. Setup `copilot.el` as described in the next section.
 
-3. Modify your emacs configuration to setup `copilot.el`. (See examples below.)
+3. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose`.
 
-4. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose`.
+4. Enjoy!
 
-5. Enjoy!
+## Configurations
 
-## Example Configurations
-
-### Load `copilot.el`
+### 1. Load `copilot.el`
 
 #### Load via `straight.el` (recommended)
 
@@ -33,28 +31,51 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 (use-package copilot
   :straight (:host github :repo "zerolfx/copilot.el"
                    :files ("dist" "copilot.el"))
-  :ensure t
-  :config
-  ; provide completion when programming
-  (add-hook 'prog-mode-hook 'copilot-mode))
+  :ensure t)
+; you can put your other copilot configurations under :config
 ```
 
 #### Load manually
 
+Please make sure you have these dependencies installed:
+
++ `dash`
++ `s`
++ `editorconfig`
+
 ```elisp
 ; Load copilot.el, modify this path to your local path.
-; Please make sure you have these dependencies installed: dash, s, editorconfig
-(load-file "~/.emacs.d/copilot.el")
-; provide completion when programming
-(add-hook 'prog-mode-hook 'copilot-mode)
+(load-file "~/path/to/copilot.el")
 ```
 
 
-### Accept completion keybindings
+### 2. Configure completion
 
-#### with `company-mode`
+#### Use `copilot-mode` to automatically provide completions
+
+```elisp
+; enable copilot in programming modes
+(add-hook 'prog-mode-hook 'copilot-mode)
+```
+
+For evil users, you will want to add this line to have completions only when in insert state:
+
+```elisp
+(customize-set-variable 'copilot-enable-predicates '(evil-insert-state-p))
+```
+
+To customize the behavior of `copilot-mode`, please check `copilot-enable-predicates` and `copilot-disable-predicates`.
+
+#### Manually provide completions
+
+You need to bind `copilot-complete` to some key and add a wrapped `copilot-clear-overlay` to `post-command-hook`.
 
 
+### 3. Configure completion acceptation
+
+In general, you need to bind `copilot-accept-completion` to some key in order to accept the completion.
+
+#### Example of using tab with `company-mode`
 ```elisp
 ; complete by copilot first, then company-mode
 (defun my-tab ()
@@ -77,7 +98,7 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 ### copilot-diagnose
 
-Check the current status of the plugin.
+Check the current status of the plugin. Also you can check error logs in the `*copilot-log*` buffer.
 
 ### copilot-login
 
@@ -89,20 +110,31 @@ Enable/disable copilot mode.
 
 ### copilot-accept-completion
 
-Accept the current completion. You need to bind this to some key.
+Accept the current completion.
 
 ### copilot-complete
 
-Try to complete at the current point. You need to hook some function to this.
+Try to complete at the current point.
 
 ### copilot-clear-overlay
 
-Clear copilot overlay in the current buffer. You may need to hook some function to this.
+Clear copilot overlay in the current buffer.
 
 ### copilot-next-completion / copilot-previous-completion
 
-Cycle through the completion list. You may need to bind this to some key.
+Cycle through the completion list.
 
+## Customization
+
+### copilot-idle-delay
+
+Time in seconds to wait before starting completion (default to 0). Note Copilot itself has a ~100ms delay because of network communication.
+
+### copilot-enable-predicates
+A list of predicate functions with no argument to enable Copilot. Copilot will be enabled only if all predicates return `t`.
+
+### copilot-disable-predicates
+A list of predicate functions with no argument to disable Copilot. Copilot will be disabled if any predicate returns `t`.
 
 ## Roadmap
 

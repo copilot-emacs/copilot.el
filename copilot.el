@@ -545,5 +545,25 @@
               (completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
           (copilot--show-completion completion))))))
 
+;;
+;; minor mode
+;;
+
+(define-minor-mode copilot-mode
+  "Minor mode for Copilot."
+  :init-value nil
+  :lighter " Copilot"
+  (add-hook 'post-command-hook 'copilot--complete-post-command))
+
+
+(defun copilot--complete-post-command ()
+  "Complete in post-command hook."
+  (when copilot-mode
+    (unless (and (symbolp this-command)
+                (s-starts-with-p "copilot-" (symbol-name this-command)))
+      (copilot-clear-overlay)
+      (when (evil-insert-state-p)
+        (copilot-complete)))))
+
 (provide 'copilot)
 ;;; copilot.el ends here

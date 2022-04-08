@@ -559,6 +559,7 @@
   :type 'list
   :group 'copilot)
 
+;;;###autoload
 (define-minor-mode copilot-mode
   "Minor mode for Copilot."
   :init-value nil

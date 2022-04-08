@@ -24,7 +24,7 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 ### 1. Load `copilot.el`
 
-#### Load via `straight.el` (recommended)
+#### Option 1: Load via `straight.el` (recommended)
 
 
 ```elisp
@@ -35,7 +35,7 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 ; you can put your other copilot configurations under :config
 ```
 
-#### Load manually
+#### Option 2: Load manually
 
 Please make sure you have these dependencies installed:
 
@@ -51,7 +51,7 @@ Please make sure you have these dependencies installed:
 
 ### 2. Configure completion
 
-#### Use `copilot-mode` to automatically provide completions
+#### Option 1: Use `copilot-mode` to automatically provide completions
 
 ```elisp
 ; enable copilot in programming modes
@@ -66,7 +66,7 @@ For evil users, you will want to add this line to have completions only when in 
 
 To customize the behavior of `copilot-mode`, please check `copilot-enable-predicates` and `copilot-disable-predicates`.
 
-#### Manually provide completions
+#### Option 2: Manually provide completions
 
 You need to bind `copilot-complete` to some key and add a wrapped `copilot-clear-overlay` to `post-command-hook`.
 
@@ -94,47 +94,67 @@ In general, you need to bind `copilot-accept-completion` to some key in order to
   (define-key company-active-map (kbd "TAB") 'my-tab))
 ```
 
+#### Example of using tab with `auto-complete`
+
+```elisp
+; complete by copilot first, then auto-complete
+(defun my-tab ()
+  (interactive)
+  (or (copilot-accept-completion)
+      (ac-expand nil)))
+
+(with-eval-after-load 'auto-complete
+  ; disable inline preview
+  (setq ac-disable-inline t)
+  ; show menu if have only one candidate
+  (setq ac-candidate-menu-min 0)
+  (define-key ac-completing-map (kbd "TAB") 'my-tab)
+  (define-key ac-completing-map (kbd "<tab>") 'my-tab))
+
+(define-key global-map [remap indent-for-tab-command] 'my-tab)
+```
+
 ## Commands
 
-### copilot-diagnose
+#### copilot-diagnose
 
 Check the current status of the plugin. Also you can check error logs in the `*copilot-log*` buffer.
 
-### copilot-login
+#### copilot-login
 
 Login to GitHub, required for using the plugin.
 
-### copilot-mode
+#### copilot-mode
 
 Enable/disable copilot mode.
 
-### copilot-accept-completion
+#### copilot-accept-completion
 
 Accept the current completion.
 
-### copilot-complete
+#### copilot-complete
 
 Try to complete at the current point.
 
-### copilot-clear-overlay
+#### copilot-clear-overlay
 
 Clear copilot overlay in the current buffer.
 
-### copilot-next-completion / copilot-previous-completion
+#### copilot-next-completion / copilot-previous-completion
 
 Cycle through the completion list.
 
 ## Customization
 
-### copilot-idle-delay
+#### copilot-idle-delay
 
 Time in seconds to wait before starting completion (default to 0). Note Copilot itself has a ~100ms delay because of network communication.
 
-### copilot-enable-predicates
-A list of predicate functions with no argument to enable Copilot. Copilot will be enabled only if all predicates return `t`.
+#### copilot-enable-predicates
+A list of predicate functions with no argument to enable Copilot in `copilot-mode`. Copilot will be enabled only if all predicates return `t`.
 
-### copilot-disable-predicates
-A list of predicate functions with no argument to disable Copilot. Copilot will be disabled if any predicate returns `t`.
+#### copilot-disable-predicates
+A list of predicate functions with no argument to disable Copilot in `copilot-mode`. Copilot will be disabled if any predicate returns `t`.
 
 ## Roadmap
 

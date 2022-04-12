@@ -128,17 +128,21 @@ Login to GitHub, required for using the plugin.
 
 Enable/disable copilot mode.
 
-#### copilot-accept-completion
-
-Accept the current completion.
-
 #### copilot-complete
 
 Try to complete at the current point.
 
+#### copilot-accept-completion
+
+Accept the current completion.
+
 #### copilot-clear-overlay
 
 Clear copilot overlay in the current buffer.
+
+#### copilot-accept-completion-by-line / copilot-accept-completion-by-word
+
+Similar to `copilot-accept-completion`, but accept the completion by line or word. You can use prefix argument to specify the number of lines or words to accept.
 
 #### copilot-next-completion / copilot-previous-completion
 

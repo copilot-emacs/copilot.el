@@ -508,16 +508,51 @@
     (delete-overlay copilot--overlay)
     (setq copilot--overlay nil)))
 
-(defun copilot-accept-completion ()
-  "Accept completion. Return t if there is a completion."
+(defun copilot-accept-completion (&optional transform-fn)
+  "Accept completion. Return t if there is a completion. Use TRANSFORM-FN to transform completion if provided."
   (interactive)
   (when copilot--overlay
-    (let ((completion (overlay-get copilot--overlay 'completion))
-          (start (overlay-get copilot--overlay 'start)))
+    (let* ((completion (overlay-get copilot--overlay 'completion))
+           (start (overlay-get copilot--overlay 'start))
+           (t-completion (funcall (or transform-fn 'identity) completion)))
       (copilot-clear-overlay)
       (delete-region start (line-end-position))
-      (insert completion)
+      (insert t-completion)
+      ; trigger completion again if not fully accepted
+      (unless (equal completion t-completion)
+        (copilot-complete))
       t)))
+
+(defun copilot-accept-completion-by-word (n-word)
+  "Accept first N-WORD words of completion."
+  (interactive "p")
+  (setq n-word (or n-word 1))
+  (copilot-accept-completion (lambda (completion)
+                               (let* ((blank-regexp '(any blank "\r" "\n"))
+                                      (separator-regexp (rx-to-string
+                                                         `(seq
+                                                           (not ,blank-regexp)
+                                                           (1+ ,blank-regexp))))
+                                      (words (s-split-up-to separator-regexp completion n-word))
+                                      (remain (if (<= (length words) n-word)
+                                                  ""
+                                                (first (last words))))
+                                      (length (- (length completion) (length remain)))
+                                      (prefix (substring completion 0 length)))
+                                 (s-trim-right prefix)))))
+
+(defun copilot-accept-completion-by-line (n-line)
+  "Accept first N-LINE lines of completion."
+  (interactive "p")
+  (setq n-line (or n-line 1))
+  (copilot-accept-completion (lambda (completion)
+                               (let* ((lines (s-split-up-to (rx anychar (? "\r") "\n") completion n-line))
+                                      (remain (if (<= (length lines) n-line)
+                                                  ""
+                                                (first (last lines))))
+                                      (length (- (length completion) (length remain)))
+                                      (prefix (substring completion 0 length)))
+                                 prefix))))
 
 (defun copilot--show-completion (completion)
   "Show COMPLETION."

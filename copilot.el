@@ -574,13 +574,17 @@ CURRENT-POS is the current position (for verification only)."
   (setq copilot--completion-cache nil)
   (setq copilot--completion-idx 0)
 
-  (when (buffer-file-name)
-    (copilot--get-completion
-     (lambda (result)
-     (copilot--log "[INFO] Completion: %S" result)
-       (let* ((completions (alist-get 'completions result))
-              (completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
-          (copilot--show-completion completion))))))
+  (let ((called-interactively (called-interactively-p 'interactive)))
+    (when (buffer-file-name)
+      (copilot--get-completion
+      (lambda (result)
+        (copilot--log "[INFO] Completion: %S" result)
+        (let* ((completions (alist-get 'completions result))
+                (completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
+          (when (and (not completion)
+                     called-interactively)
+            (message "No completion is available."))
+          (copilot--show-completion completion)))))))
 
 ;;
 ;; minor mode

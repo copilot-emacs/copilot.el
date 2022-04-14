@@ -465,8 +465,9 @@
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
 
-(defun copilot-display-overlay-completion (completion line col)
-  "Show COMPLETION in overlay at LINE and COL. For Copilot, COL is always 0."
+(defun copilot-display-overlay-completion (completion line col current-pos)
+  "Show COMPLETION in overlay at LINE and COL. For Copilot, COL is always 0.
+CURRENT-POS is the current position (for verification only)."
   (copilot-clear-overlay)
   (save-excursion
     (widen)
@@ -486,7 +487,8 @@
       (setq completion (substring completion common-prefix-len))
       (forward-char common-prefix-len))
 
-    (unless (s-blank? completion)
+    (when (and (s-present-p completion)
+               (= current-pos (point)))
       (let* ((ov (make-overlay (point) (point-at-eol) nil t t))
              (p-completion (propertize completion 'face 'copilot-overlay-face))
              (display (substring p-completion 0 1))
@@ -562,7 +564,7 @@
            (start (alist-get 'start range))
            (start-line (alist-get 'line start))
            (start-char (alist-get 'character start)))
-      (copilot-display-overlay-completion text start-line start-char))))
+      (copilot-display-overlay-completion text start-line start-char (point)))))
 
 (defun copilot-complete ()
   "Complete at the current point."

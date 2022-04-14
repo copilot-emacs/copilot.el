@@ -321,7 +321,6 @@
       ((result (copilot--agent-http-request "https://api.github.com/user"
                                             `(:method "GET"
                                                       :headers (:Authorization ,(concat "Bearer " access-token))))))
-    (message "RESULT: %S" result)
     (if (equal (alist-get 'status result) 200)
         (alist-get 'login result)
       (message "Failed to get user info.")
@@ -465,9 +464,9 @@
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
 
-(defun copilot-display-overlay-completion (completion line col current-pos)
+(defun copilot-display-overlay-completion (completion line col user-pos)
   "Show COMPLETION in overlay at LINE and COL. For Copilot, COL is always 0.
-CURRENT-POS is the current position (for verification only)."
+USER-POS is the cursor position (for verification only)."
   (copilot-clear-overlay)
   (save-excursion
     (widen)
@@ -488,7 +487,9 @@ CURRENT-POS is the current position (for verification only)."
       (forward-char common-prefix-len))
 
     (when (and (s-present-p completion)
-               (= current-pos (point)))
+               (or (= (point) user-pos) ; up-to-date completion
+                   (and (< (point) user-pos) ; special case for removing indentation
+                        (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
       (let* ((ov (make-overlay (point) (point-at-eol) nil t t))
              (p-completion (propertize completion 'face 'copilot-overlay-face))
              (display (substring p-completion 0 1))

@@ -85,6 +85,10 @@
     "node")
   "Node executable name.")
 
+(defconst copilot--ignore-response
+  (lambda (response))
+  "Simply ignore the response.")
+
 (defun copilot--start-process ()
   "Start the copilot agent process."
   (if (not (locate-file copilot--node exec-path))
@@ -226,10 +230,13 @@
     (when err
       (copilot--log "[ERROR] Error in response: %S\n[ERROR] Response:%S\n" err content))
     (if (not id)
-        (copilot--log "[INFO] Discard message without id: %S" content)
+        (if (equal (alist-get 'method content) "LogMessage")
+            (copilot--log "[Agent] %s" (alist-get 'message (alist-get 'params content)))
+          (copilot--log "[INFO] Discard message without id: %S" content))
       (funcall (alist-get id copilot--callbacks)
                (cons (cons 'error err) result))
       (assq-delete-all id copilot--callbacks))))
+
 
 ;;
 ;; login
@@ -396,7 +403,7 @@
       tab-width))
 
 (defun copilot--generate-doc ()
-  "Generate doc param for completion request."
+  "Generate doc parameters for completion request."
   (list :source (concat (buffer-substring-no-properties (point-min) (point-max)) "\n")
         :tabSize (copilot--infer-indentation-offset)
         :indentSize (copilot--infer-indentation-offset)
@@ -464,8 +471,8 @@
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
 
-(defun copilot-display-overlay-completion (completion line col user-pos)
-  "Show COMPLETION in overlay at LINE and COL. For Copilot, COL is always 0.
+(defun copilot-display-overlay-completion (completion uuid line col user-pos)
+  "Show COMPLETION with UUID in overlay at LINE and COL. For Copilot, COL is always 0.
 USER-POS is the cursor position (for verification only)."
   (copilot-clear-overlay)
   (save-excursion
@@ -496,20 +503,26 @@ USER-POS is the cursor position (for verification only)."
              (after-string (substring p-completion 1)))
         (overlay-put ov 'completion completion)
         (overlay-put ov 'start (point))
+        (overlay-put ov 'uuid uuid)
         (if (equal (overlay-start ov) (overlay-end ov))
             (progn
               (put-text-property 0 1 'cursor t p-completion)
               (overlay-put ov 'after-string p-completion))
           (overlay-put ov 'display display)
           (overlay-put ov 'after-string after-string))
-        (setq copilot--overlay ov)))))
+        (setq copilot--overlay ov)
+        (funcall (copilot--agent-request "notifyShown" (list :uuid uuid)) copilot--ignore-response)))))
 
 (defun copilot-clear-overlay ()
   "Clear Copilot overlay."
   (interactive)
   (when copilot--overlay
+    (funcall (copilot--agent-request "notifyRejected"
+                                     (list :uuids `[,(overlay-get copilot--overlay 'uuid)]))
+             copilot--ignore-response)
     (delete-overlay copilot--overlay)
     (setq copilot--overlay nil)))
+
 
 (defun copilot-accept-completion (&optional transform-fn)
   "Accept completion. Return t if there is a completion. Use TRANSFORM-FN to transform completion if provided."
@@ -517,7 +530,9 @@ USER-POS is the cursor position (for verification only)."
   (when copilot--overlay
     (let* ((completion (overlay-get copilot--overlay 'completion))
            (start (overlay-get copilot--overlay 'start))
+           (uuid (overlay-get copilot--overlay 'uuid))
            (t-completion (funcall (or transform-fn 'identity) completion)))
+      (funcall (copilot--agent-request "notifyAccepted" (list :uuid uuid)) copilot--ignore-response)
       (copilot-clear-overlay)
       (delete-region start (line-end-position))
       (insert t-completion)
@@ -561,11 +576,12 @@ USER-POS is the cursor position (for verification only)."
   "Show COMPLETION."
   (when completion
     (let* ((text (alist-get 'text completion))
+           (uuid (alist-get 'uuid completion))
            (range (alist-get 'range completion))
            (start (alist-get 'start range))
            (start-line (alist-get 'line start))
            (start-char (alist-get 'character start)))
-      (copilot-display-overlay-completion text start-line start-char (point)))))
+      (copilot-display-overlay-completion text uuid start-line start-char (point)))))
 
 (defun copilot-complete ()
   "Complete at the current point."

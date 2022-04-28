@@ -217,14 +217,16 @@
           (when (>= (length copilot--output-buffer) full-length)
             (let ((content (copilot--substring-raw copilot--output-buffer (length header) full-length)))
               (setq copilot--output-buffer (copilot--substring-raw copilot--output-buffer full-length))
-              (copilot--process-response content)
+              (let ((content (ignore-errors (json-read-from-string content))))
+                (if content
+                    (copilot--process-response content)
+                  (copilot--log "[ERROR] Failed to parse response: %S" content)))
               ; rerun filter to process remaining output
               (copilot--process-filter process nil))))))))
 
 (defun copilot--process-response (content)
   "Process a response message with CONTENT."
-  (let* ((content (json-read-from-string content))
-         (result (alist-get 'result content))
+  (let* ((result (alist-get 'result content))
          (err (alist-get 'error content))
          (id (alist-get 'id content)))
     (when err

@@ -499,19 +499,15 @@ USER-POS is the cursor position (for verification only)."
                (or (= (point) user-pos) ; up-to-date completion
                    (and (< (point) user-pos) ; special case for removing indentation
                         (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
-      (let* ((ov (make-overlay (point) (point-at-eol) nil t t))
-             (p-completion (propertize completion 'face 'copilot-overlay-face))
+      (let* ((ov (make-overlay (point) (1+ (point-at-eol)) nil t t))
+             (p-completion (propertize (concat completion "\n") 'face 'copilot-overlay-face))
              (display (substring p-completion 0 1))
              (after-string (substring p-completion 1)))
         (overlay-put ov 'completion completion)
         (overlay-put ov 'start (point))
         (overlay-put ov 'uuid uuid)
-        (if (equal (overlay-start ov) (overlay-end ov))
-            (progn
-              (put-text-property 0 1 'cursor t p-completion)
-              (overlay-put ov 'after-string p-completion))
-          (overlay-put ov 'display display)
-          (overlay-put ov 'after-string after-string))
+        (overlay-put ov 'display display)
+        (overlay-put ov 'after-string after-string)
         (setq copilot--overlay ov)
         (funcall (copilot--agent-request "notifyShown" (list :uuid uuid)) copilot--ignore-response)))))
 

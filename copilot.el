@@ -404,6 +404,18 @@
                    (alist-get mode copilot--indentation-alist))))
       tab-width))
 
+(defun copilot--get-relative-path ()
+  "Get relative path to current buffer."
+  (cond
+   ((not buffer-file-name)
+    "")
+   ((boundp projectile-project-root)
+    (file-relative-name buffer-file-name (projectile-project-root)))
+   ((boundp vc-root-dir)
+    (file-relative-name buffer-file-name (vc-root-dir)))
+   (t
+    (file-name-nondirectory buffer-file-name))))
+
 (defun copilot--generate-doc ()
   "Generate doc parameters for completion request."
   (list :source (concat (buffer-substring-no-properties (point-min) (point-max)) "\n")
@@ -411,7 +423,7 @@
         :indentSize (copilot--infer-indentation-offset)
         :insertSpaces (if indent-tabs-mode :false t)
         :path (buffer-file-name)
-        :relativePath (file-name-nondirectory (buffer-file-name))
+        :relativePath (copilot--get-relative-path)
         :languageId (s-chop-suffix "-mode" (symbol-name major-mode))
         :position (list :line (1- (line-number-at-pos))
                         :character (length (buffer-substring-no-properties (point-at-bol) (point))))))

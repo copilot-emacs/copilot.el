@@ -564,7 +564,7 @@ USER-POS is the cursor position (for verification only)."
                                       (words (s-split-up-to separator-regexp completion n-word))
                                       (remain (if (<= (length words) n-word)
                                                   ""
-                                                (first (last words))))
+                                                (cl-first (last words))))
                                       (length (- (length completion) (length remain)))
                                       (prefix (substring completion 0 length)))
                                  (s-trim-right prefix)))))
@@ -577,7 +577,7 @@ USER-POS is the cursor position (for verification only)."
                                (let* ((lines (s-split-up-to (rx anychar (? "\r") "\n") completion n-line))
                                       (remain (if (<= (length lines) n-line)
                                                   ""
-                                                (first (last lines))))
+                                                (cl-first (last lines))))
                                       (length (- (length completion) (length remain)))
                                       (prefix (substring completion 0 length)))
                                  prefix))))

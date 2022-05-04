@@ -622,7 +622,7 @@ USER-POS is the cursor position (for verification only)."
   :type 'list
   :group 'copilot)
 
-(defcustom copilot-enable-predicates nil
+(defcustom copilot-enable-predicates '(evil-insert-state-p)
   "A list of predicate functions with no argument to enable Copilot. Copilot will be enabled only if all predicates return t."
   :type 'list
   :group 'copilot)

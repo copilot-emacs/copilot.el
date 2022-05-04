@@ -6,8 +6,6 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 **Warning:** This plugin is unofficial and based on binaries provided by [copilot.vim](https://github.com/github/copilot.vim).
 
-**Warning:** This plugin is under development. The name of commands and variables may change in the future.
-
 **Note:** You need access to Copilot technical preview to use this plugin.
 
 ## Installation
@@ -22,60 +20,126 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 ## Configurations
 
-### 1. Load `copilot.el`
+### Example for Doom Emacs 
 
-#### Option 1: Load via `straight.el` (recommended)
+Add package definition to `~/.doom.d/packages.el`:
+
+```elisp
+(package! copilot
+  :recipe (:host github :repo "zerolfx/copilot.el" :files ("*.el" "dist")))
+```
+
+Configure copilot in `~/.doom.d/config.el`:
+
+```elisp
+;; accept completion from copilot and fallback to company
+(defun my-tab ()
+  (interactive)
+  (or (copilot-accept-completion)
+      (company-indent-or-complete-common nil)))
+
+(use-package! copilot
+  :hook (prog-mode . copilot-mode)
+  :bind (("C-TAB" . 'copilot-accept-completion-by-word)
+         ("C-<tab>" . 'copilot-accept-completion-by-word)
+         :map company-active-map
+         ("<tab>" . 'my-tab)
+         ("TAB" . 'my-tab)
+         :map company-mode-map
+         ("<tab>" . 'my-tab)
+         ("TAB" . 'my-tab)))
+```
+
+Recommend to enable `childframe` option in `company` module (`(company +childframe)`) to prevent overlay conflict.
+
+### Example for Spacemacs
+
+Edit your `~/.spacemacs`:
+
+```elisp
+;; ===================
+;; dotspacemacs/layers
+;; ===================
+
+;; add copilot.el to additional packages
+dotspacemacs-additional-packages
+ '((copilot :location (recipe
+                       :fetcher github
+                       :repo "zerolfx/copilot.el"
+                       :files ("*.el" "dist"))))
+
+;; ========================
+;; dotspacemacs/user-config
+;; ========================
+
+;; accept completion from copilot and fallback to company
+(defun my-tab ()
+  (interactive)
+  (or (copilot-accept-completion)
+      (company-indent-or-complete-common nil)))
+
+(with-eval-after-load 'company
+  ;; disable inline previews
+  (delq 'company-preview-if-just-one-frontend company-frontends)
+  ;; enable tab completion
+  (define-key company-mode-map (kbd "<tab>") 'my-tab)
+  (define-key company-mode-map (kbd "TAB") 'my-tab)
+  (define-key company-active-map (kbd "<tab>") 'my-tab)
+  (define-key company-active-map (kbd "TAB") 'my-tab))
+
+
+(add-hook 'prog-mode-hook 'copilot-mode)
+
+(define-key evil-insert-state-map (kbd "C-<tab>") 'copilot-accept-completion-by-word)
+(define-key evil-insert-state-map (kbd "C-TAB") 'copilot-accept-completion-by-word)
+```
+
+
+### General Configurations
+
+#### 1. Load `copilot.el`
+
+##### Option 1: Load via `straight.el` (recommended)
 
 
 ```elisp
 (use-package copilot
-  :straight (:host github :repo "zerolfx/copilot.el"
-                   :files ("dist" "copilot.el"))
+  :straight (:host github :repo "zerolfx/copilot.el" :files ("dist" "*.el"))
   :ensure t)
-; you can put your other copilot configurations under :config
+;; you can utilize :map :hook and :config to customize copilot
 ```
 
-#### Option 2: Load manually
 
-Please make sure you have these dependencies installed:
+##### Option 2: Load manually
+
+Please make sure you have these dependencies installed, and use `load-file` or `load-path` + `require` to load it.
 
 + `dash`
 + `s`
 + `editorconfig`
 
-```elisp
-; Load copilot.el, modify this path to your local path.
-(load-file "~/path/to/copilot.el")
-```
 
+#### 2. Configure completion
 
-### 2. Configure completion
-
-#### Option 1: Use `copilot-mode` to automatically provide completions
+##### Option 1: Use `copilot-mode` to automatically provide completions
 
 ```elisp
-; enable copilot in programming modes
 (add-hook 'prog-mode-hook 'copilot-mode)
-```
-
-For evil users, you will want to add this line to have completions only when in insert state:
-
-```elisp
-(customize-set-variable 'copilot-enable-predicates '(evil-insert-state-p))
 ```
 
 To customize the behavior of `copilot-mode`, please check `copilot-enable-predicates` and `copilot-disable-predicates`.
 
-#### Option 2: Manually provide completions
+##### Option 2: Manually provide completions
 
-You need to bind `copilot-complete` to some key and add a wrapped `copilot-clear-overlay` to `post-command-hook`.
+You need to bind `copilot-complete` to some key and call `copilot-clear-overlay` inside `post-command-hook`.
 
 
-### 3. Configure completion acceptation
+#### 3. Configure completion acceptation
 
-In general, you need to bind `copilot-accept-completion` to some key in order to accept the completion.
+In general, you need to bind `copilot-accept-completion` to some key in order to accept the completion. Also, you may find `copilot-accept-completion-by-word` is useful.
 
 #### Example of using tab with `company-mode`
+
 ```elisp
 ; complete by copilot first, then company-mode
 (defun my-tab ()
@@ -85,9 +149,9 @@ In general, you need to bind `copilot-accept-completion` to some key in order to
 
 ; modify company-mode behaviors
 (with-eval-after-load 'company
-  ; disable inline previews
+  ;; disable inline previews
   (delq 'company-preview-if-just-one-frontend company-frontends)
-  ; enable tab completion
+
   (define-key company-mode-map (kbd "<tab>") 'my-tab)
   (define-key company-mode-map (kbd "TAB") 'my-tab)
   (define-key company-active-map (kbd "<tab>") 'my-tab)
@@ -108,10 +172,14 @@ In general, you need to bind `copilot-accept-completion` to some key in order to
   (setq ac-disable-inline t)
   ; show menu if have only one candidate
   (setq ac-candidate-menu-min 0)
+
   (define-key ac-completing-map (kbd "TAB") 'my-tab)
   (define-key ac-completing-map (kbd "<tab>") 'my-tab))
 
-(define-key global-map [remap indent-for-tab-command] 'my-tab)
+(define-key global-map [remap indent-for-tab-command] '(lambda ()
+                                                         (interactive)
+                                                         (or (copilot-accept-completion)
+                                                             (indent-for-tab-command))))
 ```
 
 ## Commands
@@ -165,8 +233,7 @@ A list of predicate functions with no argument to disable Copilot in `copilot-mo
 + [x] Setup Copilot without Neovim
 + [x] Cycle through suggestions
 + [x] Add Copilot minor-mode
-+ [ ] Add package to MELPA
-+ [ ] Test compatibility with vanilla Emacs and other auto completion packages
++ [ ] ~~Add package to MELPA~~
 
 ## Thanks
 

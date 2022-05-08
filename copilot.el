@@ -409,9 +409,9 @@
   (cond
    ((not buffer-file-name)
     "")
-   ((boundp projectile-project-root)
+   ((boundp 'projectile-project-root)
     (file-relative-name buffer-file-name (projectile-project-root)))
-   ((boundp vc-root-dir)
+   ((boundp 'vc-root-dir)
     (file-relative-name buffer-file-name (vc-root-dir)))
    (t
     (file-name-nondirectory buffer-file-name))))

@@ -108,7 +108,10 @@
                             :filter 'copilot--process-filter
                             :sentinel 'copilot--process-sentinel
                             :noquery t))
-        (message "Copilot agent started.")))))
+        (message "Copilot agent started.")
+        (funcall (copilot--agent-request "initialize" (list :capabilities nil))
+                 (lambda (response)
+                   (copilot--log "[Initialize] %S" response)))))))
 
 
 (defun copilot--kill-process ()
@@ -208,12 +211,12 @@
     (if (and (not header-match) (> (length copilot--output-buffer) 50))
         (progn
           (copilot--log "[Warning] Copilot agent output buffer reset.")
-          (copilot--log "[Warning] Before reset:%S\n" copilot--output-buffer)
+          (copilot--log "[Warning] Before reset: %S\n" copilot--output-buffer)
           (setq copilot--output-buffer nil))
       (when header-match
         (let* ((header (car header-match))
-              (content-length (string-to-number (cadr header-match)))
-              (full-length (+ (length header) content-length)))
+               (content-length (string-to-number (cadr header-match)))
+               (full-length (+ (length header) content-length)))
           (when (>= (length copilot--output-buffer) full-length)
             (let ((content (copilot--substring-raw copilot--output-buffer (length header) full-length)))
               (setq copilot--output-buffer (copilot--substring-raw copilot--output-buffer full-length))
@@ -352,10 +355,11 @@
 (defun copilot--diagnose-access ()
   "Diagnose Copilot access with a dummy completion request."
   (copilot--let-req-async ((result (copilot--agent-request "getCompletions"
-                                                           '(:doc (:source ""
+                                                           '(:doc (:source "\n"
                                                                    :path ""
+                                                                   :uri ""
                                                                    :relativePath ""
-                                                                   :languageId ""
+                                                                   :languageId "text"
                                                                    :position (:line 0 :character 0))))))
 
     (let ((err (alist-get 'error result)))
@@ -416,6 +420,16 @@
    (t
     (file-name-nondirectory buffer-file-name))))
 
+(defun copilot--get-uri ()
+  "Get URI of current buffer."
+  (cond
+   ((not buffer-file-name)
+    "")
+   ((eq system-type 'windows-nt)
+    (concat "file:///" (url-encode-url buffer-file-name)))
+   (t
+    (concat "file://" (url-encode-url buffer-file-name)))))
+
 (defun copilot--generate-doc ()
   "Generate doc parameters for completion request."
   (list :source (concat (buffer-substring-no-properties (point-min) (point-max)) "\n")
@@ -423,6 +437,7 @@
         :indentSize (copilot--infer-indentation-offset)
         :insertSpaces (if indent-tabs-mode :false t)
         :path (buffer-file-name)
+        :uri (copilot--get-uri)
         :relativePath (copilot--get-relative-path)
         :languageId (s-chop-suffix "-mode" (symbol-name major-mode))
         :position (list :line (1- (line-number-at-pos))

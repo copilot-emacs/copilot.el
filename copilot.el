@@ -517,8 +517,8 @@ USER-POS is the cursor position (for verification only)."
       (forward-char col))
 
     ; remove common prefix
-    (let* ((cur-line (s-chop-suffix "\n" (thing-at-point 'line)))
-            (common-prefix-len (length (s-shared-start completion cur-line))))
+    (let* ((cur-line (s-chop-suffix "\n" (or (thing-at-point 'line) "")))
+           (common-prefix-len (length (s-shared-start completion cur-line))))
       (setq completion (substring completion common-prefix-len))
       (forward-char common-prefix-len))
 

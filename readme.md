@@ -22,6 +22,8 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 ### Example for Doom Emacs 
 
+<details>
+
 Add package definition to `~/.doom.d/packages.el`:
 
 ```elisp
@@ -50,9 +52,13 @@ Configure copilot in `~/.doom.d/config.el`:
          ("TAB" . 'my-tab)))
 ```
 
-Recommend to enable `childframe` option in `company` module (`(company +childframe)`) to prevent overlay conflict.
+Strongly recommend to enable `childframe` option in `company` module (`(company +childframe)`) to prevent overlay conflict.
+
+</details>
 
 ### Example for Spacemacs
+
+<details>
 
 Edit your `~/.spacemacs`:
 
@@ -94,8 +100,11 @@ dotspacemacs-additional-packages
 (define-key evil-insert-state-map (kbd "C-TAB") 'copilot-accept-completion-by-word)
 ```
 
+</details>
 
 ### General Configurations
+
+<details>
 
 #### 1. Load `copilot.el`
 
@@ -182,6 +191,8 @@ In general, you need to bind `copilot-accept-completion` to some key in order to
                                                              (indent-for-tab-command))))
 ```
 
+</details>
+
 ## Commands
 
 #### copilot-diagnose
@@ -218,6 +229,10 @@ Cycle through the completion list.
 
 ## Customization
 
+#### copilot-overlay-safe
+
+Disable to have better visual effect, but may conflict with other plugins using overlay. See known issues for more details. Enabled by default.
+
 #### copilot-idle-delay
 
 Time in seconds to wait before starting completion (default to 0). Note Copilot itself has a ~100ms delay because of network communication.
@@ -227,6 +242,34 @@ A list of predicate functions with no argument to enable Copilot in `copilot-mod
 
 #### copilot-disable-predicates
 A list of predicate functions with no argument to disable Copilot in `copilot-mode`. Copilot will be disabled if any predicate returns `t`.
+
+## Known Issues
+
+### Wrong Cursor Position
+
+![](assets/ov-safe-enable.png)
+
+Because of the limitation of overlay, the cursor position is wrong when showing completion at the end of lines.
+You can try to disable `copilot-overlay-safe` to solve the problem (except when showing completion at the end of buffer), 
+but at the cost of introducing conflicts with other plugins (e.g. `visual-line-mode`, `annotate.el`).
+
+After disabling `copilot-overlay-safe`, you have:
+
+![](assets/ov-safe-disable.png)
+
+### Wrong Position of Other Completion Popups
+
+![](assets/company-overlay.png)
+
+This is an example of using together with default frontend of `company-mode`. Because both `company-mode` and `copilot.el` use overlay to show completion, so the conflict is inevitable.
+To solve the problem, I recommend you to use `company-box` (only available on GUI), which is based on child frame rather than overlay.
+
+After using `company-box`, you have:
+
+![](assets/company-box.png)
+
+In other editors (e.g. `VS Code`, `PyCharm`), completions from copilot and other sources can not show at the same time.
+But I decided to allow them to coexist, allowing you to choose a better one at any time.
 
 ## Roadmap
 

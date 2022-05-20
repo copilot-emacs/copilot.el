@@ -24,6 +24,12 @@
   :group 'copilot
   :type 'integer)
 
+(defcustom copilot-overlay-safe 't
+  "Disable to have better visual feedback when complete at the end of lines.
+Enable to prevent some overlay compatibility conflicts with other packages."
+  :group 'copilot
+  :type 'boolean)
+
 (defconst copilot--log-name "*copilot-log*"
   "Name of the copilot log buffer.")
 
@@ -86,7 +92,7 @@
   "Node executable name.")
 
 (defconst copilot--ignore-response
-  (lambda (response))
+  (lambda (_))
   "Simply ignore the response.")
 
 (defun copilot--start-process ()
@@ -175,7 +181,8 @@
                                   (reverse bindings)))
 
 (defmacro copilot--let-req-async (bindings &rest forms)
-  "Bind async functions with callbacks in BINDINGS and evaluate FORMS. Return a promise."
+  "Bind async functions with callbacks in BINDINGS and evaluate FORMS.
+Return a promise."
   (declare (indent 1))
   `(lambda (callback)
      (copilot--let-req ,bindings (funcall callback (progn ,@forms)))))
@@ -495,14 +502,14 @@
 
 (defface copilot-overlay-face
   '((t :inherit shadow))
-  "Face for Copilot overlay")
+  "Face for Copilot overlay.")
 
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
 
 (defun copilot-display-overlay-completion (completion uuid line col user-pos)
-  "Show COMPLETION with UUID in overlay at LINE and COL. For Copilot, COL is always 0.
-USER-POS is the cursor position (for verification only)."
+  "Show COMPLETION with UUID in overlay at LINE and COL.
+For Copilot, COL is always 0. USER-POS is the cursor position (for verification only)."
   (copilot-clear-overlay)
   (save-excursion
     (widen)
@@ -526,12 +533,17 @@ USER-POS is the cursor position (for verification only)."
                (or (= (point) user-pos) ; up-to-date completion
                    (and (< (point) user-pos) ; special case for removing indentation
                         (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
-      (let* ((ov (make-overlay (point) (1+ (point-at-eol)) nil t t))
-             (p-completion (propertize completion 'face 'copilot-overlay-face)))
-        (if (= (overlay-start ov) (overlay-end ov)) ; in this case (end of file), no space to place display
+      (let* ((p-completion (propertize completion 'face 'copilot-overlay-face))
+             (ov))
+        (if copilot-overlay-safe
+            ;; don't make overlay over a single "\n" in this case
+            (setq ov (make-overlay (point) (point-at-eol)))
+          (setq ov (make-overlay (point) (1+ (point-at-eol))))
+          (setq p-completion (concat p-completion "\n")))
+        (if (= (overlay-start ov) (overlay-end ov)) ; in this case (end of file or end of line in overlay safe mode), no space to place display
             (overlay-put ov 'after-string p-completion)
           (overlay-put ov 'display (substring p-completion 0 1))
-          (overlay-put ov 'after-string (concat (substring p-completion 1) "\n")))
+          (overlay-put ov 'after-string (substring p-completion 1)))
         (overlay-put ov 'completion completion)
         (overlay-put ov 'start (point))
         (overlay-put ov 'uuid uuid)

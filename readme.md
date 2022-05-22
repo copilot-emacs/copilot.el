@@ -229,10 +229,6 @@ Cycle through the completion list.
 
 ## Customization
 
-#### copilot-overlay-safe
-
-Disable to have better visual effect, but may conflict with other plugins using overlay. See known issues for more details. Enabled by default.
-
 #### copilot-idle-delay
 
 Time in seconds to wait before starting completion (default to 0). Note Copilot itself has a ~100ms delay because of network communication.
@@ -244,18 +240,6 @@ A list of predicate functions with no argument to enable Copilot in `copilot-mod
 A list of predicate functions with no argument to disable Copilot in `copilot-mode`. Copilot will be disabled if any predicate returns `t`.
 
 ## Known Issues
-
-### Wrong Cursor Position
-
-![](assets/ov-safe-enable.png)
-
-Because of the limitation of overlay, the cursor position is wrong when showing completion at the end of lines.
-You can try to disable `copilot-overlay-safe` to solve the problem (except when showing completion at the end of buffer), 
-but at the cost of introducing conflicts with other plugins (e.g. `visual-line-mode`, `annotate.el`).
-
-After disabling `copilot-overlay-safe`, you have:
-
-![](assets/ov-safe-disable.png)
 
 ### Wrong Position of Other Completion Popups
 

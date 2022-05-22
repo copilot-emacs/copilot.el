@@ -24,12 +24,6 @@
   :group 'copilot
   :type 'integer)
 
-(defcustom copilot-overlay-safe 't
-  "Disable to have better visual feedback when complete at the end of lines.
-Enable to prevent some overlay compatibility conflicts with other packages."
-  :group 'copilot
-  :type 'boolean)
-
 (defconst copilot--log-name "*copilot-log*"
   "Name of the copilot log buffer.")
 
@@ -534,14 +528,11 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
                    (and (< (point) user-pos) ; special case for removing indentation
                         (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
       (let* ((p-completion (propertize completion 'face 'copilot-overlay-face))
-             (ov))
-        (if copilot-overlay-safe
-            ;; don't make overlay over a single "\n" in this case
-            (setq ov (make-overlay (point) (point-at-eol)))
-          (setq ov (make-overlay (point) (1+ (point-at-eol))))
-          (setq p-completion (concat p-completion "\n")))
-        (if (= (overlay-start ov) (overlay-end ov)) ; in this case (end of file or end of line in overlay safe mode), no space to place display
-            (overlay-put ov 'after-string p-completion)
+             (ov (make-overlay (point) (point-at-eol))))
+        (if (= (overlay-start ov) (overlay-end ov)) ; end of line
+            (progn
+              (put-text-property 0 1 'cursor t p-completion)
+              (overlay-put ov 'after-string p-completion))
           (overlay-put ov 'display (substring p-completion 0 1))
           (overlay-put ov 'after-string (substring p-completion 1)))
         (overlay-put ov 'completion completion)

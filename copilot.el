@@ -540,7 +540,7 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
                    (and (< (point) user-pos) ; special case for removing indentation
                         (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
       (let* ((p-completion (propertize completion 'face 'copilot-overlay-face))
-             (ov (make-overlay (point) (point-at-eol))))
+             (ov (make-overlay (point) (point-at-eol) nil t t)))
         (if (= (overlay-start ov) (overlay-end ov)) ; end of line
             (progn
               (setq copilot--real-posn (cons (point) (posn-at-point)))

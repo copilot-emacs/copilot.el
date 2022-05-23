@@ -501,6 +501,18 @@ Return a promise."
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
 
+(defvar-local copilot--real-posn nil
+  "Posn information without overlay.
+To work around posn problems with after-string property.")
+
+(defun copilot--posn-advice (&rest args)
+  "Remap posn if necessary."
+  (let ((pos (or (car-safe args) (point))))
+    (when (and copilot--real-posn
+               (eq pos (car copilot--real-posn)))
+      (cdr copilot--real-posn))))
+
+
 (defun copilot-display-overlay-completion (completion uuid line col user-pos)
   "Show COMPLETION with UUID in overlay at LINE and COL.
 For Copilot, COL is always 0. USER-POS is the cursor position (for verification only)."
@@ -531,6 +543,7 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
              (ov (make-overlay (point) (point-at-eol))))
         (if (= (overlay-start ov) (overlay-end ov)) ; end of line
             (progn
+              (setq copilot--real-posn (cons (point) (posn-at-point)))
               (put-text-property 0 1 'cursor t p-completion)
               (overlay-put ov 'after-string p-completion))
           (overlay-put ov 'display (substring p-completion 0 1))
@@ -549,6 +562,7 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
                                      (list :uuids `[,(overlay-get copilot--overlay 'uuid)]))
              copilot--ignore-response)
     (delete-overlay copilot--overlay)
+    (setq copilot--real-posn nil)
     (setq copilot--overlay nil)))
 
 
@@ -651,6 +665,7 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
   :init-value nil
   :lighter " Copilot"
   (copilot-clear-overlay)
+  (advice-add 'posn-at-point :before-until 'copilot--posn-advice)
   (add-hook 'post-command-hook 'copilot--complete-post-command))
 
 (defun copilot--complete-post-command ()

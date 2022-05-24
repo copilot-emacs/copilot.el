@@ -10,7 +10,7 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 ## Installation
 
-1. Install [Node.js](https://nodejs.org/en/download/) 12 or newer.
+1. Install [Node.js](https://nodejs.org/en/download/) (only support 12.x to 17.x).
 
 2. Setup `copilot.el` as described in the next section.
 
@@ -228,6 +228,10 @@ Similar to `copilot-accept-completion`, but accept the completion by line or wor
 Cycle through the completion list.
 
 ## Customization
+
+#### copilot-node-executable
+
+The executable path of Node.js.
 
 #### copilot-idle-delay
 

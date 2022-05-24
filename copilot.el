@@ -24,6 +24,14 @@
   :group 'copilot
   :type 'integer)
 
+(defcustom copilot-node-executable
+  (if (eq system-type 'windows-nt)
+      "node.exe"
+    "node")
+  "Node executable path."
+  :group 'copilot
+  :type 'string)
+
 (defconst copilot--log-name "*copilot-log*"
   "Name of the copilot log buffer.")
 
@@ -79,11 +87,6 @@
 ;; agent
 ;;
 
-(defconst copilot--node
-  (if (eq system-type 'windows-nt)
-      "node.exe"
-    "node")
-  "Node executable name.")
 
 (defconst copilot--ignore-response
   (lambda (_))
@@ -91,27 +94,30 @@
 
 (defun copilot--start-process ()
   "Start the copilot agent process."
-  (if (not (locate-file copilot--node exec-path))
+  (if (not (locate-file copilot-node-executable exec-path))
       (message "Could not find node executable")
-    (let ((node-version (->> (shell-command-to-string (concat copilot--node " --version"))
+    (let ((node-version (->> (shell-command-to-string (concat copilot-node-executable " --version"))
                              (s-trim)
                              (s-chop-prefix "v")
                              (string-to-number))))
-      (if (< node-version 12)
-          (message "Node 12+ required but found %s" node-version)
-        (setq copilot--process
-              (make-process :name "copilot-agent"
-                            :command (list copilot--node
-                                           (concat copilot--base-dir "/dist/agent.js"))
-                            :coding 'utf-8
-                            :connection-type 'pipe
-                            :filter 'copilot--process-filter
-                            :sentinel 'copilot--process-sentinel
-                            :noquery t))
-        (message "Copilot agent started.")
-        (funcall (copilot--agent-request "initialize" (list :capabilities nil))
-                 (lambda (response)
-                   (copilot--log "[Initialize] %S" response)))))))
+      (cond ((< node-version 12)
+             (message "Node 12+ is required but found %s" node-version))
+            ((>= node-version 18)
+             (message "Node 18+ is not supported but found %s" node-version))
+            (t
+             (setq copilot--process
+                   (make-process :name "copilot-agent"
+                                 :command (list copilot-node-executable
+                                                (concat copilot--base-dir "/dist/agent.js"))
+                                 :coding 'utf-8
+                                 :connection-type 'pipe
+                                 :filter 'copilot--process-filter
+                                 :sentinel 'copilot--process-sentinel
+                                 :noquery t))
+             (message "Copilot agent started.")
+             (funcall (copilot--agent-request "initialize" (list :capabilities nil))
+                     (lambda (response)
+                       (copilot--log "[Initialize] %S" response))))))))
 
 
 (defun copilot--kill-process ()

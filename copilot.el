@@ -53,8 +53,8 @@
 (defvar copilot--output-buffer nil
   "Buffer for process outputs.")
 
-(defvar copilot--request-timer nil
-  "Timer for sending delayed requests.")
+(defvar copilot--completion-timer nil
+  "Timer for sending delayed completion requests.")
 
 ;;
 ;; log
@@ -116,9 +116,8 @@
                                  :noquery t))
              (message "Copilot agent started.")
              (funcall (copilot--agent-request "initialize" (list :capabilities nil))
-                     (lambda (response)
-                       (copilot--log "[Initialize] %S" response))))))))
-
+                      (lambda (response)
+                        (copilot--log "[Initialize] %S" response))))))))
 
 (defun copilot--kill-process ()
   "Kill Copilot agent process."
@@ -135,19 +134,12 @@
   (unless copilot--process
     (copilot--start-process))
   (when copilot--process
-    (when copilot--request-timer
-      (cancel-timer copilot--request-timer)
-      (setq copilot--request-timer nil))
     (let* ((body (json-serialize request))
            (content (concat "Content-Length: "
                             (int-to-string (string-bytes body))
                             "\r\n\r\n"
                             body)))
-      (if (> copilot-idle-delay 0)
-          (setq copilot--request-timer
-                (run-with-timer copilot-idle-delay nil
-                                (lambda () (process-send-string copilot--process content))))
-        (process-send-string copilot--process content)))))
+      (process-send-string copilot--process content))))
 
 (defun copilot--agent-request (method params)
   "Send a request with METHOD and PARAMS to the copilot agent."
@@ -686,7 +678,15 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
                  (cl-notany (lambda (pred)
                               (if (functionp pred) (funcall pred) f))
                             copilot-disable-predicates))
-          (copilot-complete)))))
+
+        (when copilot--completion-timer
+          (cancel-timer copilot--completion-timer)
+          (setq copilot--request-timer nil))
+
+        (if (> copilot-idle-delay 0)
+            (setq copilot--completion-timer
+                  (run-with-timer copilot-idle-delay nil (lambda () (copilot-complete))))
+          (copilot-complete))))))
 
 (provide 'copilot)
 ;;; copilot.el ends here

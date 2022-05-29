@@ -220,7 +220,7 @@ Return a promise."
             (let ((content (copilot--substring-raw copilot--output-buffer (length header) full-length)))
               (setq copilot--output-buffer (copilot--substring-raw copilot--output-buffer full-length))
               (let ((content (ignore-errors (json-read-from-string content))))
-                (if content
+                (if (and content (listp content)) ; json-read-from-string may return number or string
                     (copilot--process-response content)
                   (copilot--log "[ERROR] Failed to parse response: %S" content)))
               ; rerun filter to process remaining output

@@ -197,7 +197,7 @@ In general, you need to bind `copilot-accept-completion` to some key in order to
 
 #### copilot-diagnose
 
-Check the current status of the plugin. Also you can check error logs in the `*copilot-log*` buffer.
+Check the current status of the plugin. Also you can check logs in the `*copilot events*` buffer and stderr output in the `*copilot stderr*` buffer.
 
 #### copilot-login
 
@@ -226,6 +226,10 @@ Similar to `copilot-accept-completion`, but accept the completion by line or wor
 #### copilot-next-completion / copilot-previous-completion
 
 Cycle through the completion list.
+
+#### copilot-logout
+
+Logout from GitHub.
 
 ## Customization
 
@@ -258,6 +262,12 @@ After using `company-box`, you have:
 
 In other editors (e.g. `VS Code`, `PyCharm`), completions from copilot and other sources can not show at the same time.
 But I decided to allow them to coexist, allowing you to choose a better one at any time.
+
+## Reporting Bugs
+
++ Make sure you have restarted your Emacs (and rebuild the plugin if necessary) after updating the plugin.
++ Please paste related logs in the `*copilot events*` and `*copilot stderr*` buffer.
++ If an exception is thrown, please also paste the stack trace (use `M-x toggle-debug-on-error` to enable stack trace).
 
 ## Roadmap
 

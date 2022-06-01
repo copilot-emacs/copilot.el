@@ -652,7 +652,7 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
   :type 'list
   :group 'copilot)
 
-(defcustom copilot-enable-predicates '(evil-insert-state-p)
+(defcustom copilot-enable-predicates '(evil-insert-state-p buffer-modified-p)
   "A list of predicate functions with no argument to enable Copilot. Copilot will be enabled only if all predicates return t."
   :type 'list
   :group 'copilot)

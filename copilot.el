@@ -233,7 +233,7 @@
   (list :source (concat (buffer-substring-no-properties (point-min) (point-max)) "\n")
         :tabSize (copilot--infer-indentation-offset)
         :indentSize (copilot--infer-indentation-offset)
-        :insertSpaces (if indent-tabs-mode :false t)
+        :insertSpaces (if indent-tabs-mode :json-false t)
         :path (buffer-file-name)
         :uri (copilot--get-uri)
         :relativePath (copilot--get-relative-path)

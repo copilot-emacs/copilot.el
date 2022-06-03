@@ -39,7 +39,7 @@
        (buffer-file-name)))
   "Directory containing this file.")
 
-(defconst copilot-version "0.9.1"
+(defconst copilot-version "0.9.2"
   "Copilot version.")
 
 (defvar-local copilot--overlay nil
@@ -124,7 +124,7 @@
   (copilot--dbind
       (:status :user :userCode user-code :verificationUri verification-uri)
       (copilot--request 'signInInitiate ''nil)
-    (when (s-equals-p status "alreadySignedIn")
+    (when (s-equals-p status "AlreadySignedIn")
         (message "Already signed in as %s." user)
         (cl-return-from copilot-login))
     (if (display-graphic-p)

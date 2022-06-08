@@ -201,13 +201,15 @@ This is useful if you don't want to depend on a particular completion framework.
   (or (copilot-accept-completion)
       (indent-for-tab-command)))
 
-(define-key copilot-mode-map (kbd "<tab>") #'my/copilot-tab)
+(with-eval-after-load 'copilot
+  (define-key copilot-mode-map (kbd "<tab>") #'my/copilot-tab))
 ```
 
 Or with evil-mode:
 ```elisp
-(evil-define-key 'insert copilot-mode-map
-  (kbd "<tab>") #'my/copilot-tab)
+(with-eval-after-load 'copilot
+  (evil-define-key 'insert copilot-mode-map
+    (kbd "<tab>") #'my/copilot-tab))
 ```
 
 </details>

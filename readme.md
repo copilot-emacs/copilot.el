@@ -191,6 +191,25 @@ In general, you need to bind `copilot-accept-completion` to some key in order to
                                                              (indent-for-tab-command))))
 ```
 
+#### Example of defining tab in copilot-mode
+
+This is useful if you don't want to depend on a particular completion framework.
+
+```elisp
+(defun my/copilot-tab ()
+  (interactive)
+  (or (copilot-accept-completion)
+      (indent-for-tab-command)))
+
+(define-key copilot-mode-map (kbd "<tab>") #'my/copilot-tab)
+```
+
+Or with evil-mode:
+```elisp
+(evil-define-key 'insert copilot-mode-map
+  (kbd "<tab>") #'my/copilot-tab)
+```
+
 </details>
 
 ## Commands

@@ -446,6 +446,11 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
   :type 'list
   :group 'copilot)
 
+(defvar copilot-mode-map (make-sparse-keymap)
+  "Keymap for Copilot minor mode.
+
+Use this for custom bindings in `copilot-mode'.")
+
 ;;;###autoload
 (define-minor-mode copilot-mode
   "Minor mode for Copilot."

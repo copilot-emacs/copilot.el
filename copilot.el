@@ -62,13 +62,19 @@
 
 (defmacro copilot--request (&rest args)
   "Send a request to the copilot agent with ARGS."
-  `(jsonrpc-request copilot--connection ,@args))
+  `(progn
+     (unless copilot--connection
+       (copilot--start-agent))
+     (jsonrpc-request copilot--connection ,@args)))
 
 (cl-defmacro copilot--async-request (&rest args)
   "Send an asynchronous request to the copilot agent with ARGS."
-  `(jsonrpc-async-request copilot--connection
-                          ,@args
-                          :success-fn (lambda (&rest _ignored))))
+  `(progn
+     (unless copilot--connection
+       (copilot--start-agent))
+     (jsonrpc-async-request copilot--connection
+                            ,@args
+                            :success-fn (lambda (&rest _ignored)))))
 
 (defun copilot--start-agent ()
   "Start the copilot agent process."
@@ -163,7 +169,6 @@
   (when copilot--connection
     (jsonrpc-shutdown copilot--connection)
     (setq copilot--connection nil))
-  (copilot--start-agent)
   (copilot--async-request 'getCompletions
                           '(:doc (:source "\n"
                                   :path ""
@@ -457,8 +462,6 @@ Use this for custom bindings in `copilot-mode'.")
   :init-value nil
   :lighter " Copilot"
   (copilot-clear-overlay)
-  (unless copilot--connection
-    (copilot--start-agent))
   (advice-add 'posn-at-point :before-until 'copilot--posn-advice)
   (add-hook 'post-command-hook 'copilot--complete-post-command))
 

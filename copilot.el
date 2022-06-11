@@ -39,7 +39,7 @@
        (buffer-file-name)))
   "Directory containing this file.")
 
-(defconst copilot-version "0.9.2"
+(defconst copilot-version "0.9.3"
   "Copilot version.")
 
 (defvar-local copilot--overlay nil
@@ -239,7 +239,7 @@
         :relativePath (copilot--get-relative-path)
         :languageId (s-chop-suffix "-mode" (symbol-name major-mode))
         :position (list :line (1- (line-number-at-pos))
-                        :character (length (buffer-substring-no-properties (point-at-bol) (point))))))
+                        :character (- (point) (point-at-bol)))))
 
 (defun copilot--get-completion (callback)
   "Get completion with CALLBACK."

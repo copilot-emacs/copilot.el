@@ -21,7 +21,7 @@
   :group 'copilot)
 
 (defcustom copilot-log-max message-log-max
-  "Maximum number of lines to keep in the *copilot-log* buffer."
+  "Max size of events buffer. 0 disables, nil means infinite."
   :group 'copilot
   :type 'integer)
 
@@ -39,7 +39,7 @@
        (buffer-file-name)))
   "Directory containing this file.")
 
-(defconst copilot-version "0.9.3"
+(defconst copilot-version "0.9.4"
   "Copilot version.")
 
 (defvar-local copilot--overlay nil
@@ -67,14 +67,18 @@
        (copilot--start-agent))
      (jsonrpc-request copilot--connection ,@args)))
 
-(cl-defmacro copilot--async-request (&rest args)
+(cl-defmacro copilot--async-request (method params &rest args &key (success-fn '(lambda (&rest _ignored))) &allow-other-keys)
   "Send an asynchronous request to the copilot agent with ARGS."
   `(progn
      (unless copilot--connection
        (copilot--start-agent))
-     (jsonrpc-async-request copilot--connection
-                            ,@args
-                            :success-fn (lambda (&rest _ignored)))))
+     (let ((buf (current-buffer)))
+       (jsonrpc-async-request copilot--connection
+                              ,method ,params
+                              :success-fn (lambda (result)
+                                            (with-current-buffer buf
+                                              (funcall ,success-fn result)))
+                              ,@args))))
 
 (defun copilot--start-agent ()
   "Start the copilot agent process."
@@ -92,6 +96,7 @@
              (setq copilot--connection
                    (make-instance 'jsonrpc-process-connection
                                   :name "copilot"
+                                  :events-buffer-scrollback-size copilot-log-max
                                   :process (make-process :name "copilot agent"
                                                          :command (list copilot-node-executable
                                                                         (concat copilot--base-dir "/dist/agent.js"))
@@ -256,10 +261,9 @@
   "Get completion cycling options with CALLBACK."
   (if copilot--completion-cache
       (funcall callback copilot--completion-cache)
-    (copilot--async-request 'getCompletions
+    (copilot--async-request 'getCompletionsCycling
                             (list :doc (copilot--generate-doc))
                             :success-fn callback)))
-
 
 (defun copilot--cycle-completion (direction)
   "Cycle completion with DIRECTION."
@@ -363,7 +367,6 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
     (setq copilot--real-posn nil)
     (setq copilot--overlay nil)))
 
-
 (defun copilot-accept-completion (&optional transform-fn)
   "Accept completion. Return t if there is a completion. Use TRANSFORM-FN to transform completion if provided."
   (interactive)
@@ -425,15 +428,13 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
   (setq copilot--completion-cache nil)
   (setq copilot--completion-idx 0)
 
-  (let ((called-interactively (called-interactively-p 'interactive))
-        (buf (current-buffer)))
+  (let ((called-interactively (called-interactively-p 'interactive)))
     (when (buffer-file-name)
       (copilot--get-completion
        (jsonrpc-lambda (&key completions)
          (let ((completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
            (if completion
-               (with-current-buffer buf
-                 (copilot--show-completion completion))
+               (copilot--show-completion completion)
              (when called-interactively
                (message "No completion is available.")))))))))
 

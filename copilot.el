@@ -39,7 +39,7 @@
        (buffer-file-name)))
   "Directory containing this file.")
 
-(defconst copilot-version "0.9.4"
+(defconst copilot-version "0.9.5"
   "Copilot version.")
 
 (defvar-local copilot--overlay nil
@@ -68,10 +68,11 @@
      (jsonrpc-request copilot--connection ,@args)))
 
 (cl-defmacro copilot--async-request (method params &rest args &key (success-fn '(lambda (&rest _ignored))) &allow-other-keys)
-  "Send an asynchronous request to the copilot agent with ARGS."
+  "Send an asynchronous request to the copilot agent."
   `(progn
      (unless copilot--connection
        (copilot--start-agent))
+     ;; jsonrpc will use temp buffer for callbacks, so we need to save the current buffer and restore it inside callback
      (let ((buf (current-buffer)))
        (jsonrpc-async-request copilot--connection
                               ,method ,params
@@ -81,10 +82,11 @@
                               ,@args))))
 
 (defun copilot--start-agent ()
-  "Start the copilot agent process."
+  "Start the copilot agent process in local."
   (if (not (locate-file copilot-node-executable exec-path))
       (message "Could not find node executable")
-    (let ((node-version (->> (shell-command-to-string (concat copilot-node-executable " --version"))
+    (let ((node-version (->> (with-output-to-string
+                               (call-process copilot-node-executable nil standard-output nil "--version"))
                              (s-trim)
                              (s-chop-prefix "v")
                              (string-to-number))))

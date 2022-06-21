@@ -478,6 +478,10 @@ Use this for custom bindings in `copilot-mode'.")
   (advice-add 'posn-at-point :before-until 'copilot--posn-advice)
   (add-hook 'post-command-hook 'copilot--complete-post-command))
 
+;;;###autoload
+(define-global-minor-mode global-copilot-mode
+    copilot-mode copilot-mode)
+
 (defun copilot--complete-post-command ()
   "Complete in post-command hook."
   (when (and copilot-mode this-command)

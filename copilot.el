@@ -302,6 +302,10 @@
 ;; UI
 ;;
 
+(defun copilot-current-completion ()
+  "Get current completion."
+  (and copilot--overlay
+       (overlay-get copilot--overlay 'completion)))
 
 (defface copilot-overlay-face
   '((t :inherit shadow))

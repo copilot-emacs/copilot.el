@@ -322,6 +322,11 @@ To work around posn problems with after-string property.")
                (eq pos (car copilot--real-posn)))
       (cdr copilot--real-posn))))
 
+(defconst copilot-completion-map (make-sparse-keymap)
+  "Keymap for Copilot completion overlay.")
+
+(define-key copilot-completion-map [tab] #'copilot-accept-completion)
+
 (defun copilot-display-overlay-completion (completion uuid line col user-pos)
   "Show COMPLETION with UUID in overlay at LINE and COL.
 For Copilot, COL is always 0. USER-POS is the cursor position (for verification only)."
@@ -349,7 +354,7 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
                    (and (< (point) user-pos) ; special case for removing indentation
                         (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
       (let* ((p-completion (propertize completion 'face 'copilot-overlay-face))
-             (ov (make-overlay (point) (point-at-eol) nil t t)))
+             (ov (make-overlay (point) (point-at-eol) nil nil t)))
         (if (= (overlay-start ov) (overlay-end ov)) ; end of line
             (progn
               (setq copilot--real-posn (cons (point) (posn-at-point)))
@@ -360,6 +365,7 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
         (overlay-put ov 'completion completion)
         (overlay-put ov 'start (point))
         (overlay-put ov 'uuid uuid)
+        (overlay-put ov 'keymap copilot-completion-map)
         (setq copilot--overlay ov)
         (copilot--async-request 'notifyShown (list :uuid uuid))))))
 

@@ -284,6 +284,10 @@ After using `company-box`, you have:
 In other editors (e.g. `VS Code`, `PyCharm`), completions from copilot and other sources can not show at the same time.
 But I decided to allow them to coexist, allowing you to choose a better one at any time.
 
+### Cursor Jump to End of Line When Typing
+
++ If you are using `whitespace-mode`, make sure to remove `newline-mark` from `whitespace-style`.
+
 ## Reporting Bugs
 
 + Make sure you have restarted your Emacs (and rebuild the plugin if necessary) after updating the plugin.

@@ -39,7 +39,7 @@
        (buffer-file-name)))
   "Directory containing this file.")
 
-(defconst copilot-version "0.9.5"
+(defconst copilot-version "0.9.6"
   "Copilot version.")
 
 (defvar-local copilot--overlay nil

@@ -67,7 +67,7 @@
        (copilot--start-agent))
      (jsonrpc-request copilot--connection ,@args)))
 
-(cl-defmacro copilot--async-request (method params &rest args &key (success-fn '(lambda (&rest _ignored))) &allow-other-keys)
+(cl-defmacro copilot--async-request (method params &rest args &key (success-fn #'copilot--ignore-response) &allow-other-keys)
   "Send an asynchronous request to the copilot agent."
   `(progn
      (unless copilot--connection
@@ -275,7 +275,7 @@
       (setq copilot--completion-cache result))
     (let ((completions (cl-remove-duplicates (plist-get result :completions)
                                              :key (lambda (x) (plist-get x :text))
-                                             :test 's-equals-p)))
+                                             :test #'s-equals-p)))
       (cond ((seq-empty-p completions)
              (message "No completion is available."))
             ((= (length completions) 1)
@@ -325,7 +325,8 @@ To work around posn problems with after-string property.")
 
 (defun copilot-display-overlay-completion (completion uuid line col user-pos)
   "Show COMPLETION with UUID in overlay at LINE and COL.
-For Copilot, COL is always 0. USER-POS is the cursor position (for verification only)."
+For Copilot, COL is always 0.
+USER-POS is the cursor position (for verification only)."
   (copilot-clear-overlay)
   (save-excursion
     (widen)
@@ -375,13 +376,14 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
     (setq copilot--overlay nil)))
 
 (defun copilot-accept-completion (&optional transform-fn)
-  "Accept completion. Return t if there is a completion. Use TRANSFORM-FN to transform completion if provided."
+  "Accept completion. Return t if there is a completion.
+Use TRANSFORM-FN to transform completion if provided."
   (interactive)
   (when copilot--overlay
     (let* ((completion (overlay-get copilot--overlay 'completion))
            (start (overlay-get copilot--overlay 'start))
            (uuid (overlay-get copilot--overlay 'uuid))
-           (t-completion (funcall (or transform-fn 'identity) completion)))
+           (t-completion (funcall (or transform-fn #'identity) completion)))
       (copilot--async-request 'notifyAccepted (list :uuid uuid))
       (copilot-clear-overlay)
       (delete-region start (line-end-position))
@@ -450,12 +452,14 @@ For Copilot, COL is always 0. USER-POS is the cursor position (for verification 
 ;;
 
 (defcustom copilot-disable-predicates nil
-  "A list of predicate functions with no argument to disable Copilot. Copilot will be disabled if any predicate returns t."
+  "A list of predicate functions with no argument to disable Copilot.
+Copilot will be disabled if any predicate returns t."
   :type 'list
   :group 'copilot)
 
 (defcustom copilot-enable-predicates '(evil-insert-state-p buffer-modified-p)
-  "A list of predicate functions with no argument to enable Copilot. Copilot will be enabled only if all predicates return t."
+  "A list of predicate functions with no argument to enable Copilot.
+Copilot will be enabled only if all predicates return t."
   :type 'list
   :group 'copilot)
 
@@ -470,8 +474,8 @@ Use this for custom bindings in `copilot-mode'.")
   :init-value nil
   :lighter " Copilot"
   (copilot-clear-overlay)
-  (advice-add 'posn-at-point :before-until 'copilot--posn-advice)
-  (add-hook 'post-command-hook 'copilot--complete-post-command))
+  (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
+  (add-hook 'post-command-hook #'copilot--complete-post-command))
 
 (defun copilot--complete-post-command ()
   "Complete in post-command hook."
@@ -483,12 +487,12 @@ Use this for custom bindings in `copilot-mode'.")
                              (if (functionp pred) (funcall pred) t))
                           copilot-enable-predicates)
                  (cl-notany (lambda (pred)
-                              (if (functionp pred) (funcall pred) f))
+                              (if (functionp pred) (funcall pred) nil))
                             copilot-disable-predicates))
 
         (when copilot--completion-timer
           (cancel-timer copilot--completion-timer)
-          (setq copilot--request-timer nil))
+          (setq copilot--completion-timer nil))
 
         (if (> copilot-idle-delay 0)
             (setq copilot--completion-timer

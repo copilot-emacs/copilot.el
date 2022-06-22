@@ -116,14 +116,15 @@
 ;; login / logout
 ;;
 
-(defun copilot--transform-pattern (pattern)
-  "Transform PATTERN to (&plist PATTERN) recursively."
-  (cons '&plist
-        (mapcar (lambda (p)
-                  (if (listp p)
-                      (copilot--transform-pattern p)
-                    p))
-                pattern)))
+(eval-and-compile
+  (defun copilot--transform-pattern (pattern)
+    "Transform PATTERN to (&plist PATTERN) recursively."
+    (cons '&plist
+          (mapcar (lambda (p)
+                    (if (listp p)
+                        (copilot--transform-pattern p)
+                      p))
+                  pattern))))
 
 (defmacro copilot--dbind (pattern source &rest body)
   "Destructure SOURCE against plist PATTERN and eval BODY."

@@ -6,11 +6,11 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 **Warning:** This plugin is unofficial and based on binaries provided by [copilot.vim](https://github.com/github/copilot.vim).
 
-**Note:** You need access to Copilot technical preview to use this plugin.
+**Note:** You need access to [GitHub Copilot](https://github.com/features/copilot) to use this plugin.
 
 ## Installation
 
-1. Install [Node.js](https://nodejs.org/en/download/) (only support 12.x to 17.x).
+1. Install [Node.js](https://nodejs.org/en/download/) (only support 12.x to 17.x, limited by upstream). Workaround for node.js v18+ users: install an old version of node.js via [nvm](https://github.com/nvm-sh/nvm#installing-and-updating) and set `copilot-node-executable` to it.
 
 2. Setup `copilot.el` as described in the next section.
 

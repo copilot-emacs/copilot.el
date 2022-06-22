@@ -323,6 +323,9 @@ To work around posn problems with after-string property.")
                (eq pos (car copilot--real-posn)))
       (cdr copilot--real-posn))))
 
+(defconst copilot-completion-map (make-sparse-keymap)
+  "Keymap for Copilot completion overlay.")
+
 (defun copilot-display-overlay-completion (completion uuid line col user-pos)
   "Show COMPLETION with UUID in overlay at LINE and COL.
 For Copilot, COL is always 0.
@@ -351,7 +354,7 @@ USER-POS is the cursor position (for verification only)."
                    (and (< (point) user-pos) ; special case for removing indentation
                         (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
       (let* ((p-completion (propertize completion 'face 'copilot-overlay-face))
-             (ov (make-overlay (point) (point-at-eol) nil t t)))
+             (ov (make-overlay (point) (point-at-eol) nil nil t)))
         (if (= (overlay-start ov) (overlay-end ov)) ; end of line
             (progn
               (setq copilot--real-posn (cons (point) (posn-at-point)))
@@ -362,6 +365,7 @@ USER-POS is the cursor position (for verification only)."
         (overlay-put ov 'completion completion)
         (overlay-put ov 'start (point))
         (overlay-put ov 'uuid uuid)
+        (overlay-put ov 'keymap copilot-completion-map)
         (setq copilot--overlay ov)
         (copilot--async-request 'notifyShown (list :uuid uuid))))))
 
@@ -476,6 +480,10 @@ Use this for custom bindings in `copilot-mode'.")
   (copilot-clear-overlay)
   (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
   (add-hook 'post-command-hook #'copilot--complete-post-command))
+
+;;;###autoload
+(define-global-minor-mode global-copilot-mode
+    copilot-mode copilot-mode)
 
 (defun copilot--complete-post-command ()
   "Complete in post-command hook."

@@ -325,8 +325,6 @@ To work around posn problems with after-string property.")
 (defconst copilot-completion-map (make-sparse-keymap)
   "Keymap for Copilot completion overlay.")
 
-(define-key copilot-completion-map [tab] #'copilot-accept-completion)
-
 (defun copilot-display-overlay-completion (completion uuid line col user-pos)
   "Show COMPLETION with UUID in overlay at LINE and COL.
 For Copilot, COL is always 0. USER-POS is the cursor position (for verification only)."

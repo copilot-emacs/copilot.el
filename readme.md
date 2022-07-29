@@ -10,6 +10,8 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 ## Installation
 
+0. Ensure your Emacs version is at least 27.
+
 1. Install [Node.js](https://nodejs.org/en/download/) (only support 12.x to 17.x, limited by upstream). Workaround for node.js v18+ users: install an old version of node.js via [nvm](https://github.com/nvm-sh/nvm#installing-and-updating) and set `copilot-node-executable` to it.
 
 2. Setup `copilot.el` as described in the next section.
@@ -35,21 +37,13 @@ Configure copilot in `~/.doom.d/config.el`:
 
 ```elisp
 ;; accept completion from copilot and fallback to company
-(defun my-tab ()
-  (interactive)
-  (or (copilot-accept-completion)
-      (company-indent-or-complete-common nil)))
-
 (use-package! copilot
   :hook (prog-mode . copilot-mode)
   :bind (("C-TAB" . 'copilot-accept-completion-by-word)
          ("C-<tab>" . 'copilot-accept-completion-by-word)
-         :map company-active-map
-         ("<tab>" . 'my-tab)
-         ("TAB" . 'my-tab)
-         :map company-mode-map
-         ("<tab>" . 'my-tab)
-         ("TAB" . 'my-tab)))
+         :map copilot-completion-map
+         ("<tab>" . 'copilot-accept-completion)
+         ("TAB" . 'copilot-accept-completion)))
 ```
 
 Strongly recommend to enable `childframe` option in `company` module (`(company +childframe)`) to prevent overlay conflict.
@@ -79,19 +73,13 @@ dotspacemacs-additional-packages
 ;; ========================
 
 ;; accept completion from copilot and fallback to company
-(defun my-tab ()
-  (interactive)
-  (or (copilot-accept-completion)
-      (company-indent-or-complete-common nil)))
 
 (with-eval-after-load 'company
   ;; disable inline previews
-  (delq 'company-preview-if-just-one-frontend company-frontends)
-  ;; enable tab completion
-  (define-key company-mode-map (kbd "<tab>") 'my-tab)
-  (define-key company-mode-map (kbd "TAB") 'my-tab)
-  (define-key company-active-map (kbd "<tab>") 'my-tab)
-  (define-key company-active-map (kbd "TAB") 'my-tab))
+  (delq 'company-preview-if-just-one-frontend company-frontends))
+  
+(define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
+(define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
 
 
 (add-hook 'prog-mode-hook 'copilot-mode)
@@ -150,21 +138,12 @@ In general, you need to bind `copilot-accept-completion` to some key in order to
 #### Example of using tab with `company-mode`
 
 ```elisp
-; complete by copilot first, then company-mode
-(defun my-tab ()
-  (interactive)
-  (or (copilot-accept-completion)
-      (company-indent-or-complete-common nil)))
-
-; modify company-mode behaviors
 (with-eval-after-load 'company
   ;; disable inline previews
-  (delq 'company-preview-if-just-one-frontend company-frontends)
-
-  (define-key company-mode-map (kbd "<tab>") 'my-tab)
-  (define-key company-mode-map (kbd "TAB") 'my-tab)
-  (define-key company-active-map (kbd "<tab>") 'my-tab)
-  (define-key company-active-map (kbd "TAB") 'my-tab))
+  (delq 'company-preview-if-just-one-frontend company-frontends))
+  
+(define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
+(define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
 ```
 
 #### Example of using tab with `auto-complete`
@@ -180,15 +159,10 @@ In general, you need to bind `copilot-accept-completion` to some key in order to
   ; disable inline preview
   (setq ac-disable-inline t)
   ; show menu if have only one candidate
-  (setq ac-candidate-menu-min 0)
-
-  (define-key ac-completing-map (kbd "TAB") 'my-tab)
-  (define-key ac-completing-map (kbd "<tab>") 'my-tab))
-
-(define-key global-map [remap indent-for-tab-command] '(lambda ()
-                                                         (interactive)
-                                                         (or (copilot-accept-completion)
-                                                             (indent-for-tab-command))))
+  (setq ac-candidate-menu-min 0))
+  
+(define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
+(define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
 ```
 
 #### Example of defining tab in copilot-mode

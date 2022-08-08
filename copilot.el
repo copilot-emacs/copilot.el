@@ -84,16 +84,16 @@
 (defun copilot--start-agent ()
   "Start the copilot agent process in local."
   (if (not (locate-file copilot-node-executable exec-path))
-      (message "Could not find node executable")
+      (user-error "Could not find node executable")
     (let ((node-version (->> (with-output-to-string
                                (call-process copilot-node-executable nil standard-output nil "--version"))
                              (s-trim)
                              (s-chop-prefix "v")
                              (string-to-number))))
       (cond ((< node-version 12)
-             (message "Node 12+ is required but found %s" node-version))
+             (user-error "Node 12+ is required but found %s" node-version))
             ((>= node-version 18)
-             (message "Node 18+ is not supported but found %s" node-version))
+             (user-error "Node 18+ is not supported but found %s" node-version))
             (t
              (setq copilot--connection
                    (make-instance 'jsonrpc-process-connection

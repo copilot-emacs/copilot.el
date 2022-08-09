@@ -48,10 +48,12 @@
 (defvar copilot--connection nil
   "Copilot agent jsonrpc connection instance.")
 
-(defvar copilot--completion-timer nil
-  "Timer for sending delayed completion requests.")
+(defvar copilot--post-command-timer nil)
+(defvar-local copilot--buffer-changed nil
+  "Non nil if buffer has changed since last time `copilot-complete' has been invoked.")
 
-
+(defun copilot--buffer-changed ()
+  copilot--buffer-changed)
 ;;
 ;; agent
 ;;
@@ -224,7 +226,7 @@
   (cond
    ((not buffer-file-name)
     "")
-   ((boundp 'projectile-project-root)
+   ((fboundp 'projectile-project-root)
     (file-relative-name buffer-file-name (projectile-project-root)))
    ((boundp 'vc-root-dir)
     (file-relative-name buffer-file-name (vc-root-dir)))
@@ -315,13 +317,6 @@
 (defvar-local copilot--real-posn nil
   "Posn information without overlay.
 To work around posn problems with after-string property.")
-
-(defun copilot--posn-advice (&rest args)
-  "Remap posn if necessary."
-  (let ((pos (or (car-safe args) (point))))
-    (when (and copilot--real-posn
-               (eq pos (car copilot--real-posn)))
-      (cdr copilot--real-posn))))
 
 (defconst copilot-completion-map (make-sparse-keymap)
   "Keymap for Copilot completion overlay.")
@@ -437,6 +432,7 @@ Use TRANSFORM-FN to transform completion if provided."
   "Complete at the current point."
   (interactive)
   (copilot-clear-overlay)
+  (setq copilot--buffer-changed nil)
 
   (setq copilot--completion-cache nil)
   (setq copilot--completion-idx 0)
@@ -461,7 +457,7 @@ Copilot will be disabled if any predicate returns t."
   :type 'list
   :group 'copilot)
 
-(defcustom copilot-enable-predicates '(evil-insert-state-p buffer-modified-p)
+(defcustom copilot-enable-predicates '(evil-insert-state-p copilot--buffer-changed)
   "A list of predicate functions with no argument to enable Copilot.
 Copilot will be enabled only if all predicates return t."
   :type 'list
@@ -479,33 +475,56 @@ Use this for custom bindings in `copilot-mode'.")
   :lighter " Copilot"
   (copilot-clear-overlay)
   (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
-  (add-hook 'post-command-hook #'copilot--complete-post-command))
+  (if copilot-mode
+      (progn
+        (add-hook 'post-command-hook #'copilot--post-command nil 'local)
+        (add-hook 'before-change-functions #'copilot--on-change nil 'local))
+    (remove-hook 'post-command-hook #'copilot--post-command 'local)
+    (remove-hook 'before-change-functions #'copilot--on-change 'local)))
+
+(defun copilot--posn-advice (&rest args)
+  "Remap posn if necessary."
+  (when copilot-mode
+    (let ((pos (or (car-safe args) (point))))
+      (when (and copilot--real-posn
+                 (eq pos (car copilot--real-posn)))
+        (cdr copilot--real-posn)))))
+
 
 ;;;###autoload
 (define-global-minor-mode global-copilot-mode
     copilot-mode copilot-mode)
 
-(defun copilot--complete-post-command ()
-  "Complete in post-command hook."
-  (when (and copilot-mode this-command)
-    (unless (and (symbolp this-command)
-                 (s-starts-with-p "copilot-" (symbol-name this-command)))
-      (copilot-clear-overlay)
-      (when (and (cl-every (lambda (pred)
-                             (if (functionp pred) (funcall pred) t))
-                          copilot-enable-predicates)
-                 (cl-notany (lambda (pred)
-                              (if (functionp pred) (funcall pred) nil))
-                            copilot-disable-predicates))
+(defun copilot--on-change (&reset _args)
+  (setq copilot--buffer-changed t))
 
-        (when copilot--completion-timer
-          (cancel-timer copilot--completion-timer)
-          (setq copilot--completion-timer nil))
+(defun copilot--post-command ()
+  "Complete in `post-command-hook' hook."
+  (copilot-clear-overlay)
+  (when copilot--post-command-timer
+    (cancel-timer copilot--post-command-timer))
+  (setq copilot--post-command-timer
+        (run-with-idle-timer copilot-idle-delay
+                             nil
+                             #'copilot--post-command-debounce
+                             (current-buffer)
+                             this-command)))
 
-        (if (> copilot-idle-delay 0)
-            (setq copilot--completion-timer
-                  (run-with-timer copilot-idle-delay nil (lambda () (copilot-complete))))
-          (copilot-complete))))))
+(defun copilot--post-command-debounce (buffer command)
+  "Complete in BUFFER if COMMAND meets the criteria."
+  (when (and (buffer-live-p buffer)
+             (equal (current-buffer) buffer)
+             copilot-mode
+             command
+             (not (and (symbolp command)
+                       (s-starts-with-p "copilot-" (symbol-name command))))
+             (cl-every (lambda (pred)
+                         (if (functionp pred) (funcall pred) t))
+                       copilot-enable-predicates)
+             (cl-notany (lambda (pred)
+                          (if (functionp pred) (funcall pred) nil))
+                        copilot-disable-predicates))
+        (copilot-complete)))
 
 (provide 'copilot)
 ;;; copilot.el ends here

@@ -286,16 +286,21 @@
                  (let ((completion (elt completions idx)))
                    (copilot--show-completion completion))))))))
 
+(defsubst copilot--overlay-visible ()
+  "Return whether the `copilot--overlay' is avaiable."
+  (and (overlayp copilot--overlay)
+       (overlay-buffer copilot--overlay)))
+
 (defun copilot-next-completion ()
   "Cycle to next completion."
   (interactive)
-  (when copilot--overlay
+  (when (copilot--overlay-visible)
     (copilot--get-completions-cycling (copilot--cycle-completion 1))))
 
 (defun copilot-previous-completion ()
   "Cycle to previous completion."
   (interactive)
-  (when copilot--overlay
+  (when (copilot--overlay-visible)
     (copilot--get-completions-cycling (copilot--cycle-completion -1))))
 
 
@@ -305,7 +310,7 @@
 
 (defun copilot-current-completion ()
   "Get current completion."
-  (and copilot--overlay
+  (and (copilot--overlay-visible)
        (overlay-get copilot--overlay 'completion)))
 
 (defface copilot-overlay-face
@@ -354,7 +359,10 @@ USER-POS is the cursor position (for verification only)."
                    (and (< (point) user-pos) ; special case for removing indentation
                         (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
       (let* ((p-completion (propertize completion 'face 'copilot-overlay-face))
-             (ov (make-overlay (point) (point-at-eol) nil nil t)))
+             (ov (if (not (overlayp copilot--overlay))
+                     (make-overlay (point) (point-at-eol) nil nil t)
+                   (move-overlay copilot--overlay (point) (point-at-eol))
+                   copilot--overlay)))
         (if (= (overlay-start ov) (overlay-end ov)) ; end of line
             (progn
               (setq copilot--real-posn (cons (point) (posn-at-point)))
@@ -372,18 +380,17 @@ USER-POS is the cursor position (for verification only)."
 (defun copilot-clear-overlay ()
   "Clear Copilot overlay."
   (interactive)
-  (when copilot--overlay
+  (when (copilot--overlay-visible)
     (copilot--async-request 'notifyRejected
                             (list :uuids `[,(overlay-get copilot--overlay 'uuid)]))
     (delete-overlay copilot--overlay)
-    (setq copilot--real-posn nil)
-    (setq copilot--overlay nil)))
+    (setq copilot--real-posn nil)))
 
 (defun copilot-accept-completion (&optional transform-fn)
   "Accept completion. Return t if there is a completion.
 Use TRANSFORM-FN to transform completion if provided."
   (interactive)
-  (when copilot--overlay
+  (when (copilot--overlay-visible)
     (let* ((completion (overlay-get copilot--overlay 'completion))
            (start (overlay-get copilot--overlay 'start))
            (uuid (overlay-get copilot--overlay 'uuid))

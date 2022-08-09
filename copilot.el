@@ -499,7 +499,7 @@ Use this for custom bindings in `copilot-mode'.")
   (setq copilot--buffer-changed t))
 
 (defun copilot--post-command ()
-  "Complete in `after-change-functions' hook."
+  "Complete in `post-command-hook' hook."
   (copilot-clear-overlay)
   (when copilot--post-command-timer
     (cancel-timer copilot--post-command-timer))
@@ -511,7 +511,7 @@ Use this for custom bindings in `copilot-mode'.")
                              this-command)))
 
 (defun copilot--post-command-debounce (buffer command)
-  ""
+  "Complete in BUFFER if COMMAND meets the criteria."
   (when (and (buffer-live-p buffer)
              (equal (current-buffer) buffer)
              copilot-mode

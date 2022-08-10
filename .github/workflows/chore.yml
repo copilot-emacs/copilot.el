@@ -1,0 +1,37 @@
+name: Chore
+
+on:
+  schedule:
+    - cron: "0 0 */7 * *"
+  workflow_dispatch:
+
+jobs:
+  chore_update_dist:
+    name: Sync binaries with upstream
+    runs-on: ubuntu-latest
+    env:
+      upstream_repo: github/copilot.vim
+      upstream_branch: release
+      upstream_dir: copilot/dist
+      dest_dir: dist
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Clone upstream branch
+        id: clone_upstream
+        run: |
+          mkdir .tmp
+          cd .tmp
+          git clone https://github.com/$upstream_repo.git --filter=tree:0 upstream
+          cd upstream
+          cp ./$upstream_dir ../../ -rf
+          echo "::set-output name=commit_msg::`git log -n 1 --format=%B ./$upstream_dir`"
+      - name: Sync
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add $dest_dir/
+          git commit -am "${{ steps.clone_upstream.outputs.commit_msg }}"
+          git push origin

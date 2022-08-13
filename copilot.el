@@ -438,7 +438,6 @@ Use TRANSFORM-FN to transform completion if provided."
 (defun copilot-complete ()
   "Complete at the current point."
   (interactive)
-  (copilot-clear-overlay)
   (setq copilot--buffer-changed nil)
 
   (setq copilot--completion-cache nil)
@@ -507,24 +506,23 @@ Use this for custom bindings in `copilot-mode'.")
 
 (defun copilot--post-command ()
   "Complete in `post-command-hook' hook."
-  (copilot-clear-overlay)
-  (when copilot--post-command-timer
-    (cancel-timer copilot--post-command-timer))
-  (setq copilot--post-command-timer
-        (run-with-idle-timer copilot-idle-delay
-                             nil
-                             #'copilot--post-command-debounce
-                             (current-buffer)
-                             this-command)))
+  (when (and this-command
+             (not (and (symbolp this-command)
+                       (s-starts-with-p "copilot-" (symbol-name this-command)))))
+    (copilot-clear-overlay)
+    (when copilot--post-command-timer
+      (cancel-timer copilot--post-command-timer))
+    (setq copilot--post-command-timer
+          (run-with-idle-timer copilot-idle-delay
+                               nil
+                               #'copilot--post-command-debounce
+                               (current-buffer)))))
 
-(defun copilot--post-command-debounce (buffer command)
-  "Complete in BUFFER if COMMAND meets the criteria."
+(defun copilot--post-command-debounce (buffer)
+  "Complete in BUFFER."
   (when (and (buffer-live-p buffer)
              (equal (current-buffer) buffer)
              copilot-mode
-             command
-             (not (and (symbolp command)
-                       (s-starts-with-p "copilot-" (symbol-name command))))
              (cl-every (lambda (pred)
                          (if (functionp pred) (funcall pred) t))
                        copilot-enable-predicates)

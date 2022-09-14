@@ -33,6 +33,11 @@
   :group 'copilot
   :type 'string)
 
+(defcustom copilot-clear-overlay-ignore-commands nil
+  "List of commands that should not clear the overlay when called."
+  :group 'copilot
+  :type '(repeat symbol))
+
 (defconst copilot--base-dir
   (file-name-directory
    (or load-file-name
@@ -508,7 +513,9 @@ Use this for custom bindings in `copilot-mode'.")
   "Complete in `post-command-hook' hook."
   (when (and this-command
              (not (and (symbolp this-command)
-                       (s-starts-with-p "copilot-" (symbol-name this-command)))))
+                       (or
+                        (s-starts-with-p "copilot-" (symbol-name this-command))
+                        (member this-command copilot-clear-overlay-ignore-commands)))))
     (copilot-clear-overlay)
     (when copilot--post-command-timer
       (cancel-timer copilot--post-command-timer))

@@ -242,6 +242,9 @@ A list of predicate functions with no argument to enable Copilot in `copilot-mod
 #### copilot-disable-predicates
 A list of predicate functions with no argument to disable Copilot in `copilot-mode`. Copilot will be disabled if any predicate returns `t`.
 
+#### copilot-clear-overlay-ignore-commands
+A list of commands that will not clear the overlay.
+
 ## Known Issues
 
 ### Wrong Position of Other Completion Popups

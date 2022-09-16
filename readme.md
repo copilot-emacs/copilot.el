@@ -69,7 +69,6 @@ dotspacemacs-configuration-layers
   ...
  )
 
-  
 ;; add copilot.el to additional packages
 dotspacemacs-additional-packages
  '((copilot :location (recipe

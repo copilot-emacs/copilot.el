@@ -61,6 +61,15 @@ Edit your `~/.spacemacs`:
 ;; dotspacemacs/layers
 ;; ===================
 
+;; add or uncomment the auto-completion layer
+dotspacemacs-configuration-layers
+'(
+  ...
+  auto-completion
+  ...
+ )
+
+  
 ;; add copilot.el to additional packages
 dotspacemacs-additional-packages
  '((copilot :location (recipe

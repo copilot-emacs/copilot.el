@@ -453,14 +453,13 @@ Use TRANSFORM-FN to transform completion if provided."
   (setq copilot--completion-idx 0)
 
   (let ((called-interactively (called-interactively-p 'interactive)))
-    (when (buffer-file-name)
-      (copilot--get-completion
-       (jsonrpc-lambda (&key completions)
-         (let ((completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
-           (if completion
-               (copilot--show-completion completion)
-             (when called-interactively
-               (message "No completion is available.")))))))))
+    (copilot--get-completion
+      (jsonrpc-lambda (&key completions)
+        (let ((completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
+          (if completion
+              (copilot--show-completion completion)
+            (when called-interactively
+              (message "No completion is available."))))))))
 
 ;;
 ;; minor mode

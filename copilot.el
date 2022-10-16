@@ -20,6 +20,12 @@
   :type 'float
   :group 'copilot)
 
+(defcustom copilot-network-proxy nil
+  "Network proxy to use for Copilot. Nil means no proxy.
+Format: '(:host \"127.0.0.1\" :port 80 :username \"username\" :password \"password\")
+If username and password are not provided, they will be prompted for."
+  :group 'copilot)
+
 (defcustom copilot-log-max message-log-max
   "Max size of events buffer. 0 disables, nil means infinite."
   :group 'copilot
@@ -44,7 +50,7 @@
        (buffer-file-name)))
   "Directory containing this file.")
 
-(defconst copilot-version "0.9.6"
+(defconst copilot-version "0.9.7"
   "Copilot version.")
 
 (defvar-local copilot--overlay nil
@@ -117,7 +123,9 @@
              (copilot--request 'initialize '(:capabilities 'nil))
              (copilot--async-request 'setEditorInfo
                                      `(:editorInfo (:name "Emacs" :version ,emacs-version)
-                                       :editorPluginInfo (:name "copilot.el" :version ,copilot-version))))))))
+                                       :editorPluginInfo (:name "copilot.el" :version ,copilot-version)
+                                       ,@(when copilot-network-proxy
+                                           `(:networkProxy ,copilot-network-proxy)))))))))
 
 ;;
 ;; login / logout
@@ -139,15 +147,15 @@
   `(-let ((,(copilot--transform-pattern pattern) ,source))
      ,@body))
 
-(cl-defun copilot-login ()
+(defun copilot-login ()
   "Login to Copilot."
   (interactive)
   (copilot--dbind
       (:status :user :userCode user-code :verificationUri verification-uri)
       (copilot--request 'signInInitiate ''nil)
     (when (s-equals-p status "AlreadySignedIn")
-        (message "Already signed in as %s." user)
-        (cl-return-from copilot-login))
+      (message "Already signed in as %s." user)
+      (cl-return-from copilot-login))
     (if (display-graphic-p)
         (progn
           (gui-set-selection 'CLIPBOARD user-code)
@@ -161,11 +169,7 @@
         (copilot--request 'signInConfirm (list :userCode user-code))
       (jsonrpc-error
         (message "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
-    (copilot--dbind (:status :user) (copilot--request 'checkStatus ''nil)
-      (when (s-equals-p status "NoTelemetryConsent")
-        (if (yes-or-no-p "I agree to these telemetry terms as part of the GitHub Copilot technical preview.\nhttps://github.co/copilot-telemetry-terms")
-            (copilot--request 'recordTelemetryConsent ''nil)
-          (cl-return-from copilot-login)))
+    (copilot--dbind (:user) (copilot--request 'checkStatus ''nil)
       (message "Authenticated as GitHub user %s." user))))
 
 (defun copilot-logout ()

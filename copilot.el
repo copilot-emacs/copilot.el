@@ -152,7 +152,7 @@ If username and password are not provided, they will be prompted for."
   (interactive)
   (copilot--dbind
       (:status :user :userCode user-code :verificationUri verification-uri)
-      (copilot--request 'signInInitiate ''nil)
+      (copilot--request 'signInInitiate '(:dummy "signInInitiate"))
     (when (s-equals-p status "AlreadySignedIn")
       (message "Already signed in as %s." user)
       (cl-return-from copilot-login))
@@ -169,13 +169,13 @@ If username and password are not provided, they will be prompted for."
         (copilot--request 'signInConfirm (list :userCode user-code))
       (jsonrpc-error
         (message "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
-    (copilot--dbind (:user) (copilot--request 'checkStatus ''nil)
+    (copilot--dbind (:user) (copilot--request 'checkStatus '(:dummy "checkStatus"))
       (message "Authenticated as GitHub user %s." user))))
 
 (defun copilot-logout ()
   "Logout from Copilot."
   (interactive)
-  (copilot--request 'signOut ''nil)
+  (copilot--request 'signOut '(:dummy "signOut"))
   (message "Logged out."))
 
 ;;

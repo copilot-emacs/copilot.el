@@ -369,6 +369,7 @@ USER-POS is the cursor position (for verification only)."
             (progn
               (setq copilot--real-posn (cons (point) (posn-at-point)))
               (put-text-property 0 1 'cursor t p-completion)
+              (overlay-put ov 'display "")
               (overlay-put ov 'after-string p-completion))
           (overlay-put ov 'display (substring p-completion 0 1))
           (overlay-put ov 'after-string (substring p-completion 1)))
@@ -516,7 +517,8 @@ Use this for custom bindings in `copilot-mode'.")
              (not (and (symbolp this-command)
                        (or
                         (s-starts-with-p "copilot-" (symbol-name this-command))
-                        (member this-command copilot-clear-overlay-ignore-commands)))))
+                        (member this-command copilot-clear-overlay-ignore-commands)
+                        (copilot--self-insert this-command)))))
     (copilot-clear-overlay)
     (when copilot--post-command-timer
       (cancel-timer copilot--post-command-timer))
@@ -525,6 +527,38 @@ Use this for custom bindings in `copilot-mode'.")
                                nil
                                #'copilot--post-command-debounce
                                (current-buffer)))))
+
+(defun copilot--self-insert (command)
+  "Handle the case where the char just inserted is the start of the completion.
+If so, update the overlays and continue. COMMAND is the
+command that triggered `post-command-hook'.
+"
+  (when (and (eq command 'self-insert-command)
+             (copilot--overlay-visible))
+    (let* ((ov copilot--overlay)
+           (display (overlay-get ov 'display))
+           (after-string (overlay-get ov 'after-string))
+           (completion (concat display after-string))
+           (copilot-state-eolp (s-blank-p display)))
+      ;; The char just inserted is the next char of completion
+      (when (eq last-command-event (elt completion 0))
+        ;; If there is only one char in the completion, accept it
+        (if (= (length completion) 1)
+            (copilot-accept-completion)
+          ;; If the copilot overlay state is out of sync with the buffer state,
+          ;; synchronize it. This can happen with modes that insert characters,
+          ;; like electric-pair or smartparens
+          (cond ((and (not copilot-state-eolp) (eolp))
+                 (overlay-put ov 'display "")
+                 (setq after-string completion))
+                ((and copilot-state-eolp (not (eolp)))
+                 (setq after-string (substring after-string 1))))
+          ;; Update the overlays
+          (if (eolp)
+              (ignore-errors (put-text-property 1 2 'cursor t after-string))
+            (overlay-put ov 'display (substring after-string 0 1)))
+          (overlay-put ov 'after-string (substring after-string 1))
+          (move-overlay ov (point) (overlay-end ov)))))))
 
 (defun copilot--post-command-debounce (buffer)
   "Complete in BUFFER."

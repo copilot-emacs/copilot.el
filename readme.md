@@ -12,7 +12,7 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 0. Ensure your Emacs version is at least 27.
 
-1. Install [Node.js](https://nodejs.org/en/download/) (only support 12.x to 17.x, limited by upstream). Workaround for node.js v18+ users: install an old version of node.js via [nvm](https://github.com/nvm-sh/nvm#installing-and-updating) and set `copilot-node-executable` to it.
+1. Install [Node.js](https://nodejs.org/en/download/).
 
 2. Setup `copilot.el` as described in the next section.
 

@@ -103,10 +103,8 @@ If username and password are not provided, they will be prompted for."
                              (s-trim)
                              (s-chop-prefix "v")
                              (string-to-number))))
-      (cond ((< node-version 12)
-             (user-error "Node 12+ is required but found %s" node-version))
-            ((>= node-version 18)
-             (user-error "Node 18+ is not supported but found %s" node-version))
+      (cond ((< node-version 14)
+             (user-error "Node 14+ is required but found %s" node-version))
             (t
              (setq copilot--connection
                    (make-instance 'jsonrpc-process-connection

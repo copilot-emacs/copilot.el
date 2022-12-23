@@ -178,6 +178,7 @@ In general, you need to bind `copilot-accept-completion` to some key in order to
 This is useful if you don't want to depend on a particular completion framework.
 
 ```elisp
+(require 'use-package)
 (defun my/copilot-tab ()
   (interactive)
   (or (copilot-accept-completion)

@@ -23,7 +23,7 @@
 (defcustom copilot-network-proxy nil
   "Network proxy to use for Copilot. Nil means no proxy.
 Format: '(:host \"127.0.0.1\" :port 80 :username \"username\" :password \"password\")
-If username and password are not provided, they will be prompted for."
+Username and password are optional."
   :group 'copilot)
 
 (defcustom copilot-log-max message-log-max
@@ -50,7 +50,7 @@ If username and password are not provided, they will be prompted for."
        (buffer-file-name)))
   "Directory containing this file.")
 
-(defconst copilot-version "0.9.7"
+(defconst copilot-version "0.9.8"
   "Copilot version.")
 
 (defvar-local copilot--overlay nil
@@ -103,8 +103,8 @@ If username and password are not provided, they will be prompted for."
                              (s-trim)
                              (s-chop-prefix "v")
                              (string-to-number))))
-      (cond ((< node-version 14)
-             (user-error "Node 14+ is required but found %s" node-version))
+      (cond ((< node-version 16)
+             (user-error "Node 16+ is required but found %s" node-version))
             (t
              (setq copilot--connection
                    (make-instance 'jsonrpc-process-connection

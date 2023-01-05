@@ -208,6 +208,7 @@ Username and password are optional."
   (append '((latex-mode tex-indent-basic)
             (nxml-mode nxml-child-indent)
             (python-mode python-indent py-indent-offset python-indent-offset)
+            (python-ts-mode python-indent py-indent-offset python-indent-offset)
             (web-mode web-mode-markup-indent-offset web-mode-html-offset))
           editorconfig-indentation-alist)
   "Alist of `major-mode' to indentation map with optional fallbacks.")

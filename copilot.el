@@ -152,8 +152,7 @@ Username and password are optional."
       (:status :user :userCode user-code :verificationUri verification-uri)
       (copilot--request 'signInInitiate '(:dummy "signInInitiate"))
     (when (s-equals-p status "AlreadySignedIn")
-      (message "Already signed in as %s." user)
-      (cl-return-from copilot-login))
+      (user-error "Already signed in as %s" user))
     (if (display-graphic-p)
         (progn
           (gui-set-selection 'CLIPBOARD user-code)

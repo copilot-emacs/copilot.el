@@ -541,24 +541,22 @@ command that triggered `post-command-hook'.
            (completion (concat display after-string))
            (copilot-state-eolp (s-blank-p display)))
       ;; The char just inserted is the next char of completion
-      (when (eq last-command-event (elt completion 0))
-        ;; If there is only one char in the completion, accept it
-        (if (= (length completion) 1)
-            (copilot-accept-completion)
-          ;; If the copilot overlay state is out of sync with the buffer state,
-          ;; synchronize it. This can happen with modes that insert characters,
-          ;; like electric-pair or smartparens
-          (cond ((and (not copilot-state-eolp) (eolp))
-                 (overlay-put ov 'display "")
-                 (setq after-string completion))
-                ((and copilot-state-eolp (not (eolp)))
-                 (setq after-string (substring after-string 1))))
-          ;; Update the overlays
-          (if (eolp)
-              (ignore-errors (put-text-property 1 2 'cursor t after-string))
-            (overlay-put ov 'display (substring after-string 0 1)))
-          (overlay-put ov 'after-string (substring after-string 1))
-          (move-overlay ov (point) (overlay-end ov)))))))
+      (when (and (> (length completion) 1)
+                 (eq last-command-event (elt completion 0)))
+        ;; If the copilot overlay state is out of sync with the buffer state,
+        ;; synchronize it. This can happen with modes that insert characters,
+        ;; like electric-pair or smartparens
+        (cond ((and (not copilot-state-eolp) (eolp))
+                (overlay-put ov 'display "")
+                (setq after-string completion))
+              ((and copilot-state-eolp (not (eolp)))
+                (setq after-string (substring after-string 1))))
+        ;; Update the overlays
+        (if (eolp)
+            (ignore-errors (put-text-property 1 2 'cursor t after-string))
+          (overlay-put ov 'display (substring after-string 0 1)))
+        (overlay-put ov 'after-string (substring after-string 1))
+        (move-overlay ov (point) (overlay-end ov))))))
 
 (defun copilot--post-command-debounce (buffer)
   "Complete in BUFFER."

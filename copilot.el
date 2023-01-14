@@ -245,7 +245,8 @@ Username and password are optional."
   (cond
    ((not buffer-file-name)
     "")
-   ((eq system-type 'windows-nt)
+   ((and (eq system-type 'windows-nt)
+         (not (s-starts-with-p "/" buffer-file-name)))
     (concat "file:///" (url-encode-url buffer-file-name)))
    (t
     (concat "file://" (url-encode-url buffer-file-name)))))

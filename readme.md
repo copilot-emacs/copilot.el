@@ -196,6 +196,21 @@ Or with evil-mode:
 
 </details>
 
+### Integrations
+
+<details>
+
+#### Lispy
+If you are using [lispy](https://github.com/abo-abo/lispy) to edit Lisps, you might want to enable:
+
+```elisp
+(setq copilot-lispy-integration t)
+```
+
+Otherwise, accepting a completion from copilot more often than not results in unbalanced parentheses.
+
+</details>
+
 ## Commands
 
 #### copilot-diagnose

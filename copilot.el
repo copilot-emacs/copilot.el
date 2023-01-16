@@ -24,6 +24,8 @@
   "Network proxy to use for Copilot. Nil means no proxy.
 Format: '(:host \"127.0.0.1\" :port 80 :username \"username\" :password \"password\")
 Username and password are optional."
+  :type '(plist :tag "Uncheck all to disable proxy" :key-type symbol)
+  :options '((:host string) (:port integer) (:username string) (:password string))
   :group 'copilot)
 
 (defcustom copilot-log-max message-log-max
@@ -42,7 +44,7 @@ Username and password are optional."
 (defcustom copilot-clear-overlay-ignore-commands nil
   "List of commands that should not clear the overlay when called."
   :group 'copilot
-  :type '(repeat symbol))
+  :type '(repeat function))
 
 (defconst copilot--base-dir
   (file-name-directory
@@ -468,13 +470,13 @@ Use TRANSFORM-FN to transform completion if provided."
 (defcustom copilot-disable-predicates nil
   "A list of predicate functions with no argument to disable Copilot.
 Copilot will be disabled if any predicate returns t."
-  :type 'list
+  :type '(repeat function)
   :group 'copilot)
 
 (defcustom copilot-enable-predicates '(evil-insert-state-p copilot--buffer-changed)
   "A list of predicate functions with no argument to enable Copilot.
 Copilot will be enabled only if all predicates return t."
-  :type 'list
+  :type '(repeat function)
   :group 'copilot)
 
 (defvar copilot-mode-map (make-sparse-keymap)

@@ -41,6 +41,13 @@ Username and password are optional."
   :group 'copilot
   :type 'string)
 
+
+(defcustom copilot-max-char 30000
+  "Maximum number of characters to send to Copilot, -1 means no limit."
+  :group 'copilot
+  :type 'integer)
+
+
 (defcustom copilot-clear-overlay-ignore-commands nil
   "List of commands that should not clear the overlay when called."
   :group 'copilot
@@ -60,6 +67,10 @@ Username and password are optional."
 
 (defvar copilot--connection nil
   "Copilot agent jsonrpc connection instance.")
+
+(defvar-local copilot-line-bias 1
+  "Line bias for Copilot completion.")
+
 
 (defvar copilot--post-command-timer nil)
 (defvar-local copilot--buffer-changed nil
@@ -253,9 +264,34 @@ Username and password are optional."
    (t
     (concat "file://" (url-encode-url buffer-file-name)))))
 
+(defun copilot--get-source ()
+  "Get source code from current buffer."
+  (let* ((p (point))
+         (pmax (point-max))
+         (pmin (point-min))
+         (half-window (/ copilot-max-char 2)))
+    (cond
+     ;; using whole buffer
+     ((or (< copilot-max-char 0) (< pmax copilot-max-char))
+      (setq-local copilot-line-bias 1)
+      (buffer-substring-no-properties pmin pmax))
+     ;; truncate buffer head
+     ((< (- pmax p) half-window)
+      (setq-local copilot-line-bias (line-number-at-pos (- pmax copilot-max-char)))
+      (buffer-substring-no-properties (- pmax copilot-max-char) pmax))
+     ;; truncate buffer tail
+     ((< (- p pmin) half-window)
+      (setq-local copilot-line-bias 1)
+      (buffer-substring-no-properties pmin (+ pmin copilot-max-char)))
+     ;; truncate head and tail
+     (t
+      (setq-local copilot-line-bias (line-number-at-pos (- p half-window)))
+      (buffer-substring-no-properties (- p half-window)
+                                      (+ p half-window))))))
+
 (defun copilot--generate-doc ()
   "Generate doc parameters for completion request."
-  (list :source (concat (buffer-substring-no-properties (point-min) (point-max)) "\n")
+  (list :source (concat (copilot--get-source) "\n")
         :tabSize (copilot--infer-indentation-offset)
         :indentSize (copilot--infer-indentation-offset)
         :insertSpaces (if indent-tabs-mode :json-false t)
@@ -263,8 +299,9 @@ Username and password are optional."
         :uri (copilot--get-uri)
         :relativePath (copilot--get-relative-path)
         :languageId (s-chop-suffix "-mode" (symbol-name major-mode))
-        :position (list :line (1- (line-number-at-pos))
+        :position (list :line (- (line-number-at-pos) copilot-line-bias)
                         :character (- (point) (point-at-bol)))))
+
 
 (defun copilot--get-completion (callback)
   "Get completion with CALLBACK."
@@ -341,6 +378,7 @@ To work around posn problems with after-string property.")
 For Copilot, COL is always 0.
 USER-POS is the cursor position (for verification only)."
   (copilot-clear-overlay)
+  (setq line (1- (+ line copilot-line-bias)))
   (save-excursion
     (widen)
     (goto-char (point-min))

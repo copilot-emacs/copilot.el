@@ -117,11 +117,13 @@ dotspacemacs-additional-packages
 
 ##### Option 2: Load manually
 
-Please make sure you have these dependencies installed. Clone this repo then insert the below snippet into your config file.
+Please make sure you have these dependencies installed. 
 
 + `dash`
 + `s`
 + `editorconfig`
+
+After installing those, clone this repository then insert the below snippet into your config file.
 
 ```
 (add-to-list 'load-path "/path/to/copilot.el")

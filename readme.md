@@ -117,12 +117,16 @@ dotspacemacs-additional-packages
 
 ##### Option 2: Load manually
 
-Please make sure you have these dependencies installed, and use `load-file` or `load-path` + `require` to load it.
+Please make sure you have these dependencies installed. Clone this repo then insert the below snippet into your config file.
 
 + `dash`
 + `s`
 + `editorconfig`
 
+```
+(add-to-list 'load-path "/path/to/copilot.el")
+(require 'copilot)
+```
 
 #### 2. Configure completion
 

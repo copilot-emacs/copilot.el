@@ -36,14 +36,18 @@ Add package definition to `~/.doom.d/packages.el`:
 Configure copilot in `~/.doom.d/config.el`:
 
 ```elisp
-;; accept completion from copilot and fallback to company
 (use-package! copilot
-  :hook (prog-mode . copilot-mode)
-  :bind (("C-TAB" . 'copilot-accept-completion-by-word)
+  :hook (prog-mode  . copilot-mode)
+  :bind (:map copilot-completion-map
+         ("<tab>"   . 'copilot-accept-completion)
+         ("TAB"     . 'copilot-accept-completion)
+         ("C-TAB"   . 'copilot-accept-completion-by-word)
          ("C-<tab>" . 'copilot-accept-completion-by-word)
-         :map copilot-completion-map
-         ("<tab>" . 'copilot-accept-completion)
-         ("TAB" . 'copilot-accept-completion)))
+         :map sp-pair-overlay-keymap
+         ("<tab>"   . 'copilot-accept-completion)
+         ("TAB"     . 'copilot-accept-completion)
+         ("C-TAB"   . 'copilot-accept-completion-by-word)
+         ("C-<tab>" . 'copilot-accept-completion-by-word)))
 ```
 
 Strongly recommend to enable `childframe` option in `company` module (`(company +childframe)`) to prevent overlay conflict.

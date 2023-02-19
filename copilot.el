@@ -418,6 +418,7 @@ USER-POS is the cursor position (for verification only)."
         (overlay-put ov 'start (point))
         (overlay-put ov 'uuid uuid)
         (overlay-put ov 'keymap copilot-completion-map)
+        (overlay-put ov 'priority 100)
         (setq copilot--overlay ov)
         (copilot--async-request 'notifyShown (list :uuid uuid))))))
 

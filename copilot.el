@@ -28,7 +28,7 @@ Username and password are optional."
   :options '((:host string) (:port integer) (:username string) (:password string))
   :group 'copilot)
 
-(defcustom copilot-log-max message-log-max
+(defcustom copilot-log-max 1000
   "Max size of events buffer. 0 disables, nil means infinite."
   :group 'copilot
   :type 'integer)

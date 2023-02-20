@@ -300,7 +300,7 @@ Username and password are optional."
         :relativePath (copilot--get-relative-path)
         :languageId (s-chop-suffix "-mode" (symbol-name major-mode))
         :position (list :line (- (line-number-at-pos) copilot-line-bias)
-                        :character (- (point) (point-at-bol)))))
+                        :character (- (point) (line-beginning-position)))))
 
 
 (defun copilot--get-completion (callback)
@@ -403,8 +403,8 @@ USER-POS is the cursor position (for verification only)."
                         (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
       (let* ((p-completion (propertize completion 'face 'copilot-overlay-face))
              (ov (if (not (overlayp copilot--overlay))
-                     (make-overlay (point) (point-at-eol) nil nil t)
-                   (move-overlay copilot--overlay (point) (point-at-eol))
+                     (make-overlay (point) (line-end-position) nil nil t)
+                   (move-overlay copilot--overlay (point) (line-end-position))
                    copilot--overlay)))
         (if (= (overlay-start ov) (overlay-end ov)) ; end of line
             (progn

@@ -86,17 +86,22 @@ Username and password are optional."
   (lambda (_))
   "Simply ignore the response.")
 
+(defsubst copilot--connection-alivep ()
+  "Non-nil if the `copilot--connection' is alive."
+  (and copilot--connection
+       (zerop (process-exit-status (jsonrpc--process copilot--connection)))))
+
 (defmacro copilot--request (&rest args)
   "Send a request to the copilot agent with ARGS."
   `(progn
-     (unless copilot--connection
+     (unless (copilot--connection-alivep)
        (copilot--start-agent))
      (jsonrpc-request copilot--connection ,@args)))
 
 (cl-defmacro copilot--async-request (method params &rest args &key (success-fn #'copilot--ignore-response) &allow-other-keys)
   "Send an asynchronous request to the copilot agent."
   `(progn
-     (unless copilot--connection
+     (unless (copilot--connection-alivep)
        (copilot--start-agent))
      ;; jsonrpc will use temp buffer for callbacks, so we need to save the current buffer and restore it inside callback
      (let ((buf (current-buffer)))

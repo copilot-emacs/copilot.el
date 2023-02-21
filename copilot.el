@@ -508,6 +508,31 @@ Use TRANSFORM-FN to transform completion if provided."
               (message "No completion is available."))))))))
 
 ;;
+;; dwim - do what I mean
+;;
+
+(defun copilot-dwim ()
+  "Trigger or accept completion."
+  (interactive)
+  (if (copilot--overlay-visible)
+      (copilot-accept-completion)
+    (copilot-complete)))
+
+(defun copilot-dwim-by-word (n-word)
+  "Trigger or accept N-WORD words from current completion."
+  (interactive "p")
+  (if (copilot--overlay-visible)
+      (copilot-accept-completion-by-word n-word)
+    (copilot-complete)))
+
+(defun copilot-dwim-by-line (n-line)
+  "Trigger or accept N-LINE lines from current completion."
+  (interactive "p")
+  (if (copilot--overlay-visible)
+      (copilot-accept-completion-by-line n-line)
+    (copilot-complete)))
+
+;;
 ;; minor mode
 ;;
 

@@ -104,16 +104,27 @@ dotspacemacs-additional-packages
 
 #### 1. Load `copilot.el`
 
-##### Option 1: Load via `straight.el` (recommended)
+##### Option 1: Load via `straight.el` or `quelpa` (recommended)
 
-
+###### `straight.el`:
+  
 ```elisp
 (use-package copilot
   :straight (:host github :repo "zerolfx/copilot.el" :files ("dist" "*.el"))
   :ensure t)
 ;; you can utilize :map :hook and :config to customize copilot
 ```
-
+  
+###### `quelpa` + `quelpa-use-package`:
+  
+```elisp
+(use-package copilot
+  :quelpa (copilot.el :fetcher github
+                      :repo "zerolfx/copilot.el"
+                      :branch "main"
+                      :files ("dist" "*.el")))
+;; you can utilize :map :hook and :config to customize copilot
+```
 
 ##### Option 2: Load manually
 

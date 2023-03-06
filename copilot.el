@@ -59,7 +59,7 @@ Username and password are optional."
        (buffer-file-name)))
   "Directory containing this file.")
 
-(defconst copilot-version "1.73.0"
+(defconst copilot-version "0.9.8"
   "Copilot version.")
 
 (defvar-local copilot--overlay nil
@@ -104,7 +104,7 @@ Username and password are optional."
      (unless (copilot--connection-alivep)
        (copilot--start-agent))
      ;; jsonrpc will use temp buffer for callbacks, so we need to save the current buffer and restore it inside callback
-     (lexical-let ((buf (current-buffer)))
+     (let ((buf (current-buffer)))
        (jsonrpc-async-request copilot--connection
                               ,method ,params
                               :success-fn (lambda (result)
@@ -296,8 +296,7 @@ Username and password are optional."
 
 (defun copilot--generate-doc ()
   "Generate doc parameters for completion request."
-  (list :version 0
-        :source (concat (copilot--get-source) "\n")
+  (list :source (concat (copilot--get-source) "\n")
         :tabSize (copilot--infer-indentation-offset)
         :indentSize (copilot--infer-indentation-offset)
         :insertSpaces (if indent-tabs-mode :json-false t)

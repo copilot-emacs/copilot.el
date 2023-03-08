@@ -63,8 +63,8 @@ Enabling event logging may slightly affect performance."
 (defcustom copilot-node-executable
   (if (eq system-type 'windows-nt)
       "node.exe"
-    (if (eq system-type 'cygwin)       ;; want the absolute path on cygwin
-	(locate-file "node" exec-path) ;; so we get it
+    (if (eq system-type 'cygwin)
+	(locate-file "node" exec-path)
       "node"))
   "Node executable path."
   :group 'copilot
@@ -93,6 +93,40 @@ Enabling event logging may slightly affect performance."
 ;;     "Directory containing this file.")
 
 (defconst copilot--base-dir
+  (if (eq system-type 'cygwin)
+      (shell-command-to-string (format "cygpath -w %s" (file-name-directory
+							(or load-file-name
+							    (buffer-file-name)))))
+    (file-name-directory
+     (or load-file-name
+	 (buffer-file-name))))
+  "Directory containing this file.")
+
+
+;; seems cygwin is screwing up node somehow. Added this so below line can be fixed.
+;; (copilot--cygwinify-dir (concat adir "/dist/agent.js")) 
+(defun copilot--cygwinify-dir (dir &optional mixed)
+  (let* ((mode-flag (if mixed
+			"-m"
+		      "-w"))	 
+	 (retstr (shell-command-to-string (format "cygpath %s %s" mode-flag dir)))
+	 (retlen (length retstr))
+	 (ret    (cond
+		  ((and (> retlen 0) (eql (aref retstr (- retlen 1)) ?\n))
+		   (substring retstr 0 (- retlen 1)))
+		  (t retstr))))
+    ret))
+
+
+;; check if system is cygwin and run the file name through the shell command cygpath (useage: cygpath -w file-name)
+(defconst copilot--base-dir
+  ;; (let* ((dir (file-name-directory
+  ;; 	       (or load-file-name
+  ;; 		   (buffer-file-name))))
+  ;; 	 (ret (if (eq system-type 'cygwin)
+  ;; 		  (copilot--cygwin-dir dir)
+  ;; 		dir)))
+  ;;   ret)
   (file-name-directory
    (or load-file-name
        (buffer-file-name)))
@@ -117,15 +151,11 @@ Enabling event logging may slightly affect performance."
   "The document version of the current buffer. Incremented after each change.")
 
 (defun copilot--buffer-changed ()
-<<<<<<< HEAD
   "Return non-nil if the buffer has changed since last completion."
   (not (= copilot--last-doc-version copilot--doc-version)))
 
 (defvar copilot--opened-buffers nil
   "List of buffers that have been opened in Copilot.")
-=======
-  copilot--buffer-changed)
->>>>>>> 50f8774 (trying to unify, hopefully we dont break things)
 
 ;;
 ;; agent
@@ -167,6 +197,31 @@ Enabling event logging may slightly affect performance."
                                             (with-current-buffer buf
                                               (funcall ,success-fn result)))
                               ,@args))))
+
+
+
+;; (defun copilot--manual-start (process)
+;;   (setq copilot--connection
+;;         (make-instance 'jsonrpc-process-connection
+;;                        :name "copilot"
+;;                        :events-buffer-scrollback-size copilot-log-max
+;;                        :process process))
+;;   (message "Copilot agent started.")
+;;   (copilot--request 'initialize '(:capabilities 'nil))
+;;   (copilot--async-request 'setEditorInfo
+;;                           `(:editorInfo (:name "Emacs" :version ,emacs-version)
+;; 					:editorPluginInfo (:name "copilot.el" :version ,copilot-version)
+;; 					,@(when copilot-network-proxy
+;;                                             `(:networkProxy ,copilot-network-proxy)))))
+
+;; (setq node-path (locate-file copilot-node-executable exec-path))
+;; (copilot--manual-start (make-process
+;; 			:name "copilot-debug-agent"
+;; 			:command (list node-path (copilot--cygwinify-dir (concat copilot--base-dir "/dist/agent.js")))
+;; 			:coding 'utf-8-emacs-unix
+;; 			:connection-type 'pipe
+;; 			:stderr (get-buffer-create "*copilot stderr*")
+;; 			:noquery t))
 
 (defun copilot--start-agent ()
   "Start the copilot agent process in local."
@@ -624,24 +679,9 @@ Use TRANSFORM-FN to transform completion if provided."
                                     (funcall ,action n)
                                     (buffer-substring-no-properties (point-min) (point)))))))
 
-<<<<<<< HEAD
 (copilot--define-accept-completion-by-action copilot-accept-completion-by-word #'forward-word)
 (copilot--define-accept-completion-by-action copilot-accept-completion-by-line #'forward-line)
 (copilot--define-accept-completion-by-action copilot-accept-completion-by-paragraph #'forward-paragraph)
-=======
-(defun copilot-accept-completion-by-line (n-line)
-       "Accept first N-LINE lines of completion."
-  (interactive "p")
-  (setq n-line (or n-line 1))
-  (copilot-accept-completion (lambda (completion)
-                               (let* ((lines (s-split-up-to (rx anychar (? "\r") "\n") completion n-line))
-                                      (remain (if (<= (length lines) n-line)
-                                                  ""
-                                                (cl-first (last lines))))
-                                      (length (- (length completion) (length remain)))
-                                      (prefix (substring completion 0 length)))
-                                 prefix))))
->>>>>>> 50f8774 (trying to unify, hopefully we dont break things)
 
 (defun copilot--show-completion (completion-data)
   "Show COMPLETION-DATA."

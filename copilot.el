@@ -45,7 +45,9 @@ Enabling event logging may slightly affect performance."
 (defcustom copilot-node-executable
   (if (eq system-type 'windows-nt)
       "node.exe"
-    "node")
+    (if (eq system-type 'cygwin)
+	(locate-file "node" exec-path)
+      "node"))
   "Node executable path."
   :group 'copilot
   :type 'string)
@@ -63,6 +65,40 @@ Enabling event logging may slightly affect performance."
   :type '(repeat function))
 
 (defconst copilot--base-dir
+  (if (eq system-type 'cygwin)
+      (shell-command-to-string (format "cygpath -w %s" (file-name-directory
+							(or load-file-name
+							    (buffer-file-name)))))
+    (file-name-directory
+     (or load-file-name
+	 (buffer-file-name))))
+  "Directory containing this file.")
+
+
+;; seems cygwin is screwing up node somehow. Added this so below line can be fixed.
+;; (copilot--cygwinify-dir (concat adir "/dist/agent.js")) 
+(defun copilot--cygwinify-dir (dir &optional mixed)
+  (let* ((mode-flag (if mixed
+			"-m"
+		      "-w"))	 
+	 (retstr (shell-command-to-string (format "cygpath %s %s" mode-flag dir)))
+	 (retlen (length retstr))
+	 (ret    (cond
+		  ((and (> retlen 0) (eql (aref retstr (- retlen 1)) ?\n))
+		   (substring retstr 0 (- retlen 1)))
+		  (t retstr))))
+    ret))
+
+
+;; check if system is cygwin and run the file name through the shell command cygpath (useage: cygpath -w file-name)
+(defconst copilot--base-dir
+  ;; (let* ((dir (file-name-directory
+  ;; 	       (or load-file-name
+  ;; 		   (buffer-file-name))))
+  ;; 	 (ret (if (eq system-type 'cygwin)
+  ;; 		  (copilot--cygwin-dir dir)
+  ;; 		dir)))
+  ;;   ret)
   (file-name-directory
    (or load-file-name
        (buffer-file-name)))
@@ -134,9 +170,35 @@ Enabling event logging may slightly affect performance."
                                               (funcall ,success-fn result)))
                               ,@args))))
 
+
+
+;; (defun copilot--manual-start (process)
+;;   (setq copilot--connection
+;;         (make-instance 'jsonrpc-process-connection
+;;                        :name "copilot"
+;;                        :events-buffer-scrollback-size copilot-log-max
+;;                        :process process))
+;;   (message "Copilot agent started.")
+;;   (copilot--request 'initialize '(:capabilities 'nil))
+;;   (copilot--async-request 'setEditorInfo
+;;                           `(:editorInfo (:name "Emacs" :version ,emacs-version)
+;; 					:editorPluginInfo (:name "copilot.el" :version ,copilot-version)
+;; 					,@(when copilot-network-proxy
+;;                                             `(:networkProxy ,copilot-network-proxy)))))
+
+;; (setq node-path (locate-file copilot-node-executable exec-path))
+;; (copilot--manual-start (make-process
+;; 			:name "copilot-debug-agent"
+;; 			:command (list node-path (copilot--cygwinify-dir (concat copilot--base-dir "/dist/agent.js")))
+;; 			:coding 'utf-8-emacs-unix
+;; 			:connection-type 'pipe
+;; 			:stderr (get-buffer-create "*copilot stderr*")
+;; 			:noquery t))
+
 (defun copilot--start-agent ()
   "Start the copilot agent process in local."
-  (if (not (locate-file copilot-node-executable exec-path))
+  (if (not
+       (locate-file copilot-node-executable exec-path))
       (user-error "Could not find node executable")
     (let ((node-version (->> (with-output-to-string
                                (call-process copilot-node-executable nil standard-output nil "--version"))
@@ -146,14 +208,15 @@ Enabling event logging may slightly affect performance."
       (cond ((< node-version 16)
              (user-error "Node 16+ is required but found %s" node-version))
             (t
-             (setq copilot--connection
+	     ;; if just cygwinifying the base dir doesnt work, maybe a let* here will
+	     (setq copilot--connection
                    (make-instance 'jsonrpc-process-connection
                                   :name "copilot"
                                   :events-buffer-scrollback-size copilot-log-max
                                   :notification-dispatcher #'copilot--handle-notification
                                   :process (make-process :name "copilot agent"
                                                          :command (list copilot-node-executable
-                                                                        (concat copilot--base-dir "/dist/agent.js"))
+									(copilot--cygwinify-dir (concat copilot--base-dir "/dist/agent.js")))
                                                          :coding 'utf-8-emacs-unix
                                                          :connection-type 'pipe
                                                          :stderr (get-buffer-create "*copilot stderr*")
@@ -165,6 +228,8 @@ Enabling event logging may slightly affect performance."
                                        :editorPluginInfo (:name "copilot.el" :version ,copilot-version)
                                        ,@(when copilot-network-proxy
                                            `(:networkProxy ,copilot-network-proxy)))))))))
+
+
 
 ;;
 ;; login / logout

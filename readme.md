@@ -119,7 +119,7 @@ dotspacemacs-additional-packages
   
 ```elisp
 (use-package copilot
-  :quelpa (copilot.el :fetcher github
+  :quelpa (copilot :fetcher github
                       :repo "zerolfx/copilot.el"
                       :branch "main"
                       :files ("dist" "*.el")))

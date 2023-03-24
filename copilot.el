@@ -183,7 +183,7 @@ Username and password are optional."
     (condition-case err
         (copilot--request 'signInConfirm (list :userCode user-code))
       (jsonrpc-error
-        (message "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
+        (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
     (copilot--dbind (:user) (copilot--request 'checkStatus '(:dummy "checkStatus"))
       (message "Authenticated as GitHub user %s." user))))
 

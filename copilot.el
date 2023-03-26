@@ -489,8 +489,9 @@ Use TRANSFORM-FN to transform completion if provided."
 
 (defun copilot--show-completion (completion)
   "Show COMPLETION."
-  (copilot--dbind (:text :uuid :range (:start (:line :character))) completion
-    (copilot-display-overlay-completion text uuid line character (point))))
+  (when (copilot--satisfy-display-predicates)
+    (copilot--dbind (:text :uuid :range (:start (:line :character))) completion
+      (copilot-display-overlay-completion text uuid line character (point)))))
 
 (defun copilot-complete ()
   "Complete at the current point."
@@ -515,19 +516,47 @@ Use TRANSFORM-FN to transform completion if provided."
 
 (defcustom copilot-disable-predicates nil
   "A list of predicate functions with no argument to disable Copilot.
-Copilot will be disabled if any predicate returns t."
+Copilot will not be triggered if any predicate returns t."
   :type '(repeat function)
   :group 'copilot)
 
 (defcustom copilot-enable-predicates '(evil-insert-state-p copilot--buffer-changed)
   "A list of predicate functions with no argument to enable Copilot.
-Copilot will be enabled only if all predicates return t."
+Copilot will be triggered only if all predicates return t."
   :type '(repeat function)
   :group 'copilot)
 
+(defcustom copilot-disable-display-predicates nil
+  "A list of predicate functions with no argument to disable Copilot.
+Copilot will not show completions if any predicate returns t."
+  :type '(repeat function)
+  :group 'copilot)
+
+(defcustom copilot-enable-display-predicates nil
+  "A list of predicate functions with no argument to enable Copilot.
+Copilot will show completions only if all predicates return t."
+  :type '(repeat function)
+  :group 'copilot)
+
+(defmacro copilot--satisfy-predicates (enable disable)
+  "Return t if satisfy all predicates in ENABLE and none in DISABLE."
+  `(and (cl-every (lambda (pred)
+                    (if (functionp pred) (funcall pred) t))
+                  ,enable)
+        (cl-notany (lambda (pred)
+                     (if (functionp pred) (funcall pred) nil))
+                   ,disable)))
+
+(defun copilot--satisfy-trigger-predicates ()
+  "Return t if all trigger predicates are satisfied."
+  (copilot--satisfy-predicates copilot-enable-predicates copilot-disable-predicates))
+
+(defun copilot--satisfy-display-predicates ()
+  "Return t if all display predicates are satisfied."
+  (copilot--satisfy-predicates copilot-enable-display-predicates copilot-disable-display-predicates))
+
 (defvar copilot-mode-map (make-sparse-keymap)
   "Keymap for Copilot minor mode.
-
 Use this for custom bindings in `copilot-mode'.")
 
 ;;;###autoload
@@ -583,7 +612,8 @@ If so, update the overlays and continue. COMMAND is the
 command that triggered `post-command-hook'.
 "
   (when (and (eq command 'self-insert-command)
-             (copilot--overlay-visible))
+             (copilot--overlay-visible)
+             (copilot--satisfy-display-predicates))
     (let* ((ov copilot--overlay)
            (display (overlay-get ov 'display))
            (after-string (overlay-get ov 'after-string))
@@ -612,12 +642,7 @@ command that triggered `post-command-hook'.
   (when (and (buffer-live-p buffer)
              (equal (current-buffer) buffer)
              copilot-mode
-             (cl-every (lambda (pred)
-                         (if (functionp pred) (funcall pred) t))
-                       copilot-enable-predicates)
-             (cl-notany (lambda (pred)
-                          (if (functionp pred) (funcall pred) nil))
-                        copilot-disable-predicates))
+             (copilot--satisfy-trigger-predicates))
         (copilot-complete)))
 
 (provide 'copilot)

@@ -461,31 +461,23 @@ Use TRANSFORM-FN to transform completion if provided."
   (interactive "p")
   (setq n-word (or n-word 1))
   (copilot-accept-completion (lambda (completion)
-                               (let* ((blank-regexp '(any blank "\r" "\n"))
-                                      (separator-regexp (rx-to-string
-                                                         `(seq
-                                                           (not ,blank-regexp)
-                                                           (1+ ,blank-regexp))))
-                                      (words (s-split-up-to separator-regexp completion n-word))
-                                      (remain (if (<= (length words) n-word)
-                                                  ""
-                                                (cl-first (last words))))
-                                      (length (- (length completion) (length remain)))
-                                      (prefix (substring completion 0 length)))
-                                 (s-trim-right prefix)))))
+                               (with-temp-buffer
+                                 (insert completion)
+                                 (goto-char (point-min))
+                                 (forward-word n-word)
+                                 (buffer-substring-no-properties (point-min) (point))))))
 
 (defun copilot-accept-completion-by-line (n-line)
   "Accept first N-LINE lines of completion."
   (interactive "p")
   (setq n-line (or n-line 1))
   (copilot-accept-completion (lambda (completion)
-                               (let* ((lines (s-split-up-to (rx anychar (? "\r") "\n") completion n-line))
-                                      (remain (if (<= (length lines) n-line)
-                                                  ""
-                                                (cl-first (last lines))))
-                                      (length (- (length completion) (length remain)))
-                                      (prefix (substring completion 0 length)))
-                                 prefix))))
+                               (with-temp-buffer
+                                 (insert completion)
+                                 (goto-char (point-min))
+                                 (forward-line n-line)
+                                 (buffer-substring-no-properties (point-min) (point))))))
+
 
 (defun copilot--show-completion (completion)
   "Show COMPLETION."

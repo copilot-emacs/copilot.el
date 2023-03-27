@@ -39,11 +39,11 @@ Configure copilot in `~/.doom.d/config.el`:
 ;; accept completion from copilot and fallback to company
 (use-package! copilot
   :hook (prog-mode . copilot-mode)
-  :bind (("C-TAB" . 'copilot-accept-completion-by-word)
-         ("C-<tab>" . 'copilot-accept-completion-by-word)
-         :map copilot-completion-map
-         ("<tab>" . 'copilot-accept-completion)
-         ("TAB" . 'copilot-accept-completion)))
+  :bind (:map copilot-completion-map
+              ("<tab>" . 'copilot-accept-completion)
+              ("TAB" . 'copilot-accept-completion)
+              ("C-TAB" . 'copilot-accept-completion-by-word)
+              ("C-<tab>" . 'copilot-accept-completion-by-word)))
 ```
 
 Strongly recommend to enable `childframe` option in `company` module (`(company +childframe)`) to prevent overlay conflict.
@@ -261,14 +261,19 @@ The executable path of Node.js.
 
 Time in seconds to wait before starting completion (default to 0). Note Copilot itself has a ~100ms delay because of network communication.
 
-#### copilot-enable-predicates
-A list of predicate functions with no argument to enable Copilot in `copilot-mode`. Copilot will be enabled only if all predicates return `t`.
+#### copilot-enable-predicates / copilot-disable-predicates
+A list of predicate functions with no argument to enable/disable triggering Copilot in `copilot-mode`.
 
-#### copilot-disable-predicates
-A list of predicate functions with no argument to disable Copilot in `copilot-mode`. Copilot will be disabled if any predicate returns `t`.
+#### copilot-enable-display-predicates / copilot-disable-display-predicates
+A list of predicate functions with no argument to enable/disable showing Copilot's completions in `copilot-mode`.
 
 #### copilot-clear-overlay-ignore-commands
-A list of commands that will not clear the overlay.
+A list of commands that won't cause the overlay to be cleared.
+
+#### copilot-network-proxy
+
+Format: `'(:host "127.0.0.1" :port "7890" :username: "user" :password: "password")`, where `:username` and `:password` are optional.
+
 
 ## Known Issues
 

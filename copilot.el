@@ -389,17 +389,11 @@ USER-POS is the cursor position (for verification only)."
   (save-excursion
     (widen)
     (goto-char (point-min))
-    (if (= (line-end-position line) (1- (point-max)))
-        ; special case if the last line is empty
-        (progn
-          (goto-char (point-max))
-          (newline)
-          (forward-char -1))
-      (forward-line line)
-      (forward-char col))
+    (forward-line line)
+    (forward-char col)
 
     ; remove common prefix
-    (let* ((cur-line (s-chop-suffix "\n" (or (thing-at-point 'line) "")))
+    (let* ((cur-line (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
            (common-prefix-len (length (s-shared-start completion cur-line))))
       (setq completion (substring completion common-prefix-len))
       (forward-char common-prefix-len))

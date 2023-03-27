@@ -392,17 +392,13 @@ To work around posn problems with after-string property.")
 
 (defun copilot--set-overlay-text (ov completion)
   "Set overlay OV with COMPLETION."
-  (move-overlay ov (point) (line-end-position))
+  (move-overlay ov (point) (point))
   (let ((p-completion (propertize completion 'face 'copilot-overlay-face)))
-    (if (eolp)
-        (progn
-          (overlay-put ov 'after-string "") ; make sure posn is correct
-          (setq copilot--real-posn (cons (point) (posn-at-point)))
-          (put-text-property 0 1 'cursor t p-completion)
-          (overlay-put ov 'display "")
-          (overlay-put ov 'after-string p-completion))
-      (overlay-put ov 'display (substring p-completion 0 1))
-      (overlay-put ov 'after-string (substring p-completion 1)))
+    (overlay-put ov 'after-string "") ; make sure posn is correct
+    (setq copilot--real-posn (cons (point) (posn-at-point)))
+    (put-text-property 0 1 'cursor t p-completion)
+    (overlay-put ov 'display "")
+    (overlay-put ov 'after-string p-completion)
     (overlay-put ov 'completion completion)
     (overlay-put ov 'start (point))))
 
@@ -419,10 +415,11 @@ USER-POS is the cursor position (for verification only)."
       (forward-line line)
       (forward-char col)
 
-      ;; remove common prefix
+      ;; remove common prefix and suffix
       (let* ((cur-line (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
-             (common-prefix-len (length (s-shared-start completion cur-line))))
-        (setq completion (substring completion common-prefix-len))
+             (common-prefix-len (length (s-shared-start completion cur-line)))
+             (common-suffix-len (length (s-shared-end completion cur-line))))
+        (setq completion (substring completion common-prefix-len (- (length completion) common-suffix-len)))
         (forward-char common-prefix-len))
 
       (when (and (s-present-p completion)
@@ -454,7 +451,6 @@ Use TRANSFORM-FN to transform completion if provided."
            (t-completion (funcall (or transform-fn #'identity) completion)))
       (copilot--async-request 'notifyAccepted (list :uuid uuid))
       (copilot-clear-overlay)
-      (delete-region start (line-end-position))
       (insert t-completion)
       ; if it is a partial completion
       (when (and (s-prefix-p t-completion completion)

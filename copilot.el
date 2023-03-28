@@ -380,7 +380,7 @@ To work around posn problems with after-string property.")
 (defconst copilot-completion-map (make-sparse-keymap)
   "Keymap for Copilot completion overlay.")
 
-(defun copilot-display-overlay-completion (completion uuid line col user-pos)
+(defun copilot--display-overlay-completion (completion uuid line col user-pos)
   "Show COMPLETION with UUID in overlay at LINE and COL.
 For Copilot, COL is always 0.
 USER-POS is the cursor position (for verification only)."
@@ -409,6 +409,7 @@ USER-POS is the cursor position (for verification only)."
                    copilot--overlay)))
         (if (= (overlay-start ov) (overlay-end ov)) ; end of line
             (progn
+              (overlay-put ov 'after-string "")
               (setq copilot--real-posn (cons (point) (posn-at-point)))
               (put-text-property 0 1 'cursor t p-completion)
               (overlay-put ov 'display "")
@@ -477,7 +478,7 @@ Use TRANSFORM-FN to transform completion if provided."
   "Show COMPLETION."
   (when (copilot--satisfy-display-predicates)
     (copilot--dbind (:text :uuid :range (:start (:line :character))) completion
-      (copilot-display-overlay-completion text uuid line character (point)))))
+      (copilot--display-overlay-completion text uuid line character (point)))))
 
 (defun copilot-complete ()
   "Complete at the current point."
@@ -612,13 +613,16 @@ command that triggered `post-command-hook'.
         ;; synchronize it. This can happen with modes that insert characters,
         ;; like electric-pair or smartparens
         (cond ((and (not copilot-state-eolp) (eolp))
-                (overlay-put ov 'display "")
-                (setq after-string completion))
+               (overlay-put ov 'display "")
+               (setq after-string completion))
               ((and copilot-state-eolp (not (eolp)))
-                (setq after-string (substring after-string 1))))
+               (setq after-string (substring after-string 1))))
         ;; Update the overlays
         (if (eolp)
-            (ignore-errors (put-text-property 1 2 'cursor t after-string))
+            (progn
+              (overlay-put ov 'after-string "")
+              (setq copilot--real-posn (cons (point) (posn-at-point)))
+              (ignore-errors (put-text-property 1 2 'cursor t after-string)))
           (overlay-put ov 'display (substring after-string 0 1)))
         (overlay-put ov 'after-string (substring after-string 1))
         (move-overlay ov (point) (overlay-end ov))))))

@@ -59,7 +59,7 @@ Username and password are optional."
        (buffer-file-name)))
   "Directory containing this file.")
 
-(defconst copilot-version "0.9.9"
+(defconst copilot-version "0.9.10"
   "Copilot version.")
 
 (defvar-local copilot--overlay nil
@@ -68,7 +68,7 @@ Username and password are optional."
 (defvar copilot--connection nil
   "Copilot agent jsonrpc connection instance.")
 
-(defvar-local copilot-line-bias 1
+(defvar-local copilot--line-bias 1
   "Line bias for Copilot completion.")
 
 
@@ -279,19 +279,19 @@ Username and password are optional."
     (cond
      ;; using whole buffer
      ((or (< copilot-max-char 0) (< pmax copilot-max-char))
-      (setq-local copilot-line-bias 1)
+      (setq-local copilot--line-bias 1)
       (buffer-substring-no-properties pmin pmax))
      ;; truncate buffer head
      ((< (- pmax p) half-window)
-      (setq-local copilot-line-bias (line-number-at-pos (- pmax copilot-max-char)))
+      (setq-local copilot--line-bias (line-number-at-pos (- pmax copilot-max-char)))
       (buffer-substring-no-properties (- pmax copilot-max-char) pmax))
      ;; truncate buffer tail
      ((< (- p pmin) half-window)
-      (setq-local copilot-line-bias 1)
+      (setq-local copilot--line-bias 1)
       (buffer-substring-no-properties pmin (+ pmin copilot-max-char)))
      ;; truncate head and tail
      (t
-      (setq-local copilot-line-bias (line-number-at-pos (- p half-window)))
+      (setq-local copilot--line-bias (line-number-at-pos (- p half-window)))
       (buffer-substring-no-properties (- p half-window)
                                       (+ p half-window))))))
 
@@ -306,7 +306,7 @@ Username and password are optional."
         :uri (copilot--get-uri)
         :relativePath (copilot--get-relative-path)
         :languageId (s-chop-suffix "-mode" (symbol-name major-mode))
-        :position (list :line (- (line-number-at-pos) copilot-line-bias)
+        :position (list :line (- (line-number-at-pos) copilot--line-bias)
                         :character (- (point) (line-beginning-position)))))
 
 
@@ -380,12 +380,36 @@ To work around posn problems with after-string property.")
 (defconst copilot-completion-map (make-sparse-keymap)
   "Keymap for Copilot completion overlay.")
 
+(defun copilot--get-overlay ()
+  "Create or get overlay for Copilot."
+  (when (not (overlayp copilot--overlay))
+    (setq copilot--overlay (make-overlay 1 1 nil nil t))
+    (overlay-put copilot--overlay 'keymap copilot-completion-map)
+    (overlay-put copilot--overlay 'priority 100))
+  copilot--overlay)
+
+(defun copilot--set-overlay-text (ov completion)
+  "Set overlay OV with COMPLETION."
+  (move-overlay ov (point) (line-end-position))
+  (let ((p-completion (propertize completion 'face 'copilot-overlay-face)))
+    (if (eolp)
+        (progn
+          (overlay-put ov 'after-string "") ; make sure posn is correct
+          (setq copilot--real-posn (cons (point) (posn-at-point)))
+          (put-text-property 0 1 'cursor t p-completion)
+          (overlay-put ov 'display "")
+          (overlay-put ov 'after-string p-completion))
+      (overlay-put ov 'display (substring p-completion 0 1))
+      (overlay-put ov 'after-string (substring p-completion 1)))
+    (overlay-put ov 'completion completion)
+    (overlay-put ov 'start (point))))
+
 (defun copilot--display-overlay-completion (completion uuid line col user-pos)
   "Show COMPLETION with UUID in overlay at LINE and COL.
 For Copilot, COL is always 0.
 USER-POS is the cursor position (for verification only)."
   (copilot-clear-overlay)
-  (setq line (1- (+ line copilot-line-bias)))
+  (setq line (1- (+ line copilot--line-bias)))
   (save-excursion
     (widen)
     (goto-char (point-min))
@@ -402,26 +426,9 @@ USER-POS is the cursor position (for verification only)."
                (or (= (point) user-pos) ; up-to-date completion
                    (and (< (point) user-pos) ; special case for removing indentation
                         (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
-      (let* ((p-completion (propertize completion 'face 'copilot-overlay-face))
-             (ov (if (not (overlayp copilot--overlay))
-                     (make-overlay (point) (line-end-position) nil nil t)
-                   (move-overlay copilot--overlay (point) (line-end-position))
-                   copilot--overlay)))
-        (if (= (overlay-start ov) (overlay-end ov)) ; end of line
-            (progn
-              (overlay-put ov 'after-string "")
-              (setq copilot--real-posn (cons (point) (posn-at-point)))
-              (put-text-property 0 1 'cursor t p-completion)
-              (overlay-put ov 'display "")
-              (overlay-put ov 'after-string p-completion))
-          (overlay-put ov 'display (substring p-completion 0 1))
-          (overlay-put ov 'after-string (substring p-completion 1)))
-        (overlay-put ov 'completion completion)
-        (overlay-put ov 'start (point))
+      (let* ((ov (copilot--get-overlay)))
+        (copilot--set-overlay-text ov completion)
         (overlay-put ov 'uuid uuid)
-        (overlay-put ov 'keymap copilot-completion-map)
-        (overlay-put ov 'priority 100)
-        (setq copilot--overlay ov)
         (copilot--async-request 'notifyShown (list :uuid uuid))))))
 
 (defun copilot-clear-overlay ()
@@ -602,30 +609,11 @@ command that triggered `post-command-hook'.
              (copilot--overlay-visible)
              (copilot--satisfy-display-predicates))
     (let* ((ov copilot--overlay)
-           (display (overlay-get ov 'display))
-           (after-string (overlay-get ov 'after-string))
-           (completion (concat display after-string))
-           (copilot-state-eolp (s-blank-p display)))
+           (completion (overlay-get ov 'completion)))
       ;; The char just inserted is the next char of completion
       (when (and (> (length completion) 1)
                  (eq last-command-event (elt completion 0)))
-        ;; If the copilot overlay state is out of sync with the buffer state,
-        ;; synchronize it. This can happen with modes that insert characters,
-        ;; like electric-pair or smartparens
-        (cond ((and (not copilot-state-eolp) (eolp))
-               (overlay-put ov 'display "")
-               (setq after-string completion))
-              ((and copilot-state-eolp (not (eolp)))
-               (setq after-string (substring after-string 1))))
-        ;; Update the overlays
-        (if (eolp)
-            (progn
-              (overlay-put ov 'after-string "")
-              (setq copilot--real-posn (cons (point) (posn-at-point)))
-              (ignore-errors (put-text-property 1 2 'cursor t after-string)))
-          (overlay-put ov 'display (substring after-string 0 1)))
-        (overlay-put ov 'after-string (substring after-string 1))
-        (move-overlay ov (point) (overlay-end ov))))))
+        (copilot--set-overlay-text ov (substring completion 1))))))
 
 (defun copilot--post-command-debounce (buffer)
   "Complete in BUFFER."

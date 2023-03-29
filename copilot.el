@@ -382,7 +382,7 @@ To work around posn problems with after-string property.")
 
 (defun copilot--get-overlay ()
   "Create or get overlay for Copilot."
-  (when (not (overlayp copilot--overlay))
+  (unless (overlayp copilot--overlay)
     (setq copilot--overlay (make-overlay 1 1 nil nil t))
     (overlay-put copilot--overlay 'keymap copilot-completion-map)
     (overlay-put copilot--overlay 'priority 100))
@@ -453,9 +453,9 @@ Use TRANSFORM-FN to transform completion if provided."
       (copilot-clear-overlay)
       (delete-region start (line-end-position))
       (insert t-completion)
-      ; trigger completion again if not fully accepted
-      (unless (equal completion t-completion)
-        (copilot-complete))
+      ; if it is a partial completion
+      (when (s-prefix-p t-completion completion)
+        (copilot--set-overlay-text (copilot--get-overlay) (s-chop-prefix t-completion completion)))
       t)))
 
 (defmacro copilot--define-accept-completion-by-action (func-name action)

@@ -481,6 +481,18 @@ Use TRANSFORM-FN to transform completion if provided."
                                  (buffer-substring-no-properties (point-min) (point))))))
 
 
+(defun copilot-accept-completion-by-paragraph (&optional n-paragraphs)
+  "Accept first N-PARAGRAPHS of completion."
+  (interactive "p")
+  (setq n-paragraphs (or n-paragraphs 1))
+  (copilot-accept-completion (lambda (completion)
+                               (with-temp-buffer
+                                 (insert completion)
+                                 (goto-char (point-min))
+                                 (forward-paragraph n-paragraphs)
+                                 (buffer-substring-no-properties (point-min) (point))))))
+
+
 (defun copilot--show-completion (completion)
   "Show COMPLETION."
   (when (copilot--satisfy-display-predicates)

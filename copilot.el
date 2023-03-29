@@ -458,40 +458,21 @@ Use TRANSFORM-FN to transform completion if provided."
         (copilot-complete))
       t)))
 
-(defun copilot-accept-completion-by-word (&optional n-word)
-  "Accept first N-WORD words of completion."
-  (interactive "p")
-  (setq n-word (or n-word 1))
-  (copilot-accept-completion (lambda (completion)
-                               (with-temp-buffer
-                                 (insert completion)
-                                 (goto-char (point-min))
-                                 (forward-word n-word)
-                                 (buffer-substring-no-properties (point-min) (point))))))
+(defmacro copilot--define-accept-completion-by-action (func-name action)
+  "Define function FUNC-NAME to accept completion by ACTION."
+  `(defun ,func-name (&optional n)
+     (interactive "p")
+     (setq n (or n 1))
+     (copilot-accept-completion (lambda (completion)
+                                  (with-temp-buffer
+                                    (insert completion)
+                                    (goto-char (point-min))
+                                    (funcall ,action n)
+                                    (buffer-substring-no-properties (point-min) (point)))))))
 
-(defun copilot-accept-completion-by-line (&optional n-line)
-  "Accept first N-LINE lines of completion."
-  (interactive "p")
-  (setq n-line (or n-line 1))
-  (copilot-accept-completion (lambda (completion)
-                               (with-temp-buffer
-                                 (insert completion)
-                                 (goto-char (point-min))
-                                 (forward-line n-line)
-                                 (buffer-substring-no-properties (point-min) (point))))))
-
-
-(defun copilot-accept-completion-by-paragraph (&optional n-paragraphs)
-  "Accept first N-PARAGRAPHS of completion."
-  (interactive "p")
-  (setq n-paragraphs (or n-paragraphs 1))
-  (copilot-accept-completion (lambda (completion)
-                               (with-temp-buffer
-                                 (insert completion)
-                                 (goto-char (point-min))
-                                 (forward-paragraph n-paragraphs)
-                                 (buffer-substring-no-properties (point-min) (point))))))
-
+(copilot--define-accept-completion-by-action copilot-accept-completion-by-word #'forward-word)
+(copilot--define-accept-completion-by-action copilot-accept-completion-by-line #'forward-line)
+(copilot--define-accept-completion-by-action copilot-accept-completion-by-paragrah #'forward-paragraph)
 
 (defun copilot--show-completion (completion)
   "Show COMPLETION."

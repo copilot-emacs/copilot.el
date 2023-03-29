@@ -458,7 +458,7 @@ Use TRANSFORM-FN to transform completion if provided."
         (copilot-complete))
       t)))
 
-(defun copilot-accept-completion-by-word (n-word)
+(defun copilot-accept-completion-by-word (&optional n-word)
   "Accept first N-WORD words of completion."
   (interactive "p")
   (setq n-word (or n-word 1))
@@ -469,7 +469,7 @@ Use TRANSFORM-FN to transform completion if provided."
                                  (forward-word n-word)
                                  (buffer-substring-no-properties (point-min) (point))))))
 
-(defun copilot-accept-completion-by-line (n-line)
+(defun copilot-accept-completion-by-line (&optional n-line)
   "Accept first N-LINE lines of completion."
   (interactive "p")
   (setq n-line (or n-line 1))

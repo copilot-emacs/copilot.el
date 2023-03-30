@@ -454,7 +454,8 @@ Use TRANSFORM-FN to transform completion if provided."
       (delete-region start (line-end-position))
       (insert t-completion)
       ; if it is a partial completion
-      (when (s-prefix-p t-completion completion)
+      (when (and (s-prefix-p t-completion completion)
+                 (not (s-equals-p t-completion completion)))
         (copilot--set-overlay-text (copilot--get-overlay) (s-chop-prefix t-completion completion)))
       t)))
 

@@ -297,17 +297,19 @@ Username and password are optional."
 
 (defun copilot--generate-doc ()
   "Generate doc parameters for completion request."
-  (list :version 0
-        :source (concat (copilot--get-source) "\n")
-        :tabSize (copilot--infer-indentation-offset)
-        :indentSize (copilot--infer-indentation-offset)
-        :insertSpaces (if indent-tabs-mode :json-false t)
-        :path (buffer-file-name)
-        :uri (copilot--get-uri)
-        :relativePath (copilot--get-relative-path)
-        :languageId (s-chop-suffix "-mode" (symbol-name major-mode))
-        :position (list :line (- (line-number-at-pos) copilot--line-bias)
-                        :character (- (point) (line-beginning-position)))))
+  (save-restriction
+    (widen)
+    (list :version 0
+          :source (concat (copilot--get-source) "\n")
+          :tabSize (copilot--infer-indentation-offset)
+          :indentSize (copilot--infer-indentation-offset)
+          :insertSpaces (if indent-tabs-mode :json-false t)
+          :path (buffer-file-name)
+          :uri (copilot--get-uri)
+          :relativePath (copilot--get-relative-path)
+          :languageId (s-chop-suffix "-mode" (symbol-name major-mode))
+          :position (list :line (- (line-number-at-pos) copilot--line-bias)
+                          :character (- (point) (line-beginning-position))))))
 
 
 (defun copilot--get-completion (callback)
@@ -410,26 +412,27 @@ For Copilot, COL is always 0.
 USER-POS is the cursor position (for verification only)."
   (copilot-clear-overlay)
   (setq line (1- (+ line copilot--line-bias)))
-  (save-excursion
+  (save-restriction
     (widen)
-    (goto-char (point-min))
-    (forward-line line)
-    (forward-char col)
+    (save-excursion
+      (goto-char (point-min))
+      (forward-line line)
+      (forward-char col)
 
-    ; remove common prefix
-    (let* ((cur-line (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
-           (common-prefix-len (length (s-shared-start completion cur-line))))
-      (setq completion (substring completion common-prefix-len))
-      (forward-char common-prefix-len))
+      ;; remove common prefix
+      (let* ((cur-line (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
+             (common-prefix-len (length (s-shared-start completion cur-line))))
+        (setq completion (substring completion common-prefix-len))
+        (forward-char common-prefix-len))
 
-    (when (and (s-present-p completion)
-               (or (= (point) user-pos) ; up-to-date completion
-                   (and (< (point) user-pos) ; special case for removing indentation
-                        (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
-      (let* ((ov (copilot--get-overlay)))
-        (copilot--set-overlay-text ov completion)
-        (overlay-put ov 'uuid uuid)
-        (copilot--async-request 'notifyShown (list :uuid uuid))))))
+      (when (and (s-present-p completion)
+                 (or (= (point) user-pos) ; up-to-date completion
+                     (and (< (point) user-pos) ; special case for removing indentation
+                          (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
+        (let* ((ov (copilot--get-overlay)))
+          (copilot--set-overlay-text ov completion)
+          (overlay-put ov 'uuid uuid)
+          (copilot--async-request 'notifyShown (list :uuid uuid)))))))
 
 (defun copilot-clear-overlay ()
   "Clear Copilot overlay."

@@ -476,7 +476,7 @@ Use TRANSFORM-FN to transform completion if provided."
 
 (copilot--define-accept-completion-by-action copilot-accept-completion-by-word #'forward-word)
 (copilot--define-accept-completion-by-action copilot-accept-completion-by-line #'forward-line)
-(copilot--define-accept-completion-by-action copilot-accept-completion-by-paragrah #'forward-paragraph)
+(copilot--define-accept-completion-by-action copilot-accept-completion-by-paragraph #'forward-paragraph)
 
 (defun copilot--show-completion (completion)
   "Show COMPLETION."

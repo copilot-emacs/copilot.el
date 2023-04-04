@@ -128,7 +128,7 @@ dotspacemacs-additional-packages
 
 ##### Option 2: Load manually
 
-Please make sure you have these dependencies installed. 
+Please make sure you have these dependencies installed (available in ELPA/MELPA):
 
 + `dash`
 + `s`

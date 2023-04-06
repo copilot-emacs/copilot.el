@@ -484,6 +484,7 @@ Use TRANSFORM-FN to transform completion if provided."
     (copilot--dbind (:text :uuid :range (:start (:line :character))) completion
       (copilot--display-overlay-completion text uuid line character (point)))))
 
+;;;###autoload
 (defun copilot-complete ()
   "Complete at the current point."
   (interactive)

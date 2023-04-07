@@ -59,7 +59,7 @@ Username and password are optional."
        (buffer-file-name)))
   "Directory containing this file.")
 
-(defconst copilot-version "0.9.10"
+(defconst copilot-version "0.10.0"
   "Copilot version.")
 
 (defvar-local copilot--overlay nil
@@ -71,13 +71,19 @@ Username and password are optional."
 (defvar-local copilot--line-bias 1
   "Line bias for Copilot completion.")
 
-
 (defvar copilot--post-command-timer nil)
-(defvar-local copilot--buffer-changed nil
-  "Non nil if buffer has changed since last time `copilot-complete' has been invoked.")
+(defvar-local copilot--last-doc-version 0
+  "The document version of the last completion.")
+(defvar-local copilot--doc-version 0
+  "The document version of the current buffer. Incremented after each change.")
 
 (defun copilot--buffer-changed ()
-  copilot--buffer-changed)
+  "Return non-nil if the buffer has changed since last completion."
+  (not (= copilot--last-doc-version copilot--doc-version)))
+
+(defvar copilot--opened-buffers nil
+  "List of buffers that have been opened in Copilot.")
+
 ;;
 ;; agent
 ;;
@@ -97,6 +103,13 @@ Username and password are optional."
      (unless (copilot--connection-alivep)
        (copilot--start-agent))
      (jsonrpc-request copilot--connection ,@args)))
+
+(defmacro copilot--notify (&rest args)
+  "Send a notification to the copilot agent with ARGS."
+  `(progn
+     (unless (copilot--connection-alivep)
+       (copilot--start-agent))
+     (jsonrpc-notify copilot--connection ,@args)))
 
 (cl-defmacro copilot--async-request (method params &rest args &key (success-fn #'copilot--ignore-response) &allow-other-keys)
   "Send an asynchronous request to the copilot agent."
@@ -203,6 +216,7 @@ Username and password are optional."
   (when copilot--connection
     (jsonrpc-shutdown copilot--connection)
     (setq copilot--connection nil))
+  (setq copilot--opened-buffers nil)
   (copilot--async-request 'getCompletions
                           '(:doc (:version 0
                                   :source "\n"
@@ -295,22 +309,24 @@ Username and password are optional."
       (buffer-substring-no-properties (- p half-window)
                                       (+ p half-window))))))
 
+(defun copilot--get-language-id ()
+  "Get language ID of current buffer."
+  (s-chop-suffix "-mode" (symbol-name major-mode)))
+
 (defun copilot--generate-doc ()
   "Generate doc parameters for completion request."
   (save-restriction
     (widen)
-    (list :version 0
-          :source (concat (copilot--get-source) "\n")
+    (list :version copilot--doc-version
           :tabSize (copilot--infer-indentation-offset)
           :indentSize (copilot--infer-indentation-offset)
           :insertSpaces (if indent-tabs-mode :json-false t)
           :path (buffer-file-name)
           :uri (copilot--get-uri)
           :relativePath (copilot--get-relative-path)
-          :languageId (s-chop-suffix "-mode" (symbol-name major-mode))
+          :languageId (copilot--get-language-id)
           :position (list :line (- (line-number-at-pos) copilot--line-bias)
                           :character (- (point) (line-beginning-position))))))
-
 
 (defun copilot--get-completion (callback)
   "Get completion with CALLBACK."
@@ -322,6 +338,7 @@ Username and password are optional."
   "Get completion cycling options with CALLBACK."
   (if copilot--completion-cache
       (funcall callback copilot--completion-cache)
+    (copilot--sync-doc)
     (copilot--async-request 'getCompletionsCycling
                             (list :doc (copilot--generate-doc))
                             :success-fn callback)))
@@ -484,16 +501,32 @@ Use TRANSFORM-FN to transform completion if provided."
     (copilot--dbind (:text :uuid :range (:start (:line :character))) completion
       (copilot--display-overlay-completion text uuid line character (point)))))
 
+(defun copilot--sync-doc ()
+  "Sync current buffer."
+  (if (-contains-p copilot--opened-buffers (current-buffer))
+      (progn
+        (copilot--notify 'textDocument/didChange
+                          (list :textDocument (list :uri (copilot--get-uri)
+                                                    :version copilot--doc-version)
+                                :contentChanges (vector (list :text (copilot--get-source))))))
+    (add-to-list 'copilot--opened-buffers (current-buffer))
+    (copilot--notify ':textDocument/didOpen
+                      (list :textDocument (list :uri (copilot--get-uri)
+                                                :languageId (copilot--get-language-id)
+                                                :version copilot--doc-version
+                                                :text (copilot--get-source))))))
+
 ;;;###autoload
 (defun copilot-complete ()
   "Complete at the current point."
   (interactive)
-  (setq copilot--buffer-changed nil)
+  (setq copilot--last-doc-version copilot--doc-version)
 
   (setq copilot--completion-cache nil)
   (setq copilot--completion-idx 0)
 
   (let ((called-interactively (called-interactively-p 'interactive)))
+    (copilot--sync-doc)
     (copilot--get-completion
       (jsonrpc-lambda (&key completions)
         (let ((completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
@@ -566,7 +599,7 @@ Use this for custom bindings in `copilot-mode'.")
     (remove-hook 'before-change-functions #'copilot--on-change 'local)))
 
 (defun copilot--posn-advice (&rest args)
-  "Remap posn if necessary."
+  "Remap posn if in copilot-mode."
   (when copilot-mode
     (let ((pos (or (car-safe args) (point))))
       (when (and copilot--real-posn
@@ -578,8 +611,9 @@ Use this for custom bindings in `copilot-mode'.")
 (define-global-minor-mode global-copilot-mode
     copilot-mode copilot-mode)
 
-(defun copilot--on-change (&reset _args)
-  (setq copilot--buffer-changed t))
+(defun copilot--on-change (&rest _args)
+  "Handle `before-change-functions' hook."
+  (cl-incf copilot--doc-version))
 
 (defun copilot--post-command ()
   "Complete in `post-command-hook' hook."
@@ -601,8 +635,7 @@ Use this for custom bindings in `copilot-mode'.")
 (defun copilot--self-insert (command)
   "Handle the case where the char just inserted is the start of the completion.
 If so, update the overlays and continue. COMMAND is the
-command that triggered `post-command-hook'.
-"
+command that triggered `post-command-hook'."
   (when (and (eq command 'self-insert-command)
              (copilot--overlay-visible)
              (copilot--satisfy-display-predicates))

@@ -2,6 +2,9 @@
 
 ;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.14"))
 
+;; todo: separate out the copilot.vim dependencies and download them on first load
+;; git clone -q --depth=1 https://github.com/github/copilot.vim.git $TMP/copilot.vim
+
 ;;; Code:
 (require 'cl-lib)
 (require 'json)
@@ -14,6 +17,21 @@
   "Copilot."
   :group 'completion
   :prefix "copilot-")
+
+
+;; node.js on windows cant understand cygwin paths
+(defun copilot--cygwinify-path (dir &optional mixed)
+  (let* ((mode-flag (if mixed
+			"-m"
+		      "-w"))	 
+	 (retstr (shell-command-to-string (format "cygpath %s %s" mode-flag dir)))
+	 (retlen (length retstr))
+	 (ret    (cond
+		  ((and (> retlen 0) (eql (aref retstr (- retlen 1)) ?\n))
+		   (substring retstr 0 (- retlen 1)))
+		  (t retstr))))
+    ret))
+
 
 (defcustom copilot-idle-delay 0
   "Time in seconds to wait before starting completion. Complete immediately if set to 0."
@@ -36,15 +54,14 @@ Username and password are optional."
 (defcustom copilot-node-executable
   (if (eq system-type 'windows-nt)
       "node.exe"
-    (if (eq system-type 'cygwin)
-	(locate-file "node" exec-path)
+    (if (eq system-type 'cygwin)       ;; want the absolute path on cygwin
+	(locate-file "node" exec-path) ;; so we get it
       "node"))
   "Node executable path."
   :group 'copilot
   :type 'string)
 
-
-(defcustom copilot-max-char 30000
+(defcustom copilot-max-char -1 ;; todo: make this toggleable per file
   "Maximum number of characters to send to Copilot, -1 means no limit."
   :group 'copilot
   :type 'integer)
@@ -55,41 +72,18 @@ Username and password are optional."
   :group 'copilot
   :type '(repeat function))
 
+;; (defconst copilot--base-dir
+;;   (if (eq system-type 'cygwin)
+;;       (copilot--cygwinify-path
+;;        (file-name-directory
+;;         (or load-file-name
+;; 	    (buffer-file-name))))
+;;     (file-name-directory
+;;      (or load-file-name
+;; 	 (buffer-file-name))))
+;;     "Directory containing this file.")
+
 (defconst copilot--base-dir
-  (if (eq system-type 'cygwin)
-      (shell-command-to-string (format "cygpath -w %s" (file-name-directory
-							(or load-file-name
-							    (buffer-file-name)))))
-    (file-name-directory
-     (or load-file-name
-	 (buffer-file-name))))
-  "Directory containing this file.")
-
-
-;; seems cygwin is screwing up node somehow. Added this so below line can be fixed.
-;; (copilot--cygwinify-dir (concat adir "/dist/agent.js")) 
-(defun copilot--cygwinify-dir (dir &optional mixed)
-  (let* ((mode-flag (if mixed
-			"-m"
-		      "-w"))	 
-	 (retstr (shell-command-to-string (format "cygpath %s %s" mode-flag dir)))
-	 (retlen (length retstr))
-	 (ret    (cond
-		  ((and (> retlen 0) (eql (aref retstr (- retlen 1)) ?\n))
-		   (substring retstr 0 (- retlen 1)))
-		  (t retstr))))
-    ret))
-
-
-;; check if system is cygwin and run the file name through the shell command cygpath (useage: cygpath -w file-name)
-(defconst copilot--base-dir
-  ;; (let* ((dir (file-name-directory
-  ;; 	       (or load-file-name
-  ;; 		   (buffer-file-name))))
-  ;; 	 (ret (if (eq system-type 'cygwin)
-  ;; 		  (copilot--cygwin-dir dir)
-  ;; 		dir)))
-  ;;   ret)
   (file-name-directory
    (or load-file-name
        (buffer-file-name)))
@@ -114,6 +108,7 @@ Username and password are optional."
 
 (defun copilot--buffer-changed ()
   copilot--buffer-changed)
+
 ;;
 ;; agent
 ;;
@@ -148,31 +143,6 @@ Username and password are optional."
                                               (funcall ,success-fn result)))
                               ,@args))))
 
-
-
-;; (defun copilot--manual-start (process)
-;;   (setq copilot--connection
-;;         (make-instance 'jsonrpc-process-connection
-;;                        :name "copilot"
-;;                        :events-buffer-scrollback-size copilot-log-max
-;;                        :process process))
-;;   (message "Copilot agent started.")
-;;   (copilot--request 'initialize '(:capabilities 'nil))
-;;   (copilot--async-request 'setEditorInfo
-;;                           `(:editorInfo (:name "Emacs" :version ,emacs-version)
-;; 					:editorPluginInfo (:name "copilot.el" :version ,copilot-version)
-;; 					,@(when copilot-network-proxy
-;;                                             `(:networkProxy ,copilot-network-proxy)))))
-
-;; (setq node-path (locate-file copilot-node-executable exec-path))
-;; (copilot--manual-start (make-process
-;; 			:name "copilot-debug-agent"
-;; 			:command (list node-path (copilot--cygwinify-dir (concat copilot--base-dir "/dist/agent.js")))
-;; 			:coding 'utf-8-emacs-unix
-;; 			:connection-type 'pipe
-;; 			:stderr (get-buffer-create "*copilot stderr*")
-;; 			:noquery t))
-
 (defun copilot--start-agent ()
   "Start the copilot agent process in local."
   (if (not
@@ -193,7 +163,7 @@ Username and password are optional."
                                   :events-buffer-scrollback-size copilot-log-max
                                   :process (make-process :name "copilot agent"
                                                          :command (list copilot-node-executable
-									(copilot--cygwinify-dir (concat copilot--base-dir "/dist/agent.js")))
+									(copilot--cygwinify-path (concat copilot--base-dir "/dist/agent.js")))
                                                          :coding 'utf-8-emacs-unix
                                                          :connection-type 'pipe
                                                          :stderr (get-buffer-create "*copilot stderr*")
@@ -261,6 +231,8 @@ Username and password are optional."
 ;;
 ;; diagnose
 ;;
+
+;; (copilot-diagnose)
 
 (defun copilot-diagnose ()
   "Restart and diagnose copilot."
@@ -540,7 +512,7 @@ Use TRANSFORM-FN to transform completion if provided."
                                  (s-trim-right prefix)))))
 
 (defun copilot-accept-completion-by-line (n-line)
-  "Accept first N-LINE lines of completion."
+       "Accept first N-LINE lines of completion."
   (interactive "p")
   (setq n-line (or n-line 1))
   (copilot-accept-completion (lambda (completion)
@@ -620,7 +592,7 @@ Use this for custom bindings in `copilot-mode'.")
 
 ;;;###autoload
 (define-global-minor-mode global-copilot-mode
-    copilot-mode copilot-mode)
+  copilot-mode copilot-mode)
 
 (defun copilot--on-change (&reset _args)
   (setq copilot--buffer-changed t))

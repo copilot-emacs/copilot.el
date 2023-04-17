@@ -298,7 +298,7 @@ But I decided to allow them to coexist, allowing you to choose a better one at a
 ## Reporting Bugs
 
 + Make sure you have restarted your Emacs (and rebuild the plugin if necessary) after updating the plugin.
-+ Please paste related logs in the `*copilot events*` and `*copilot stderr*` buffer.
++ Please enable event logging by customize `copilot-log-max` (to e.g. 1000), then paste related logs in the `*copilot events*` and `*copilot stderr*` buffer.
 + If an exception is thrown, please also paste the stack trace (use `M-x toggle-debug-on-error` to enable stack trace).
 
 ## Roadmap

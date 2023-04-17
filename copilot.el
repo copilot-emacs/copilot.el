@@ -23,11 +23,14 @@
 (defcustom copilot-network-proxy nil
   "Network proxy to use for Copilot. Nil means no proxy.
 Format: '(:host \"127.0.0.1\" :port 80 :username \"username\" :password \"password\")
-If username and password are not provided, they will be prompted for."
+Username and password are optional."
+  :type '(plist :tag "Uncheck all to disable proxy" :key-type symbol)
+  :options '((:host string) (:port integer) (:username string) (:password string))
   :group 'copilot)
 
-(defcustom copilot-log-max message-log-max
-  "Max size of events buffer. 0 disables, nil means infinite."
+(defcustom copilot-log-max 0
+  "Max size of events buffer. 0 disables, nil means infinite.
+Enabling event logging may slightly affect performance."
   :group 'copilot
   :type 'integer)
 
@@ -39,10 +42,17 @@ If username and password are not provided, they will be prompted for."
   :group 'copilot
   :type 'string)
 
+
+(defcustom copilot-max-char 30000
+  "Maximum number of characters to send to Copilot, -1 means no limit."
+  :group 'copilot
+  :type 'integer)
+
+
 (defcustom copilot-clear-overlay-ignore-commands nil
   "List of commands that should not clear the overlay when called."
   :group 'copilot
-  :type '(repeat symbol))
+  :type '(repeat function))
 
 (defconst copilot--base-dir
   (file-name-directory
@@ -50,7 +60,7 @@ If username and password are not provided, they will be prompted for."
        (buffer-file-name)))
   "Directory containing this file.")
 
-(defconst copilot-version "0.9.7"
+(defconst copilot-version "0.9.10"
   "Copilot version.")
 
 (defvar-local copilot--overlay nil
@@ -58,6 +68,10 @@ If username and password are not provided, they will be prompted for."
 
 (defvar copilot--connection nil
   "Copilot agent jsonrpc connection instance.")
+
+(defvar-local copilot--line-bias 1
+  "Line bias for Copilot completion.")
+
 
 (defvar copilot--post-command-timer nil)
 (defvar-local copilot--buffer-changed nil
@@ -73,17 +87,22 @@ If username and password are not provided, they will be prompted for."
   (lambda (_))
   "Simply ignore the response.")
 
+(defsubst copilot--connection-alivep ()
+  "Non-nil if the `copilot--connection' is alive."
+  (and copilot--connection
+       (zerop (process-exit-status (jsonrpc--process copilot--connection)))))
+
 (defmacro copilot--request (&rest args)
   "Send a request to the copilot agent with ARGS."
   `(progn
-     (unless copilot--connection
+     (unless (copilot--connection-alivep)
        (copilot--start-agent))
      (jsonrpc-request copilot--connection ,@args)))
 
 (cl-defmacro copilot--async-request (method params &rest args &key (success-fn #'copilot--ignore-response) &allow-other-keys)
   "Send an asynchronous request to the copilot agent."
   `(progn
-     (unless copilot--connection
+     (unless (copilot--connection-alivep)
        (copilot--start-agent))
      ;; jsonrpc will use temp buffer for callbacks, so we need to save the current buffer and restore it inside callback
      (let ((buf (current-buffer)))
@@ -103,10 +122,8 @@ If username and password are not provided, they will be prompted for."
                              (s-trim)
                              (s-chop-prefix "v")
                              (string-to-number))))
-      (cond ((< node-version 12)
-             (user-error "Node 12+ is required but found %s" node-version))
-            ((>= node-version 18)
-             (user-error "Node 18+ is not supported but found %s" node-version))
+      (cond ((< node-version 16)
+             (user-error "Node 16+ is required but found %s" node-version))
             (t
              (setq copilot--connection
                    (make-instance 'jsonrpc-process-connection
@@ -152,10 +169,9 @@ If username and password are not provided, they will be prompted for."
   (interactive)
   (copilot--dbind
       (:status :user :userCode user-code :verificationUri verification-uri)
-      (copilot--request 'signInInitiate ''nil)
+      (copilot--request 'signInInitiate '(:dummy "signInInitiate"))
     (when (s-equals-p status "AlreadySignedIn")
-      (message "Already signed in as %s." user)
-      (cl-return-from copilot-login))
+      (user-error "Already signed in as %s" user))
     (if (display-graphic-p)
         (progn
           (gui-set-selection 'CLIPBOARD user-code)
@@ -168,14 +184,14 @@ If username and password are not provided, they will be prompted for."
     (condition-case err
         (copilot--request 'signInConfirm (list :userCode user-code))
       (jsonrpc-error
-        (message "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
-    (copilot--dbind (:user) (copilot--request 'checkStatus ''nil)
+        (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
+    (copilot--dbind (:user) (copilot--request 'checkStatus '(:dummy "checkStatus"))
       (message "Authenticated as GitHub user %s." user))))
 
 (defun copilot-logout ()
   "Logout from Copilot."
   (interactive)
-  (copilot--request 'signOut ''nil)
+  (copilot--request 'signOut '(:dummy "signOut"))
   (message "Logged out."))
 
 ;;
@@ -189,7 +205,8 @@ If username and password are not provided, they will be prompted for."
     (jsonrpc-shutdown copilot--connection)
     (setq copilot--connection nil))
   (copilot--async-request 'getCompletions
-                          '(:doc (:source "\n"
+                          '(:doc (:version 0
+                                  :source "\n"
                                   :path ""
                                   :uri ""
                                   :relativePath ""
@@ -211,6 +228,7 @@ If username and password are not provided, they will be prompted for."
   (append '((latex-mode tex-indent-basic)
             (nxml-mode nxml-child-indent)
             (python-mode python-indent py-indent-offset python-indent-offset)
+            (python-ts-mode python-indent py-indent-offset python-indent-offset)
             (web-mode web-mode-markup-indent-offset web-mode-html-offset))
           editorconfig-indentation-alist)
   "Alist of `major-mode' to indentation map with optional fallbacks.")
@@ -247,23 +265,53 @@ If username and password are not provided, they will be prompted for."
   (cond
    ((not buffer-file-name)
     "")
-   ((eq system-type 'windows-nt)
+   ((and (eq system-type 'windows-nt)
+         (not (s-starts-with-p "/" buffer-file-name)))
     (concat "file:///" (url-encode-url buffer-file-name)))
    (t
     (concat "file://" (url-encode-url buffer-file-name)))))
 
+(defun copilot--get-source ()
+  "Get source code from current buffer."
+  (let* ((p (point))
+         (pmax (point-max))
+         (pmin (point-min))
+         (half-window (/ copilot-max-char 2)))
+    (cond
+     ;; using whole buffer
+     ((or (< copilot-max-char 0) (< pmax copilot-max-char))
+      (setq-local copilot--line-bias 1)
+      (buffer-substring-no-properties pmin pmax))
+     ;; truncate buffer head
+     ((< (- pmax p) half-window)
+      (setq-local copilot--line-bias (line-number-at-pos (- pmax copilot-max-char)))
+      (buffer-substring-no-properties (- pmax copilot-max-char) pmax))
+     ;; truncate buffer tail
+     ((< (- p pmin) half-window)
+      (setq-local copilot--line-bias 1)
+      (buffer-substring-no-properties pmin (+ pmin copilot-max-char)))
+     ;; truncate head and tail
+     (t
+      (setq-local copilot--line-bias (line-number-at-pos (- p half-window)))
+      (buffer-substring-no-properties (- p half-window)
+                                      (+ p half-window))))))
+
 (defun copilot--generate-doc ()
   "Generate doc parameters for completion request."
-  (list :source (concat (buffer-substring-no-properties (point-min) (point-max)) "\n")
-        :tabSize (copilot--infer-indentation-offset)
-        :indentSize (copilot--infer-indentation-offset)
-        :insertSpaces (if indent-tabs-mode :json-false t)
-        :path (buffer-file-name)
-        :uri (copilot--get-uri)
-        :relativePath (copilot--get-relative-path)
-        :languageId (s-chop-suffix "-mode" (symbol-name major-mode))
-        :position (list :line (1- (line-number-at-pos))
-                        :character (- (point) (point-at-bol)))))
+  (save-restriction
+    (widen)
+    (list :version 0
+          :source (concat (copilot--get-source) "\n")
+          :tabSize (copilot--infer-indentation-offset)
+          :indentSize (copilot--infer-indentation-offset)
+          :insertSpaces (if indent-tabs-mode :json-false t)
+          :path (buffer-file-name)
+          :uri (copilot--get-uri)
+          :relativePath (copilot--get-relative-path)
+          :languageId (s-chop-suffix "-mode" (symbol-name major-mode))
+          :position (list :line (- (line-number-at-pos) copilot--line-bias)
+                          :character (- (point) (line-beginning-position))))))
+
 
 (defun copilot--get-completion (callback)
   "Get completion with CALLBACK."
@@ -335,51 +383,57 @@ To work around posn problems with after-string property.")
 (defconst copilot-completion-map (make-sparse-keymap)
   "Keymap for Copilot completion overlay.")
 
-(defun copilot-display-overlay-completion (completion uuid line col user-pos)
+(defun copilot--get-overlay ()
+  "Create or get overlay for Copilot."
+  (unless (overlayp copilot--overlay)
+    (setq copilot--overlay (make-overlay 1 1 nil nil t))
+    (overlay-put copilot--overlay 'keymap copilot-completion-map)
+    (overlay-put copilot--overlay 'priority 100))
+  copilot--overlay)
+
+(defun copilot--set-overlay-text (ov completion)
+  "Set overlay OV with COMPLETION."
+  (move-overlay ov (point) (line-end-position))
+  (let ((p-completion (propertize completion 'face 'copilot-overlay-face)))
+    (if (eolp)
+        (progn
+          (overlay-put ov 'after-string "") ; make sure posn is correct
+          (setq copilot--real-posn (cons (point) (posn-at-point)))
+          (put-text-property 0 1 'cursor t p-completion)
+          (overlay-put ov 'display "")
+          (overlay-put ov 'after-string p-completion))
+      (overlay-put ov 'display (substring p-completion 0 1))
+      (overlay-put ov 'after-string (substring p-completion 1)))
+    (overlay-put ov 'completion completion)
+    (overlay-put ov 'start (point))))
+
+(defun copilot--display-overlay-completion (completion uuid line col user-pos)
   "Show COMPLETION with UUID in overlay at LINE and COL.
 For Copilot, COL is always 0.
 USER-POS is the cursor position (for verification only)."
   (copilot-clear-overlay)
-  (save-excursion
+  (setq line (1- (+ line copilot--line-bias)))
+  (save-restriction
     (widen)
-    (goto-char (point-min))
-    (if (= (line-end-position line) (1- (point-max)))
-        ; special case if the last line is empty
-        (progn
-          (goto-char (point-max))
-          (newline)
-          (forward-char -1))
+    (save-excursion
+      (goto-char (point-min))
       (forward-line line)
-      (forward-char col))
+      (forward-char col)
 
-    ; remove common prefix
-    (let* ((cur-line (s-chop-suffix "\n" (or (thing-at-point 'line) "")))
-           (common-prefix-len (length (s-shared-start completion cur-line))))
-      (setq completion (substring completion common-prefix-len))
-      (forward-char common-prefix-len))
+      ;; remove common prefix
+      (let* ((cur-line (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
+             (common-prefix-len (length (s-shared-start completion cur-line))))
+        (setq completion (substring completion common-prefix-len))
+        (forward-char common-prefix-len))
 
-    (when (and (s-present-p completion)
-               (or (= (point) user-pos) ; up-to-date completion
-                   (and (< (point) user-pos) ; special case for removing indentation
-                        (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
-      (let* ((p-completion (propertize completion 'face 'copilot-overlay-face))
-             (ov (if (not (overlayp copilot--overlay))
-                     (make-overlay (point) (point-at-eol) nil nil t)
-                   (move-overlay copilot--overlay (point) (point-at-eol))
-                   copilot--overlay)))
-        (if (= (overlay-start ov) (overlay-end ov)) ; end of line
-            (progn
-              (setq copilot--real-posn (cons (point) (posn-at-point)))
-              (put-text-property 0 1 'cursor t p-completion)
-              (overlay-put ov 'after-string p-completion))
-          (overlay-put ov 'display (substring p-completion 0 1))
-          (overlay-put ov 'after-string (substring p-completion 1)))
-        (overlay-put ov 'completion completion)
-        (overlay-put ov 'start (point))
-        (overlay-put ov 'uuid uuid)
-        (overlay-put ov 'keymap copilot-completion-map)
-        (setq copilot--overlay ov)
-        (copilot--async-request 'notifyShown (list :uuid uuid))))))
+      (when (and (s-present-p completion)
+                 (or (= (point) user-pos) ; up-to-date completion
+                     (and (< (point) user-pos) ; special case for removing indentation
+                          (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
+        (let* ((ov (copilot--get-overlay)))
+          (copilot--set-overlay-text ov completion)
+          (overlay-put ov 'uuid uuid)
+          (copilot--async-request 'notifyShown (list :uuid uuid)))))))
 
 (defun copilot-clear-overlay ()
   "Clear Copilot overlay."
@@ -403,47 +457,35 @@ Use TRANSFORM-FN to transform completion if provided."
       (copilot-clear-overlay)
       (delete-region start (line-end-position))
       (insert t-completion)
-      ; trigger completion again if not fully accepted
-      (unless (equal completion t-completion)
-        (copilot-complete))
+      ; if it is a partial completion
+      (when (and (s-prefix-p t-completion completion)
+                 (not (s-equals-p t-completion completion)))
+        (copilot--set-overlay-text (copilot--get-overlay) (s-chop-prefix t-completion completion)))
       t)))
 
-(defun copilot-accept-completion-by-word (n-word)
-  "Accept first N-WORD words of completion."
-  (interactive "p")
-  (setq n-word (or n-word 1))
-  (copilot-accept-completion (lambda (completion)
-                               (let* ((blank-regexp '(any blank "\r" "\n"))
-                                      (separator-regexp (rx-to-string
-                                                         `(seq
-                                                           (not ,blank-regexp)
-                                                           (1+ ,blank-regexp))))
-                                      (words (s-split-up-to separator-regexp completion n-word))
-                                      (remain (if (<= (length words) n-word)
-                                                  ""
-                                                (cl-first (last words))))
-                                      (length (- (length completion) (length remain)))
-                                      (prefix (substring completion 0 length)))
-                                 (s-trim-right prefix)))))
+(defmacro copilot--define-accept-completion-by-action (func-name action)
+  "Define function FUNC-NAME to accept completion by ACTION."
+  `(defun ,func-name (&optional n)
+     (interactive "p")
+     (setq n (or n 1))
+     (copilot-accept-completion (lambda (completion)
+                                  (with-temp-buffer
+                                    (insert completion)
+                                    (goto-char (point-min))
+                                    (funcall ,action n)
+                                    (buffer-substring-no-properties (point-min) (point)))))))
 
-(defun copilot-accept-completion-by-line (n-line)
-  "Accept first N-LINE lines of completion."
-  (interactive "p")
-  (setq n-line (or n-line 1))
-  (copilot-accept-completion (lambda (completion)
-                               (let* ((lines (s-split-up-to (rx anychar (? "\r") "\n") completion n-line))
-                                      (remain (if (<= (length lines) n-line)
-                                                  ""
-                                                (cl-first (last lines))))
-                                      (length (- (length completion) (length remain)))
-                                      (prefix (substring completion 0 length)))
-                                 prefix))))
+(copilot--define-accept-completion-by-action copilot-accept-completion-by-word #'forward-word)
+(copilot--define-accept-completion-by-action copilot-accept-completion-by-line #'forward-line)
+(copilot--define-accept-completion-by-action copilot-accept-completion-by-paragraph #'forward-paragraph)
 
 (defun copilot--show-completion (completion)
   "Show COMPLETION."
-  (copilot--dbind (:text :uuid :range (:start (:line :character))) completion
-    (copilot-display-overlay-completion text uuid line character (point))))
+  (when (copilot--satisfy-display-predicates)
+    (copilot--dbind (:text :uuid :range (:start (:line :character))) completion
+      (copilot--display-overlay-completion text uuid line character (point)))))
 
+;;;###autoload
 (defun copilot-complete ()
   "Complete at the current point."
   (interactive)
@@ -467,19 +509,47 @@ Use TRANSFORM-FN to transform completion if provided."
 
 (defcustom copilot-disable-predicates nil
   "A list of predicate functions with no argument to disable Copilot.
-Copilot will be disabled if any predicate returns t."
-  :type 'list
+Copilot will not be triggered if any predicate returns t."
+  :type '(repeat function)
   :group 'copilot)
 
 (defcustom copilot-enable-predicates '(evil-insert-state-p copilot--buffer-changed)
   "A list of predicate functions with no argument to enable Copilot.
-Copilot will be enabled only if all predicates return t."
-  :type 'list
+Copilot will be triggered only if all predicates return t."
+  :type '(repeat function)
   :group 'copilot)
+
+(defcustom copilot-disable-display-predicates nil
+  "A list of predicate functions with no argument to disable Copilot.
+Copilot will not show completions if any predicate returns t."
+  :type '(repeat function)
+  :group 'copilot)
+
+(defcustom copilot-enable-display-predicates nil
+  "A list of predicate functions with no argument to enable Copilot.
+Copilot will show completions only if all predicates return t."
+  :type '(repeat function)
+  :group 'copilot)
+
+(defmacro copilot--satisfy-predicates (enable disable)
+  "Return t if satisfy all predicates in ENABLE and none in DISABLE."
+  `(and (cl-every (lambda (pred)
+                    (if (functionp pred) (funcall pred) t))
+                  ,enable)
+        (cl-notany (lambda (pred)
+                     (if (functionp pred) (funcall pred) nil))
+                   ,disable)))
+
+(defun copilot--satisfy-trigger-predicates ()
+  "Return t if all trigger predicates are satisfied."
+  (copilot--satisfy-predicates copilot-enable-predicates copilot-disable-predicates))
+
+(defun copilot--satisfy-display-predicates ()
+  "Return t if all display predicates are satisfied."
+  (copilot--satisfy-predicates copilot-enable-display-predicates copilot-disable-display-predicates))
 
 (defvar copilot-mode-map (make-sparse-keymap)
   "Keymap for Copilot minor mode.
-
 Use this for custom bindings in `copilot-mode'.")
 
 ;;;###autoload
@@ -518,7 +588,8 @@ Use this for custom bindings in `copilot-mode'.")
              (not (and (symbolp this-command)
                        (or
                         (s-starts-with-p "copilot-" (symbol-name this-command))
-                        (member this-command copilot-clear-overlay-ignore-commands)))))
+                        (member this-command copilot-clear-overlay-ignore-commands)
+                        (copilot--self-insert this-command)))))
     (copilot-clear-overlay)
     (when copilot--post-command-timer
       (cancel-timer copilot--post-command-timer))
@@ -528,17 +599,27 @@ Use this for custom bindings in `copilot-mode'.")
                                #'copilot--post-command-debounce
                                (current-buffer)))))
 
+(defun copilot--self-insert (command)
+  "Handle the case where the char just inserted is the start of the completion.
+If so, update the overlays and continue. COMMAND is the
+command that triggered `post-command-hook'.
+"
+  (when (and (eq command 'self-insert-command)
+             (copilot--overlay-visible)
+             (copilot--satisfy-display-predicates))
+    (let* ((ov copilot--overlay)
+           (completion (overlay-get ov 'completion)))
+      ;; The char just inserted is the next char of completion
+      (when (and (> (length completion) 1)
+                 (eq last-command-event (elt completion 0)))
+        (copilot--set-overlay-text ov (substring completion 1))))))
+
 (defun copilot--post-command-debounce (buffer)
   "Complete in BUFFER."
   (when (and (buffer-live-p buffer)
              (equal (current-buffer) buffer)
              copilot-mode
-             (cl-every (lambda (pred)
-                         (if (functionp pred) (funcall pred) t))
-                       copilot-enable-predicates)
-             (cl-notany (lambda (pred)
-                          (if (functionp pred) (funcall pred) nil))
-                        copilot-disable-predicates))
+             (copilot--satisfy-trigger-predicates))
         (copilot-complete)))
 
 (provide 'copilot)

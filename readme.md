@@ -177,8 +177,10 @@ In general, you need to bind `copilot-accept-completion` to some key in order to
 ; complete by copilot first, then auto-complete
 (defun my-tab ()
   (interactive)
-  (or (copilot-accept-completion)
-      (ac-expand nil)))
+  (if (minibufferp)
+      (minibuffer-complete)
+      (or (copilot-accept-completion)
+	  (ac-expand nil)))
 
 (with-eval-after-load 'auto-complete
   ; disable inline preview

@@ -245,6 +245,10 @@ Enabling event logging may slightly affect performance."
 ;; Auto completion
 ;;
 
+(defvar copilot-major-mode-alist '(("rustic" . "rust")
+                                   ("cperl" . "perl"))
+  "Alist mapping major mode names (with -mode removed) to copilot language ID's.")
+
 (defconst copilot--indentation-alist
   (append '((latex-mode tex-indent-basic)
             (nxml-mode nxml-child-indent)
@@ -319,7 +323,8 @@ Enabling event logging may slightly affect performance."
 
 (defun copilot--get-language-id ()
   "Get language ID of current buffer."
-  (s-chop-suffix "-mode" (symbol-name major-mode)))
+  (let ((mode (s-chop-suffix "-mode" (symbol-name major-mode))))
+    (alist-get mode copilot-major-mode-alist mode nil 'equal)))
 
 (defun copilot--generate-doc ()
   "Generate doc parameters for completion request."

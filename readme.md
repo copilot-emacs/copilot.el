@@ -39,11 +39,11 @@ Configure copilot in `~/.doom.d/config.el`:
 ;; accept completion from copilot and fallback to company
 (use-package! copilot
   :hook (prog-mode . copilot-mode)
-  :bind (("C-TAB" . 'copilot-accept-completion-by-word)
-         ("C-<tab>" . 'copilot-accept-completion-by-word)
-         :map copilot-completion-map
-         ("<tab>" . 'copilot-accept-completion)
-         ("TAB" . 'copilot-accept-completion)))
+  :bind (:map copilot-completion-map
+              ("<tab>" . 'copilot-accept-completion)
+              ("TAB" . 'copilot-accept-completion)
+              ("C-TAB" . 'copilot-accept-completion-by-word)
+              ("C-<tab>" . 'copilot-accept-completion-by-word)))
 ```
 
 Strongly recommend to enable `childframe` option in `company` module (`(company +childframe)`) to prevent overlay conflict.
@@ -104,25 +104,42 @@ dotspacemacs-additional-packages
 
 #### 1. Load `copilot.el`
 
-##### Option 1: Load via `straight.el` (recommended)
+##### Option 1: Load via `straight.el` or `quelpa` (recommended)
 
-
+###### `straight.el`:
+  
 ```elisp
 (use-package copilot
   :straight (:host github :repo "zerolfx/copilot.el" :files ("dist" "*.el"))
   :ensure t)
 ;; you can utilize :map :hook and :config to customize copilot
 ```
-
+  
+###### `quelpa` + `quelpa-use-package`:
+  
+```elisp
+(use-package copilot
+  :quelpa (copilot :fetcher github
+                   :repo "zerolfx/copilot.el"
+                   :branch "main"
+                   :files ("dist" "*.el")))
+;; you can utilize :map :hook and :config to customize copilot
+```
 
 ##### Option 2: Load manually
 
-Please make sure you have these dependencies installed, and use `load-file` or `load-path` + `require` to load it.
+Please make sure you have these dependencies installed (available in ELPA/MELPA):
 
 + `dash`
 + `s`
 + `editorconfig`
 
+After installing those, clone this repository then insert the below snippet into your config file.
+
+```
+(add-to-list 'load-path "/path/to/copilot.el")
+(require 'copilot)
+```
 
 #### 2. Configure completion
 
@@ -259,14 +276,19 @@ The executable path of Node.js.
 
 Time in seconds to wait before starting completion (default to 0). Note Copilot itself has a ~100ms delay because of network communication.
 
-#### copilot-enable-predicates
-A list of predicate functions with no argument to enable Copilot in `copilot-mode`. Copilot will be enabled only if all predicates return `t`.
+#### copilot-enable-predicates / copilot-disable-predicates
+A list of predicate functions with no argument to enable/disable triggering Copilot in `copilot-mode`.
 
-#### copilot-disable-predicates
-A list of predicate functions with no argument to disable Copilot in `copilot-mode`. Copilot will be disabled if any predicate returns `t`.
+#### copilot-enable-display-predicates / copilot-disable-display-predicates
+A list of predicate functions with no argument to enable/disable showing Copilot's completions in `copilot-mode`.
 
 #### copilot-clear-overlay-ignore-commands
-A list of commands that will not clear the overlay.
+A list of commands that won't cause the overlay to be cleared.
+
+#### copilot-network-proxy
+
+Format: `'(:host "127.0.0.1" :port "7890" :username: "user" :password: "password")`, where `:username` and `:password` are optional.
+
 
 ## Known Issues
 
@@ -291,7 +313,7 @@ But I decided to allow them to coexist, allowing you to choose a better one at a
 ## Reporting Bugs
 
 + Make sure you have restarted your Emacs (and rebuild the plugin if necessary) after updating the plugin.
-+ Please paste related logs in the `*copilot events*` and `*copilot stderr*` buffer.
++ Please enable event logging by customize `copilot-log-max` (to e.g. 1000), then paste related logs in the `*copilot events*` and `*copilot stderr*` buffer.
 + If an exception is thrown, please also paste the stack trace (use `M-x toggle-debug-on-error` to enable stack trace).
 
 ## Roadmap

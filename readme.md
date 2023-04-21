@@ -16,7 +16,7 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 2. Setup `copilot.el` as described in the next section.
 
-3. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose`.
+3. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose` (`NotAuthorized` means you don't have a valid subscription).
 
 4. Enjoy!
 
@@ -88,12 +88,11 @@ dotspacemacs-additional-packages
   
 (with-eval-after-load 'copilot
   (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
-  (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion))
+  (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
+  (define-key copilot-completion-map (kbd "C-TAB") 'copilot-accept-completion-by-word)
+  (define-key copilot-completion-map (kbd "C-<tab>") 'copilot-accept-completion-by-word))
 
 (add-hook 'prog-mode-hook 'copilot-mode)
-
-(define-key evil-insert-state-map (kbd "C-<tab>") 'copilot-accept-completion-by-word)
-(define-key evil-insert-state-map (kbd "C-TAB") 'copilot-accept-completion-by-word)
 ```
 
 </details>
@@ -158,57 +157,11 @@ You need to bind `copilot-complete` to some key and call `copilot-clear-overlay`
 
 #### 3. Configure completion acceptation
 
-In general, you need to bind `copilot-accept-completion` to some key in order to accept the completion. Also, you may find `copilot-accept-completion-by-word` is useful.
-
-#### Example of using tab with `company-mode`
+Use tab to accept completions (you may also want to bind `copilot-accept-completion-by-word` to some key):
 
 ```elisp
-(with-eval-after-load 'company
-  ;; disable inline previews
-  (delq 'company-preview-if-just-one-frontend company-frontends))
-  
 (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
 (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
-```
-
-#### Example of using tab with `auto-complete`
-
-```elisp
-; complete by copilot first, then auto-complete
-(defun my-tab ()
-  (interactive)
-  (or (copilot-accept-completion)
-      (ac-expand nil)))
-
-(with-eval-after-load 'auto-complete
-  ; disable inline preview
-  (setq ac-disable-inline t)
-  ; show menu if have only one candidate
-  (setq ac-candidate-menu-min 0))
-  
-(define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
-(define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
-```
-
-#### Example of defining tab in copilot-mode
-
-This is useful if you don't want to depend on a particular completion framework.
-
-```elisp
-(defun my/copilot-tab ()
-  (interactive)
-  (or (copilot-accept-completion)
-      (indent-for-tab-command)))
-
-(with-eval-after-load 'copilot
-  (define-key copilot-mode-map (kbd "<tab>") #'my/copilot-tab))
-```
-
-Or with evil-mode:
-```elisp
-(with-eval-after-load 'copilot
-  (evil-define-key 'insert copilot-mode-map
-    (kbd "<tab>") #'my/copilot-tab))
 ```
 
 </details>

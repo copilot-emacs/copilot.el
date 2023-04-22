@@ -418,7 +418,10 @@ To work around posn problems with after-string property.")
 (defun copilot--set-overlay-text (ov completion)
   "Set overlay OV with COMPLETION."
   (move-overlay ov (point) (line-end-position))
-  (let ((p-completion (propertize completion 'face 'copilot-overlay-face)))
+  (let* ((line-end (line-end-position))
+         (tail (buffer-substring (- line-end (overlay-get ov 'end)) line-end))
+         (p-completion (concat (propertize completion 'face 'copilot-overlay-face)
+                               tail)))
     (if (eolp)
         (progn
           (overlay-put ov 'after-string "") ; make sure posn is correct
@@ -431,21 +434,19 @@ To work around posn problems with after-string property.")
     (overlay-put ov 'completion completion)
     (overlay-put ov 'start (point))))
 
-(defun copilot--display-overlay-completion (completion uuid line col user-pos)
+(defun copilot--display-overlay-completion (completion uuid line col user-pos end)
   "Show COMPLETION with UUID in overlay at LINE and COL.
 For Copilot, COL is always 0.
 USER-POS is the cursor position (for verification only)."
   (copilot-clear-overlay)
-  (setq line (1- (+ line copilot--line-bias)))
   (save-restriction
     (widen)
     (save-excursion
-      (goto-char (point-min))
-      (forward-line line)
+      (goto-line (+ line copilot--line-bias))
       (forward-char col)
 
       ;; remove common prefix
-      (let* ((cur-line (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
+      (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
              (common-prefix-len (length (s-shared-start completion cur-line))))
         (setq completion (substring completion common-prefix-len))
         (forward-char common-prefix-len))
@@ -455,6 +456,7 @@ USER-POS is the cursor position (for verification only)."
                      (and (< (point) user-pos) ; special case for removing indentation
                           (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
         (let* ((ov (copilot--get-overlay)))
+          (overlay-put ov 'end end)
           (copilot--set-overlay-text ov completion)
           (overlay-put ov 'uuid uuid)
           (copilot--async-request 'notifyShown (list :uuid uuid)))))))
@@ -479,7 +481,7 @@ Use TRANSFORM-FN to transform completion if provided."
            (t-completion (funcall (or transform-fn #'identity) completion)))
       (copilot--async-request 'notifyAccepted (list :uuid uuid))
       (copilot-clear-overlay)
-      (delete-region start (line-end-position))
+      (delete-region start (- (line-end-position) (overlay-get copilot--overlay 'end)))
       (insert t-completion)
       ; if it is a partial completion
       (when (and (s-prefix-p t-completion completion)
@@ -506,8 +508,18 @@ Use TRANSFORM-FN to transform completion if provided."
 (defun copilot--show-completion (completion)
   "Show COMPLETION."
   (when (copilot--satisfy-display-predicates)
-    (copilot--dbind (:text :uuid :range (:start (:line :character))) completion
-      (copilot--display-overlay-completion text uuid line character (point)))))
+    (copilot--dbind
+        (:text :uuid
+         :range (:start (:line :character)
+                 :end (:character end-char)))
+        completion
+      ;; Determine how much of the remaining line is *not* part of the
+      ;; completion
+      (let ((end (save-excursion
+                   (goto-line (+ line copilot--line-bias))
+                   (forward-char end-char)
+                   (- (line-end-position) (point)))))
+        (copilot--display-overlay-completion text uuid line character (point) end)))))
 
 (defun copilot--sync-doc ()
   "Sync current buffer."
@@ -650,9 +662,11 @@ command that triggered `post-command-hook'."
     (let* ((ov copilot--overlay)
            (completion (overlay-get ov 'completion)))
       ;; The char just inserted is the next char of completion
-      (when (and (> (length completion) 1)
-                 (eq last-command-event (elt completion 0)))
-        (copilot--set-overlay-text ov (substring completion 1))))))
+      (when (eq last-command-event (elt completion 0))
+        (if (= (length completion) 1)
+            ;; If there is only one char in the completion, accept it
+            (copilot-accept-completion)
+          (copilot--set-overlay-text ov (substring completion 1)))))))
 
 (defun copilot--post-command-debounce (buffer)
   "Complete in BUFFER."

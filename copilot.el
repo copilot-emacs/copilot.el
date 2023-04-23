@@ -449,6 +449,8 @@ USER-POS is the cursor position (for verification only)."
     (save-excursion
       (goto-char start) ; removing indentation
       (let* ((ov (copilot--get-overlay)))
+        ;; use 'tail-length to restore 'end in copilot--self-insert in case of automatic pair insertion
+        (overlay-put ov 'tail-length (- (line-end-position) end))
         (overlay-put ov 'end end)
         (copilot--set-overlay-text ov completion)
         (overlay-put ov 'uuid uuid)
@@ -670,7 +672,8 @@ command that triggered `post-command-hook'."
         (if (= (length completion) 1)
             ;; If there is only one char in the completion, accept it
             (copilot-accept-completion)
-          (cl-incf (overlay-get ov 'end))
+          ;; restore 'end from 'tail-length
+          (overlay-put ov 'end (- (line-end-position) (overlay-get ov 'tail-length)))
           (copilot--set-overlay-text ov (substring completion 1)))))))
 
 (defun copilot--post-command-debounce (buffer)

@@ -418,8 +418,7 @@ To work around posn problems with after-string property.")
 (defun copilot--set-overlay-text (ov completion)
   "Set overlay OV with COMPLETION."
   (move-overlay ov (point) (line-end-position))
-  (let* ((line-end (line-end-position))
-         (tail (buffer-substring (- line-end (overlay-get ov 'end)) line-end))
+  (let* ((tail (buffer-substring (overlay-get ov 'end) (line-end-position)))
          (p-completion (concat (propertize completion 'face 'copilot-overlay-face)
                                tail)))
     (if (eolp)
@@ -434,32 +433,21 @@ To work around posn problems with after-string property.")
     (overlay-put ov 'completion completion)
     (overlay-put ov 'start (point))))
 
-(defun copilot--display-overlay-completion (completion uuid line col user-pos end)
-  "Show COMPLETION with UUID in overlay at LINE and COL.
-For Copilot, COL is always 0.
+(defun copilot--display-overlay-completion (completion uuid user-pos start end)
+  "Show COMPLETION with UUID between START and END.
 USER-POS is the cursor position (for verification only)."
   (copilot-clear-overlay)
-  (save-restriction
-    (widen)
+  (when (and (s-present-p completion)
+              (or (= start user-pos) ; up-to-date completion
+                  (and (< start user-pos) ; special case for removing indentation
+                      (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
     (save-excursion
-      (goto-line (+ line copilot--line-bias))
-      (forward-char col)
-
-      ;; remove common prefix
-      (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
-             (common-prefix-len (length (s-shared-start completion cur-line))))
-        (setq completion (substring completion common-prefix-len))
-        (forward-char common-prefix-len))
-
-      (when (and (s-present-p completion)
-                 (or (= (point) user-pos) ; up-to-date completion
-                     (and (< (point) user-pos) ; special case for removing indentation
-                          (s-blank-p (s-trim (buffer-substring-no-properties (point) user-pos))))))
-        (let* ((ov (copilot--get-overlay)))
-          (overlay-put ov 'end end)
-          (copilot--set-overlay-text ov completion)
-          (overlay-put ov 'uuid uuid)
-          (copilot--async-request 'notifyShown (list :uuid uuid)))))))
+      (goto-char start) ; removing indentation
+      (let* ((ov (copilot--get-overlay)))
+        (overlay-put ov 'end end)
+        (copilot--set-overlay-text ov completion)
+        (overlay-put ov 'uuid uuid)
+        (copilot--async-request 'notifyShown (list :uuid uuid))))))
 
 (defun copilot-clear-overlay ()
   "Clear Copilot overlay."
@@ -477,11 +465,12 @@ Use TRANSFORM-FN to transform completion if provided."
   (when (copilot--overlay-visible)
     (let* ((completion (overlay-get copilot--overlay 'completion))
            (start (overlay-get copilot--overlay 'start))
+           (end (overlay-get copilot--overlay 'end))
            (uuid (overlay-get copilot--overlay 'uuid))
            (t-completion (funcall (or transform-fn #'identity) completion)))
       (copilot--async-request 'notifyAccepted (list :uuid uuid))
       (copilot-clear-overlay)
-      (delete-region start (- (line-end-position) (overlay-get copilot--overlay 'end)))
+      (delete-region start end)
       (insert t-completion)
       ; if it is a partial completion
       (when (and (s-prefix-p t-completion completion)
@@ -505,21 +494,31 @@ Use TRANSFORM-FN to transform completion if provided."
 (copilot--define-accept-completion-by-action copilot-accept-completion-by-line #'forward-line)
 (copilot--define-accept-completion-by-action copilot-accept-completion-by-paragraph #'forward-paragraph)
 
-(defun copilot--show-completion (completion)
-  "Show COMPLETION."
+(defun copilot--show-completion (completion-data)
+  "Show COMPLETION-DATA."
   (when (copilot--satisfy-display-predicates)
     (copilot--dbind
         (:text :uuid
-         :range (:start (:line :character)
+         :range (:start (:line :character start-char)
                  :end (:character end-char)))
-        completion
-      ;; Determine how much of the remaining line is *not* part of the
-      ;; completion
-      (let ((end (save-excursion
-                   (goto-line (+ line copilot--line-bias))
-                   (forward-char end-char)
-                   (- (line-end-position) (point)))))
-        (copilot--display-overlay-completion text uuid line character (point) end)))))
+        completion-data
+      (save-restriction
+        (widen)
+        (let ((start (save-excursion
+                       (goto-char (point-min))
+                       (forward-line (1- (+ line copilot--line-bias)))
+                       (forward-char start-char)
+                       (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
+                              (common-prefix-len (length (s-shared-start text cur-line))))
+                         (setq text (substring text common-prefix-len))
+                         (forward-char common-prefix-len))
+                       (point)))
+              (end (save-excursion
+                     (goto-char (point-min))
+                     (forward-line (1- (+ line copilot--line-bias)))
+                     (forward-char end-char)
+                     (point))))
+          (copilot--display-overlay-completion text uuid (point) start end))))))
 
 (defun copilot--sync-doc ()
   "Sync current buffer."
@@ -666,6 +665,7 @@ command that triggered `post-command-hook'."
         (if (= (length completion) 1)
             ;; If there is only one char in the completion, accept it
             (copilot-accept-completion)
+          (cl-incf (overlay-get ov 'end))
           (copilot--set-overlay-text ov (substring completion 1)))))))
 
 (defun copilot--post-command-debounce (buffer)

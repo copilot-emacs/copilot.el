@@ -669,11 +669,11 @@ command that triggered `post-command-hook'."
            (completion (overlay-get ov 'completion)))
       ;; The char just inserted is the next char of completion
       (when (eq last-command-event (elt completion 0))
+        ;; restore 'end from 'tail-length
+        (overlay-put ov 'end (- (line-end-position) (overlay-get ov 'tail-length)))
         (if (= (length completion) 1)
             ;; If there is only one char in the completion, accept it
             (copilot-accept-completion)
-          ;; restore 'end from 'tail-length
-          (overlay-put ov 'end (- (line-end-position) (overlay-get ov 'tail-length)))
           (copilot--set-overlay-text ov (substring completion 1)))))))
 
 (defun copilot--post-command-debounce (buffer)

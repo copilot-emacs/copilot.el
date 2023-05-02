@@ -428,13 +428,15 @@ Enabling event logging may slightly affect performance."
   (interactive)
   (setq copilot--last-doc-version copilot--doc-version)
 
-  (let ((called-interactively (called-interactively-p 'interactive)))
+  (let ((called-interactively (called-interactively-p 'interactive))
+        (current-mode major-mode))
     (copilot--sync-doc)
     (copilot--get-panel-completions
      (lambda (res)
        (message "%s" res)))
     (switch-to-buffer
-     (get-buffer-create (concat "*copilot-panel*")))))
+     (get-buffer-create (concat "*copilot-panel*")))
+    (funcall current-mode)))
 
 
 ;;

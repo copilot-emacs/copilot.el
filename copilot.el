@@ -149,6 +149,7 @@ Enabling event logging may slightly affect performance."
                    (make-instance 'jsonrpc-process-connection
                                   :name "copilot"
                                   :events-buffer-scrollback-size copilot-log-max
+                                  :notification-dispatcher #'copilot--handle-notification
                                   :process (make-process :name "copilot agent"
                                                          :command (list copilot-node-executable
                                                                         (concat copilot--base-dir "/dist/agent.js"))
@@ -390,6 +391,50 @@ Enabling event logging may slightly affect performance."
   (interactive)
   (when (copilot--overlay-visible)
     (copilot--get-completions-cycling (copilot--cycle-completion -1))))
+
+(defun copilot--handle-notification (server method msg)
+  "Handle MSG of type method from server."
+  ;; (message "%s" (prin1-to-string method))
+  (if (eql method 'PanelSolution)
+      (let ((oldbuf (current-buffer))
+            (completion-text (plist-get msg :completionText))
+            (completion-score (plist-get msg :score)))
+        (with-temp-buffer (get-buffer-create "*copilot-panel*")
+                          (pop-to-buffer "*copilot-panel*")
+                          (insert completion-text)
+                          (insert "\n##############################################\n")
+                          )))
+  (if (eql method 'PanelSolutionsDone)    
+      (let ((oldbuf (current-buffer)))
+        (with-temp-buffer (get-buffer-create "*copilot-panel*")
+                          (pop-to-buffer "*copilot-panel*")
+                          (insert "\n## Panel Solution Done\n")
+                          ))))
+
+(defun copilot--get-panel-completions (callback)
+  "Get panel completions with CALLBACK."
+  (copilot--async-request 'getPanelCompletions
+                          (list :doc (copilot--generate-doc)
+                                :panelId (generate-new-buffer-name "copilot-panel"))
+                          :success-fn callback
+                          :error-fn (lambda (err)
+                                      (message "Copilot error: %S" err))
+                          :timeout-fn (lambda ()
+                                        (message "Copilot agent timeout."))))
+
+
+(defun copilot-panel-complete ()
+  "Pop a buffer with a list of suggested completions based on the current file ."
+  (interactive)
+  (setq copilot--last-doc-version copilot--doc-version)
+
+  (let ((called-interactively (called-interactively-p 'interactive)))
+    (copilot--sync-doc)
+    (copilot--get-panel-completions
+     (lambda (res)
+       (message "%s" res)))
+    (switch-to-buffer
+     (get-buffer-create (concat "*copilot-panel*")))))
 
 
 ;;

@@ -435,7 +435,7 @@ Enabling event logging may slightly affect performance."
      (lambda (res)
        (message "%s" res)))
     (switch-to-buffer
-     (get-buffer-create (concat "*copilot-panel*")))
+     (get-buffer-create "*copilot-panel*"))
     (funcall current-mode)))
 
 

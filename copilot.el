@@ -9,6 +9,7 @@
 (require 's)
 (require 'dash)
 (require 'editorconfig)
+(require 'org)
 
 (defgroup copilot nil
   "Copilot."
@@ -392,24 +393,25 @@ Enabling event logging may slightly affect performance."
   (when (copilot--overlay-visible)
     (copilot--get-completions-cycling (copilot--cycle-completion -1))))
 
-(defun copilot--handle-notification (server method msg)
-  "Handle MSG of type method from server."
-  ;; (message "%s" (prin1-to-string method))
-  (if (eql method 'PanelSolution)
-      (let ((oldbuf (current-buffer))
-            (completion-text (plist-get msg :completionText))
-            (completion-score (plist-get msg :score)))
-        (with-temp-buffer (get-buffer-create "*copilot-panel*")
-                          (pop-to-buffer "*copilot-panel*")
-                          (insert completion-text)
-                          (insert "\n##############################################\n")
-                          )))
-  (if (eql method 'PanelSolutionsDone)    
-      (let ((oldbuf (current-buffer)))
-        (with-temp-buffer (get-buffer-create "*copilot-panel*")
-                          (pop-to-buffer "*copilot-panel*")
-                          (insert "\n## Panel Solution Done\n")
-                          ))))
+(defvar copilot--panel-lang nil
+  "Language of current panel solutions.")
+
+(defun copilot--handle-notification (_ method msg)
+  "Handle MSG of type METHOD."
+  (when (eql method 'PanelSolution)
+    (copilot--dbind (:completionText completion-text :score _) msg
+      (with-current-buffer "*copilot-panel*"
+        (save-excursion
+          (goto-char (point-max))
+          (insert "#+BEGIN_SRC " copilot--panel-lang "\n"
+                  completion-text "\n#+END_SRC\n\n")))))
+  (when (eql method 'PanelSolutionsDone)
+    (message "Copilot: Finish synthesizing solutions.")
+    (display-buffer "*copilot-panel*")
+    (with-current-buffer "*copilot-panel*"
+      (save-excursion
+        (goto-char (point-max))
+        (insert "End of solutions.\n")))))
 
 (defun copilot--get-panel-completions (callback)
   "Get panel completions with CALLBACK."
@@ -427,17 +429,15 @@ Enabling event logging may slightly affect performance."
   "Pop a buffer with a list of suggested completions based on the current file ."
   (interactive)
   (setq copilot--last-doc-version copilot--doc-version)
+  (setq copilot--panel-lang (copilot--get-language-id))
 
-  (let ((called-interactively (called-interactively-p 'interactive))
-        (current-mode major-mode))
-    (copilot--sync-doc)
-    (copilot--get-panel-completions
-     (lambda (res)
-       (message "%s" res)))
-    (switch-to-buffer
-     (get-buffer-create "*copilot-panel*"))
-    (funcall current-mode)))
-
+  (copilot--sync-doc)
+  (copilot--get-panel-completions
+    (jsonrpc-lambda (&key solutionCountTarget)
+      (message "Copilot: Synthesizing %d solutions..." solutionCountTarget)))
+  (with-current-buffer (get-buffer-create "*copilot-panel*")
+    (org-mode)
+    (erase-buffer)))
 
 ;;
 ;; UI

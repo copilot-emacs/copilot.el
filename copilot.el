@@ -399,12 +399,18 @@ Enabling event logging may slightly affect performance."
 (defun copilot--handle-notification (_ method msg)
   "Handle MSG of type METHOD."
   (when (eql method 'PanelSolution)
-    (copilot--dbind (:completionText completion-text :score _) msg
+    (copilot--dbind (:completionText completion-text :score completion-score) msg
       (with-current-buffer "*copilot-panel*"
         (save-excursion
           (goto-char (point-max))
-          (insert "#+BEGIN_SRC " copilot--panel-lang "\n"
-                  completion-text "\n#+END_SRC\n\n")))))
+          (insert "* Solution\n"
+                  "  :PROPERTIES:\n"
+                  "  :SCORE: " (number-to-string completion-score) "\n"
+                  "  :END:\n"
+                  "#+BEGIN_SRC " copilot--panel-lang "\n"
+                  completion-text "\n#+END_SRC\n\n")
+                  (mark-whole-buffer)
+                  (org-sort-entries nil ?R nil nil "SCORE")))))
   (when (eql method 'PanelSolutionsDone)
     (message "Copilot: Finish synthesizing solutions.")
     (display-buffer "*copilot-panel*")

@@ -401,9 +401,8 @@ Enabling event logging may slightly affect performance."
   (when (eql method 'PanelSolution)
     (copilot--dbind (:completionText completion-text :score completion-score) msg
       (with-current-buffer "*copilot-panel*"
-        (if (member (secure-hash 'sha256 completion-text)
-                    (org-map-entries (lambda () (org-entry-get nil "SHA"))))
-            (message "Copilot: Solution already exists.")
+        (unless (member (secure-hash 'sha256 completion-text)
+                        (org-map-entries (lambda () (org-entry-get nil "SHA"))))
           (save-excursion
             (goto-char (point-max))
             (insert "* Solution\n"

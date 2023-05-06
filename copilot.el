@@ -477,10 +477,14 @@ To work around posn problems with after-string property.")
     (overlay-put copilot--overlay 'priority 100))
   copilot--overlay)
 
+(defun copilot--overlay-end (ov)
+  "Return the end position of overlay OV."
+  (- (line-end-position) (overlay-get ov 'tail-length)))
+
 (defun copilot--set-overlay-text (ov completion)
   "Set overlay OV with COMPLETION."
   (move-overlay ov (point) (line-end-position))
-  (let* ((tail (buffer-substring (overlay-get ov 'end) (line-end-position)))
+  (let* ((tail (buffer-substring (copilot--overlay-end ov) (line-end-position)))
          (p-completion (concat (propertize completion 'face 'copilot-overlay-face)
                                tail)))
     (if (eolp)
@@ -506,19 +510,18 @@ USER-POS is the cursor position (for verification only)."
     (save-excursion
       (goto-char start) ; removing indentation
       (let* ((ov (copilot--get-overlay)))
-        ;; use 'tail-length to restore 'end in copilot--self-insert in case of automatic pair insertion
         (overlay-put ov 'tail-length (- (line-end-position) end))
-        (overlay-put ov 'end end)
         (copilot--set-overlay-text ov completion)
         (overlay-put ov 'uuid uuid)
         (copilot--async-request 'notifyShown (list :uuid uuid))))))
 
-(defun copilot-clear-overlay ()
-  "Clear Copilot overlay."
+(defun copilot-clear-overlay (&optional is-accepted)
+  "Clear Copilot overlay. If IS-ACCEPTED is nil, notify rejected."
   (interactive)
   (when (copilot--overlay-visible)
-    (copilot--async-request 'notifyRejected
-                            (list :uuids `[,(overlay-get copilot--overlay 'uuid)]))
+    (unless is-accepted
+      (copilot--async-request 'notifyRejected
+                              (list :uuids `[,(overlay-get copilot--overlay 'uuid)])))
     (delete-overlay copilot--overlay)
     (setq copilot--real-posn nil)))
 
@@ -529,11 +532,11 @@ Use TRANSFORM-FN to transform completion if provided."
   (when (copilot--overlay-visible)
     (let* ((completion (overlay-get copilot--overlay 'completion))
            (start (overlay-get copilot--overlay 'start))
-           (end (overlay-get copilot--overlay 'end))
+           (end (copilot--overlay-end copilot--overlay))
            (uuid (overlay-get copilot--overlay 'uuid))
            (t-completion (funcall (or transform-fn #'identity) completion)))
       (copilot--async-request 'notifyAccepted (list :uuid uuid))
-      (copilot-clear-overlay)
+      (copilot-clear-overlay t)
       (delete-region start end)
       (insert t-completion)
       ; if it is a partial completion
@@ -726,8 +729,6 @@ command that triggered `post-command-hook'."
            (completion (overlay-get ov 'completion)))
       ;; The char just inserted is the next char of completion
       (when (eq last-command-event (elt completion 0))
-        ;; restore 'end from 'tail-length
-        (overlay-put ov 'end (- (line-end-position) (overlay-get ov 'tail-length)))
         (if (= (length completion) 1)
             ;; If there is only one char in the completion, accept it
             (copilot-accept-completion)

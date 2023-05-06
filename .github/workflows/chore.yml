@@ -13,7 +13,7 @@ jobs:
       upstream_dir: copilot/dist
       dest_dir: dist
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 2
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -25,7 +25,7 @@ jobs:
           git clone https://github.com/$upstream_repo.git --filter=tree:0 upstream
           cd upstream
           cp ./$upstream_dir ../../ -rf
-          echo "::set-output name=commit_msg::`git log -n 1 --format=%B ./$upstream_dir`"
+          echo "{commit_msg}={`git log -n 1 --format=%B ./$upstream_dir`}" >> $GITHUB_OUTPUT
       - name: Sync
         run: |
           git config user.name 'github-actions[bot]'

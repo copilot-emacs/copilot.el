@@ -401,16 +401,20 @@ Enabling event logging may slightly affect performance."
   (when (eql method 'PanelSolution)
     (copilot--dbind (:completionText completion-text :score completion-score) msg
       (with-current-buffer "*copilot-panel*"
-        (save-excursion
-          (goto-char (point-max))
-          (insert "* Solution\n"
-                  "  :PROPERTIES:\n"
-                  "  :SCORE: " (number-to-string completion-score) "\n"
-                  "  :END:\n"
-                  "#+BEGIN_SRC " copilot--panel-lang "\n"
-                  completion-text "\n#+END_SRC\n\n")
-                  (mark-whole-buffer)
-                  (org-sort-entries nil ?R nil nil "SCORE")))))
+        (if (member (secure-hash 'sha256 completion-text)
+                    (org-map-entries (lambda () (org-entry-get nil "SHA"))))
+            (message "Copilot: Solution already exists.")
+          (save-excursion
+            (goto-char (point-max))
+            (insert "* Solution\n"
+                    "  :PROPERTIES:\n"
+                    "  :SCORE: " (number-to-string completion-score) "\n"
+                    "  :SHA: " (secure-hash 'sha256 completion-text) "\n"
+                    "  :END:\n"
+                    "#+BEGIN_SRC " copilot--panel-lang "\n"
+                    completion-text "\n#+END_SRC\n\n")
+            (mark-whole-buffer)
+            (org-sort-entries nil ?R nil nil "SCORE"))))))
   (when (eql method 'PanelSolutionsDone)
     (message "Copilot: Finish synthesizing solutions.")
     (display-buffer "*copilot-panel*")

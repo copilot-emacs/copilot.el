@@ -9,6 +9,7 @@
 (require 's)
 (require 'dash)
 (require 'editorconfig)
+(require 'org)
 
 (defgroup copilot nil
   "Copilot."
@@ -149,6 +150,7 @@ Enabling event logging may slightly affect performance."
                    (make-instance 'jsonrpc-process-connection
                                   :name "copilot"
                                   :events-buffer-scrollback-size copilot-log-max
+                                  :notification-dispatcher #'copilot--handle-notification
                                   :process (make-process :name "copilot agent"
                                                          :command (list copilot-node-executable
                                                                         (concat copilot--base-dir "/dist/agent.js"))
@@ -391,6 +393,60 @@ Enabling event logging may slightly affect performance."
   (when (copilot--overlay-visible)
     (copilot--get-completions-cycling (copilot--cycle-completion -1))))
 
+(defvar copilot--panel-lang nil
+  "Language of current panel solutions.")
+
+(defun copilot--handle-notification (_ method msg)
+  "Handle MSG of type METHOD."
+  (when (eql method 'PanelSolution)
+    (copilot--dbind (:completionText completion-text :score completion-score) msg
+      (with-current-buffer "*copilot-panel*"
+        (unless (member (secure-hash 'sha256 completion-text)
+                        (org-map-entries (lambda () (org-entry-get nil "SHA"))))
+          (save-excursion
+            (goto-char (point-max))
+            (insert "* Solution\n"
+                    "  :PROPERTIES:\n"
+                    "  :SCORE: " (number-to-string completion-score) "\n"
+                    "  :SHA: " (secure-hash 'sha256 completion-text) "\n"
+                    "  :END:\n"
+                    "#+BEGIN_SRC " copilot--panel-lang "\n"
+                    completion-text "\n#+END_SRC\n\n")
+            (mark-whole-buffer)
+            (org-sort-entries nil ?R nil nil "SCORE"))))))
+  (when (eql method 'PanelSolutionsDone)
+    (message "Copilot: Finish synthesizing solutions.")
+    (display-buffer "*copilot-panel*")
+    (with-current-buffer "*copilot-panel*"
+      (save-excursion
+        (goto-char (point-max))
+        (insert "End of solutions.\n")))))
+
+(defun copilot--get-panel-completions (callback)
+  "Get panel completions with CALLBACK."
+  (copilot--async-request 'getPanelCompletions
+                          (list :doc (copilot--generate-doc)
+                                :panelId (generate-new-buffer-name "copilot-panel"))
+                          :success-fn callback
+                          :error-fn (lambda (err)
+                                      (message "Copilot error: %S" err))
+                          :timeout-fn (lambda ()
+                                        (message "Copilot agent timeout."))))
+
+
+(defun copilot-panel-complete ()
+  "Pop a buffer with a list of suggested completions based on the current file ."
+  (interactive)
+  (setq copilot--last-doc-version copilot--doc-version)
+  (setq copilot--panel-lang (copilot--get-language-id))
+
+  (copilot--sync-doc)
+  (copilot--get-panel-completions
+    (jsonrpc-lambda (&key solutionCountTarget)
+      (message "Copilot: Synthesizing %d solutions..." solutionCountTarget)))
+  (with-current-buffer (get-buffer-create "*copilot-panel*")
+    (org-mode)
+    (erase-buffer)))
 
 ;;
 ;; UI

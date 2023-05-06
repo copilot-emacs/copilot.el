@@ -613,7 +613,7 @@ Use TRANSFORM-FN to transform completion if provided."
   (let ((called-interactively (called-interactively-p 'interactive)))
     (copilot--sync-doc)
     (copilot--get-completion
-      (jsonrpc-lambda (&key completions)
+      (jsonrpc-lambda (&key completions &allow-other-keys)
         (let ((completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
           (if completion
               (copilot--show-completion completion)

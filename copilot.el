@@ -535,8 +535,12 @@ Use TRANSFORM-FN to transform completion if provided."
            (t-completion (funcall (or transform-fn #'identity) completion)))
       (copilot--async-request 'notifyAccepted (list :uuid uuid))
       (copilot-clear-overlay t)
-      (delete-region start end)
-      (insert t-completion)
+      (if (eq major-mode 'vterm-mode)
+          (progn
+            (vterm-delete-region start end)
+            (vterm-insert t-completion))
+        (delete-region start end)
+        (insert t-completion))
       ; if it is a partial completion
       (when (and (s-prefix-p t-completion completion)
                  (not (s-equals-p t-completion completion)))

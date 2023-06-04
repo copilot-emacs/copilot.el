@@ -166,6 +166,15 @@ Use tab to accept completions (you may also want to bind `copilot-accept-complet
 
 </details>
 
+### Programming language detection
+
+Copilot.el detects the programming language of a buffer based on the major-mode name, stripping the `-mode` part. Resulting languageId should match table [here](https://code.visualstudio.com/docs/languages/identifiers#_known-language-identifiers).
+You can add unusual major-mode mappings to `copilot-major-mode-alist`. Without the proper language set suggestions may be of poorer quality.
+
+```elisp
+(add-to-list 'copilot-major-mode-alist '("enh-ruby" . "ruby"))
+```
+
 ## Commands
 
 #### copilot-diagnose

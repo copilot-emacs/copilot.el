@@ -247,8 +247,28 @@ Enabling event logging may slightly affect performance."
 ;; Auto completion
 ;;
 
+;; based on https://code.visualstudio.com/docs/languages/identifiers
+;; (more here https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
 (defvar copilot-major-mode-alist '(("rustic" . "rust")
-                                   ("cperl" . "perl"))
+                                   ("cperl" . "perl")
+                                   ("c++" . "cpp")
+                                   ("objc" . "objective-c")
+                                   ("cuda" . "cuda-cpp")
+                                   ("docker-compose" . "dockercompose")
+                                   ("coffee" . "coffeescript")
+                                   ("js" . "javascript")
+                                   ("js2" . "javascript")
+                                   ("js2-jsx" . "javascriptreact")
+                                   ("typescript-tsx" . "typescriptreact")
+                                   ("rjsx" . "typescriptreact")
+                                   ("less-css" . "less")
+                                   ("text" . "plaintext")
+                                   ("ess-r" . "r")
+                                   ("enh-ruby" . "ruby")
+                                   ("shell-script" . "shellscript")
+                                   ("sh" . "shellscript")
+                                   ("visual-basic" . "vb")
+                                   ("nxml" . "xml"))
   "Alist mapping major mode names (with -mode removed) to copilot language ID's.")
 
 (defconst copilot--indentation-alist

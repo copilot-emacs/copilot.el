@@ -62,6 +62,11 @@ Enabling event logging may slightly affect performance."
   :group 'copilot
   :type '(repeat function))
 
+(defcustom copilot-only-in-modes nil
+  "Only enable Copilot in these major modes."
+  :group 'copilot
+  :type '(repeat symbol))
+
 (defconst copilot--base-dir
   (file-name-directory
    (or load-file-name
@@ -718,7 +723,12 @@ Use this for custom bindings in `copilot-mode'.")
 
 ;;;###autoload
 (define-global-minor-mode global-copilot-mode
-    copilot-mode copilot-mode)
+  copilot-mode
+  (lambda ()
+    (if (and copilot-only-in-modes
+	     (not (member major-mode copilot-only-in-modes)))
+	(copilot-mode -1)
+      (copilot-mode))))
 
 (defun copilot--on-change (&rest _args)
   "Handle `before-change-functions' hook."

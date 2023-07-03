@@ -251,6 +251,8 @@ Enabling event logging may slightly affect performance."
 (defvar copilot-major-mode-alist '(("rustic" . "rust")
                                    ("cperl" . "perl")
                                    ("c++" . "cpp")
+                                   ("clojurec" . "clojure")
+                                   ("clojurescript" . "clojure")
                                    ("objc" . "objective-c")
                                    ("cuda" . "cuda-cpp")
                                    ("docker-compose" . "dockercompose")

@@ -9,7 +9,6 @@
 (require 's)
 (require 'dash)
 (require 'editorconfig)
-(require 'org)
 
 (defgroup copilot nil
   "Copilot."
@@ -457,6 +456,7 @@ Enabling event logging may slightly affect performance."
 (defun copilot-panel-complete ()
   "Pop a buffer with a list of suggested completions based on the current file ."
   (interactive)
+  (require 'org)
   (setq copilot--last-doc-version copilot--doc-version)
   (setq copilot--panel-lang (copilot--get-language-id))
 

@@ -9,6 +9,7 @@
 (require 's)
 (require 'dash)
 (require 'editorconfig)
+(require 'copilot-balancer)
 
 (defgroup copilot nil
   "Copilot."
@@ -251,6 +252,8 @@ Enabling event logging may slightly affect performance."
 (defvar copilot-major-mode-alist '(("rustic" . "rust")
                                    ("cperl" . "perl")
                                    ("c++" . "cpp")
+                                   ("clojurec" . "clojure")
+                                   ("clojurescript" . "clojure")
                                    ("objc" . "objective-c")
                                    ("cuda" . "cuda-cpp")
                                    ("docker-compose" . "dockercompose")
@@ -519,19 +522,21 @@ To work around posn problems with after-string property.")
     (overlay-put ov 'start (point))))
 
 (defun copilot--display-overlay-completion (completion uuid start end)
-  "Show COMPLETION with UUID between START and END."
+  "Show COMPLETION with UUID between START and END.
+
+(save-excursion) is not necessary since there is only one caller, and they are
+already saving an excursion. This is also a private function."
   (copilot-clear-overlay)
   (when (and (s-present-p completion)
-              (or (= start (point)) ; up-to-date completion
-                  (and (< start (point)) ; special case for removing indentation
+             (or (= start (point))      ; up-to-date completion
+                 (and (< start (point)) ; special case for removing indentation
                       (s-blank-p (s-trim (buffer-substring-no-properties start (point)))))))
-    (save-excursion
-      (goto-char start) ; removing indentation
-      (let* ((ov (copilot--get-overlay)))
-        (overlay-put ov 'tail-length (- (line-end-position) end))
-        (copilot--set-overlay-text ov completion)
-        (overlay-put ov 'uuid uuid)
-        (copilot--async-request 'notifyShown (list :uuid uuid))))))
+    (goto-char start)                   ; indentation
+    (let* ((ov (copilot--get-overlay)))
+      (overlay-put ov 'tail-length (- (line-end-position) end))
+      (copilot--set-overlay-text ov completion)
+      (overlay-put ov 'uuid uuid)
+      (copilot--async-request 'notifyShown (list :uuid uuid)))))
 
 (defun copilot-clear-overlay (&optional is-accepted)
   "Clear Copilot overlay. If IS-ACCEPTED is nil, notify rejected."
@@ -592,23 +597,28 @@ Use TRANSFORM-FN to transform completion if provided."
                  :end (:character end-char)))
         completion-data
       (when (= doc-version copilot--doc-version)
-        (save-restriction
-          (widen)
-          (let ((start (save-excursion
-                         (goto-char (point-min))
-                         (forward-line (1- (+ line copilot--line-bias)))
-                         (forward-char start-char)
-                         (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
-                                (common-prefix-len (length (s-shared-start text cur-line))))
-                           (setq text (substring text common-prefix-len))
-                           (forward-char common-prefix-len))
-                         (point)))
-                (end (save-excursion
-                       (goto-char (point-min))
-                       (forward-line (1- (+ line copilot--line-bias)))
-                       (forward-char end-char)
-                       (point))))
-            (copilot--display-overlay-completion text uuid start end)))))))
+        (save-excursion
+          (save-restriction
+            (widen)
+            (let* ((p (point))
+                   (goto-line! (lambda ()
+                                 (goto-char (point-min))
+                                 (forward-line (1- (+ line copilot--line-bias)))))
+                   (start (progn
+                            (funcall goto-line!)
+                            (forward-char start-char)
+                            (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
+                                   (common-prefix-len (length (s-shared-start text cur-line))))
+                              (setq text (substring text common-prefix-len))
+                              (forward-char common-prefix-len)
+                              (point))))
+                   (end (progn
+                          (funcall goto-line!)
+                          (forward-char end-char)
+                          (point)))
+                   (balanced-text (copilot-balancer-fix-completion start end text)))
+              (goto-char p)
+              (copilot--display-overlay-completion balanced-text uuid start end))))))))
 
 (defun copilot--sync-doc ()
   "Sync current buffer."

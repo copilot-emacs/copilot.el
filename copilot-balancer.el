@@ -70,9 +70,7 @@
       (insert "\n")
       
       (insert "prefix:\n<STX>" (substring prefix 0 (min 100 (length prefix))) "\n<EOT>\n")
-      (insert "suffix:<STX>" (if (< (length suffix) 100)
-                                 suffix
-                               (substring suffix -100))
+      (insert "suffix:<STX>" suffix
               "\n<EOT>\n")
       nil)))
 
@@ -117,12 +115,11 @@ Stops when a non-close-pair character is found."
        (t (setq i (1- i)))))
     (substring s 0 (1+ i))))
 
-(defun copilot-balancer-collapse-matching-pairs (pairs)
+(defun copilot-balancer-collapse-matching-pairs (pairs in-string)
   "Collapse matching pairs in list pairs.
 
 Special care has to be taken to ignore pairs in the middle of strings."
-  (let ((filtered-pairs '())
-        (in-string nil))
+  (let ((filtered-pairs '()))
     ;; delete pairs in strings
     (dolist (x pairs)
       (cond
@@ -217,17 +214,23 @@ Special care has to be taken to ignore pairs in the middle of strings."
                
        (`(,meta-prefix-pairs . ,in-string)
         (-> (append prefix-pairs completion-pairs)
-            (copilot-balancer-collapse-matching-pairs)))
+            (copilot-balancer-collapse-matching-pairs nil)))
 
-       (`(,trimmed-completion . ,meta-prefix-pairs)
-        (if in-string
-            (cons (concat trimmed-completion "\"")
-                  (copilot-balancer-remove-last meta-prefix-pairs))
-          (cons trimmed-completion meta-prefix-pairs)))
+       (end-is-missing-double-quote
+        (and in-string
+             (< end (point-max))
+             (not (equal "\"" (buffer-substring-no-properties end (1+ end))))))
+
+       (`(,trimmed-completion ,meta-prefix-pairs ,in-string)
+        (if end-is-missing-double-quote
+            (list (concat trimmed-completion "\"")
+                  (copilot-balancer-remove-last meta-prefix-pairs)
+                  nil)
+          (list trimmed-completion meta-prefix-pairs in-string)))
        
        (`(,suffix-pairs . _)
         (-> (copilot-balancer-extract-pairs suffix)
-            (copilot-balancer-collapse-matching-pairs)))
+            (copilot-balancer-collapse-matching-pairs in-string)))
        (reversed-suffix-pairs (reverse suffix-pairs))
        (flipped-suffix-pairs (mapcar #'copilot-balancer-get-other-pair
                                      reversed-suffix-pairs))

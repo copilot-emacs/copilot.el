@@ -292,7 +292,7 @@ Enabling event logging may slightly affect performance."
                     (setq mode (get mode 'derived-mode-parent))))
         (when mode
           (cl-some (lambda (s)
-                     (when (boundp s)
+                     (when (and (boundp s) (numberp (symbol-value s)))
                        (symbol-value s)))
                    (alist-get mode copilot--indentation-alist))))
       tab-width))

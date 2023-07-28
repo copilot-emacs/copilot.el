@@ -202,6 +202,31 @@ Special care has to be taken to ignore pairs in the middle of strings."
         
         (buffer-substring-no-properties x (point))))))
 
+(defun copilot-balancer-see-string-end-p (p)
+  (save-excursion
+    (save-restriction
+      (widen)
+      (goto-char p)
+      (let ((flag t)
+            (ret nil))
+        (while (and flag
+                    (< (point) (point-max)))
+          (let ((c (char-after)))
+            (message "%c" c)
+            (cond
+             ((= c ?\N{QUOTATION MARK})
+              (setq flag nil)
+              (setq ret t))
+             ((= c ?\N{BACKSLASH})
+              (forward-char)
+              (forward-char))
+             ((gethash c copilot-balancer-lisp-pairs)
+              (setq flag nil)
+              (setq ret nil))
+             (t
+              (forward-char)))))
+        ret))))
+
 (defun copilot-balancer--fix-lisp (start end completion)
   (pcase-let*
       ((prefix (copilot-balancer-get-top-level-form-beginning-to-point start))
@@ -218,8 +243,7 @@ Special care has to be taken to ignore pairs in the middle of strings."
 
        (end-is-missing-double-quote
         (and in-string
-             (< end (point-max))
-             (not (equal "\"" (buffer-substring-no-properties end (1+ end))))))
+             (not (copilot-balancer-see-string-end-p end))))
 
        (`(,trimmed-completion ,meta-prefix-pairs ,in-string)
         (if end-is-missing-double-quote

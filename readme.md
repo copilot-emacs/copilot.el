@@ -234,8 +234,12 @@ A list of commands that won't cause the overlay to be cleared.
 
 #### copilot-network-proxy
 
-Format: `'(:host "127.0.0.1" :port "7890" :username: "user" :password: "password")`, where `:username` and `:password` are optional.
+Format: `'(:host "127.0.0.1" :port 7890 :username: "user" :password: "password")`, where `:username` and `:password` are optional.
 
+For example:
+```elisp
+(setq copilot-network-proxy '(:host "127.0.0.1" :port 7890))
+```
 
 ## Known Issues
 

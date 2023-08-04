@@ -1,6 +1,13 @@
-# Copilot.el
+# Copilot.el (with cygwin support)
 
-Copilot.el is an Emacs plugin for GitHub Copilot.
+Copilot.el is an Emacs plugin for GitHub Copilot, created by zerolfx.
+
+This fork is extended to run on emacs running in cygwin (on windows 10 at
+least). Because we must use the windows native node.js outside of the cygwin
+environment from within cygwin there were path issues. The fix is just to call
+cygpath from within emacs before calling node. Setup should be the same with the
+addition of ensuring the windows installed node.js is in the cygwin path. 
+
 
 ![](assets/demo.gif)
 

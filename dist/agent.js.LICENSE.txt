@@ -1,4 +1,9 @@
 /*!
+ * Application Insights JavaScript SDK - Web Snippet, 1.0.1
+ * Copyright (c) Microsoft and contributors. All rights reserved.
+ */
+
+/*!
  * buildToken
  * Builds OAuth token prefix (helper function)
  *
@@ -8,7 +13,18 @@
  * @return {String} token prefix
  */
 
-/** @license URI.js v4.4.1 (c) 2011 Gary Court. License: http://github.com/garycourt/uri-js */
+/*!
+ * mime-db
+ * Copyright(c) 2014 Jonathan Ong
+ * MIT Licensed
+ */
+
+/*!
+ * mime-types
+ * Copyright(c) 2014 Jonathan Ong
+ * Copyright(c) 2015 Douglas Christopher Wilson
+ * MIT Licensed
+ */
 
 /** @preserve
 	 * Counter block mode compatible with  Dr Brian Gladman fileenc.c

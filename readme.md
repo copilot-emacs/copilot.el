@@ -10,13 +10,13 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 ## Installation
 
-0. Ensure your Emacs version is at least 27.
+0. Ensure your Emacs version is at least 27, and the dependency package `editorconfig` ([melpa](https://melpa.org/#/editorconfig)) is also installed.
 
-1. Install [Node.js](https://nodejs.org/en/download/).
+1. Install [Node.js](https://nodejs.org/en/download/) v16+. (You can specify the path to `node` executable by setting `copilot-node-executable`.)
 
 2. Setup `copilot.el` as described in the next section.
 
-3. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose`.
+3. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose` (`NotAuthorized` means you don't have a valid subscription).
 
 4. Enjoy!
 
@@ -39,11 +39,11 @@ Configure copilot in `~/.doom.d/config.el`:
 ;; accept completion from copilot and fallback to company
 (use-package! copilot
   :hook (prog-mode . copilot-mode)
-  :bind (("C-TAB" . 'copilot-accept-completion-by-word)
-         ("C-<tab>" . 'copilot-accept-completion-by-word)
-         :map copilot-completion-map
-         ("<tab>" . 'copilot-accept-completion)
-         ("TAB" . 'copilot-accept-completion)))
+  :bind (:map copilot-completion-map
+              ("<tab>" . 'copilot-accept-completion)
+              ("TAB" . 'copilot-accept-completion)
+              ("C-TAB" . 'copilot-accept-completion-by-word)
+              ("C-<tab>" . 'copilot-accept-completion-by-word)))
 ```
 
 Strongly recommend to enable `childframe` option in `company` module (`(company +childframe)`) to prevent overlay conflict.
@@ -88,12 +88,11 @@ dotspacemacs-additional-packages
   
 (with-eval-after-load 'copilot
   (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
-  (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion))
+  (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
+  (define-key copilot-completion-map (kbd "C-TAB") 'copilot-accept-completion-by-word)
+  (define-key copilot-completion-map (kbd "C-<tab>") 'copilot-accept-completion-by-word))
 
 (add-hook 'prog-mode-hook 'copilot-mode)
-
-(define-key evil-insert-state-map (kbd "C-<tab>") 'copilot-accept-completion-by-word)
-(define-key evil-insert-state-map (kbd "C-TAB") 'copilot-accept-completion-by-word)
 ```
 
 </details>
@@ -119,16 +118,16 @@ dotspacemacs-additional-packages
   
 ```elisp
 (use-package copilot
-  :quelpa (copilot.el :fetcher github
-                      :repo "zerolfx/copilot.el"
-                      :branch "main"
-                      :files ("dist" "*.el")))
+  :quelpa (copilot :fetcher github
+                   :repo "zerolfx/copilot.el"
+                   :branch "main"
+                   :files ("dist" "*.el")))
 ;; you can utilize :map :hook and :config to customize copilot
 ```
 
 ##### Option 2: Load manually
 
-Please make sure you have these dependencies installed. 
+Please make sure you have these dependencies installed (available in ELPA/MELPA):
 
 + `dash`
 + `s`
@@ -158,60 +157,23 @@ You need to bind `copilot-complete` to some key and call `copilot-clear-overlay`
 
 #### 3. Configure completion acceptation
 
-In general, you need to bind `copilot-accept-completion` to some key in order to accept the completion. Also, you may find `copilot-accept-completion-by-word` is useful.
-
-#### Example of using tab with `company-mode`
+Use tab to accept completions (you may also want to bind `copilot-accept-completion-by-word` to some key):
 
 ```elisp
-(with-eval-after-load 'company
-  ;; disable inline previews
-  (delq 'company-preview-if-just-one-frontend company-frontends))
-  
 (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
 (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
-```
-
-#### Example of using tab with `auto-complete`
-
-```elisp
-; complete by copilot first, then auto-complete
-(defun my-tab ()
-  (interactive)
-  (or (copilot-accept-completion)
-      (ac-expand nil)))
-
-(with-eval-after-load 'auto-complete
-  ; disable inline preview
-  (setq ac-disable-inline t)
-  ; show menu if have only one candidate
-  (setq ac-candidate-menu-min 0))
-  
-(define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
-(define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
-```
-
-#### Example of defining tab in copilot-mode
-
-This is useful if you don't want to depend on a particular completion framework.
-
-```elisp
-(defun my/copilot-tab ()
-  (interactive)
-  (or (copilot-accept-completion)
-      (indent-for-tab-command)))
-
-(with-eval-after-load 'copilot
-  (define-key copilot-mode-map (kbd "<tab>") #'my/copilot-tab))
-```
-
-Or with evil-mode:
-```elisp
-(with-eval-after-load 'copilot
-  (evil-define-key 'insert copilot-mode-map
-    (kbd "<tab>") #'my/copilot-tab))
 ```
 
 </details>
+
+### Programming language detection
+
+Copilot.el detects the programming language of a buffer based on the major-mode name, stripping the `-mode` part. Resulting languageId should match table [here](https://code.visualstudio.com/docs/languages/identifiers#_known-language-identifiers).
+You can add unusual major-mode mappings to `copilot-major-mode-alist`. Without the proper language set suggestions may be of poorer quality.
+
+```elisp
+(add-to-list 'copilot-major-mode-alist '("enh-ruby" . "ruby"))
+```
 
 ## Commands
 
@@ -261,14 +223,23 @@ The executable path of Node.js.
 
 Time in seconds to wait before starting completion (default to 0). Note Copilot itself has a ~100ms delay because of network communication.
 
-#### copilot-enable-predicates
-A list of predicate functions with no argument to enable Copilot in `copilot-mode`. Copilot will be enabled only if all predicates return `t`.
+#### copilot-enable-predicates / copilot-disable-predicates
+A list of predicate functions with no argument to enable/disable triggering Copilot in `copilot-mode`.
 
-#### copilot-disable-predicates
-A list of predicate functions with no argument to disable Copilot in `copilot-mode`. Copilot will be disabled if any predicate returns `t`.
+#### copilot-enable-display-predicates / copilot-disable-display-predicates
+A list of predicate functions with no argument to enable/disable showing Copilot's completions in `copilot-mode`.
 
 #### copilot-clear-overlay-ignore-commands
-A list of commands that will not clear the overlay.
+A list of commands that won't cause the overlay to be cleared.
+
+#### copilot-network-proxy
+
+Format: `'(:host "127.0.0.1" :port 7890 :username: "user" :password: "password")`, where `:username` and `:password` are optional.
+
+For example:
+```elisp
+(setq copilot-network-proxy '(:host "127.0.0.1" :port 7890))
+```
 
 ## Known Issues
 
@@ -293,7 +264,7 @@ But I decided to allow them to coexist, allowing you to choose a better one at a
 ## Reporting Bugs
 
 + Make sure you have restarted your Emacs (and rebuild the plugin if necessary) after updating the plugin.
-+ Please paste related logs in the `*copilot events*` and `*copilot stderr*` buffer.
++ Please enable event logging by customize `copilot-log-max` (to e.g. 1000), then paste related logs in the `*copilot events*` and `*copilot stderr*` buffer.
 + If an exception is thrown, please also paste the stack trace (use `M-x toggle-debug-on-error` to enable stack trace).
 
 ## Roadmap

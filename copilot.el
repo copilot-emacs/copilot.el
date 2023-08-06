@@ -375,7 +375,6 @@ Enabling event logging may slightly affect performance."
   "Get completion cycling options with CALLBACK."
   (if copilot--completion-cache
       (funcall callback copilot--completion-cache)
-    (copilot--sync-doc)
     (copilot--async-request 'getCompletionsCycling
                             (list :doc (copilot--generate-doc))
                             :success-fn callback)))
@@ -463,7 +462,6 @@ Enabling event logging may slightly affect performance."
   (setq copilot--last-doc-version copilot--doc-version)
   (setq copilot--panel-lang (copilot--get-language-id))
 
-  (copilot--sync-doc)
   (copilot--get-panel-completions
     (jsonrpc-lambda (&key solutionCountTarget)
       (message "Copilot: Synthesizing %d solutions..." solutionCountTarget)))
@@ -620,19 +618,40 @@ Use TRANSFORM-FN to transform completion if provided."
               (goto-char p)
               (copilot--display-overlay-completion balanced-text uuid start end))))))))
 
-(defun copilot--sync-doc ()
-  "Sync current buffer."
+(defun copilot--on-doc-focus (&rest _args)
+  "Notify that the document has been focussed or opened."
+  (message "Focussed: %s" (current-buffer))
   (if (-contains-p copilot--opened-buffers (current-buffer))
-      (copilot--notify 'textDocument/didChange
-                       (list :textDocument (list :uri (copilot--get-uri)
-                                                 :version copilot--doc-version)
-                             :contentChanges (vector (list :text (copilot--get-source)))))
+      (progn
+		(message " -> focussed" (current-buffer))
+		(copilot--notify ':textDocument/didFocus
+					   (list :textDocument (list :uri (copilot--get-uri)))))
     (add-to-list 'copilot--opened-buffers (current-buffer))
+	(message " -> opened" (current-buffer))
     (copilot--notify ':textDocument/didOpen
-                      (list :textDocument (list :uri (copilot--get-uri)
-                                                :languageId (copilot--get-language-id)
-                                                :version copilot--doc-version
-                                                :text (copilot--get-source))))))
+                     (list :textDocument (list :uri (copilot--get-uri)
+                                               :languageId (copilot--get-language-id)
+                                               :version copilot--doc-version
+                                               :text (copilot--get-source))))))
+
+(defun copilot--on-doc-change (&optional start end chars-changed)
+  "Notify that the document has changed."
+  ;; Todo: Calculate the changed region and it's text and send it as contentChanges.
+  (when start
+	(message "Changed: %s %s" (current-buffer) (list start end chars-changed))
+	(cl-incf copilot--doc-version)
+	(copilot--notify 'textDocument/didChange
+					 (list :textDocument (list :uri (copilot--get-uri)
+                                               :version copilot--doc-version)
+                           :contentChanges (vector (list :text (copilot--get-source)))))))
+
+(defun copilot--on-doc-close (&rest _args)
+  "Notify that the document has been closed."
+  (message "Closed: %s" (current-buffer))
+  (setq copilot--opened-buffers (delete (current-buffer) copilot--opened-buffers))
+  (copilot--notify 'textDocument/didClose
+                   (list :textDocument (list :uri (copilot--get-uri)))))
+
 
 ;;;###autoload
 (defun copilot-complete ()
@@ -644,7 +663,6 @@ Use TRANSFORM-FN to transform completion if provided."
   (setq copilot--completion-idx 0)
 
   (let ((called-interactively (called-interactively-p 'interactive)))
-    (copilot--sync-doc)
     (copilot--get-completion
       (jsonrpc-lambda (&key completions &allow-other-keys)
         (let ((completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
@@ -712,9 +730,13 @@ Use this for custom bindings in `copilot-mode'.")
   (if copilot-mode
       (progn
         (add-hook 'post-command-hook #'copilot--post-command nil 'local)
-        (add-hook 'before-change-functions #'copilot--on-change nil 'local))
+        (add-hook 'after-change-functions #'copilot--on-doc-change nil 'local)
+		(add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
+    	(add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local))
     (remove-hook 'post-command-hook #'copilot--post-command 'local)
-    (remove-hook 'before-change-functions #'copilot--on-change 'local)))
+    (remove-hook 'after-change-functions #'copilot--on-doc-change 'local)
+	(remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
+	(remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)))
 
 (defun copilot--posn-advice (&rest args)
   "Remap posn if in copilot-mode."
@@ -728,10 +750,6 @@ Use this for custom bindings in `copilot-mode'.")
 ;;;###autoload
 (define-global-minor-mode global-copilot-mode
     copilot-mode copilot-mode)
-
-(defun copilot--on-change (&rest _args)
-  "Handle `before-change-functions' hook."
-  (cl-incf copilot--doc-version))
 
 (defun copilot--post-command ()
   "Complete in `post-command-hook' hook."

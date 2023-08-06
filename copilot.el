@@ -623,11 +623,10 @@ Use TRANSFORM-FN to transform completion if provided."
 (defun copilot--sync-doc ()
   "Sync current buffer."
   (if (-contains-p copilot--opened-buffers (current-buffer))
-      (progn
-        (copilot--notify 'textDocument/didChange
-                          (list :textDocument (list :uri (copilot--get-uri)
-                                                    :version copilot--doc-version)
-                                :contentChanges (vector (list :text (copilot--get-source))))))
+      (copilot--notify 'textDocument/didChange
+                       (list :textDocument (list :uri (copilot--get-uri)
+                                                 :version copilot--doc-version)
+                             :contentChanges (vector (list :text (copilot--get-source)))))
     (add-to-list 'copilot--opened-buffers (current-buffer))
     (copilot--notify ':textDocument/didOpen
                       (list :textDocument (list :uri (copilot--get-uri)

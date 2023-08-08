@@ -214,7 +214,7 @@ Special care has to be taken to ignore pairs in the middle of strings."
         
         (buffer-substring-no-properties x (point))))))
 
-(defun copilot-balancer-see-string-end-p (p)
+(defun copilot-balancer-see-string-end-p (p point-upper-bound)
   (save-excursion
     (save-restriction
       (widen)
@@ -222,9 +222,9 @@ Special care has to be taken to ignore pairs in the middle of strings."
       (let ((flag t)
             (ret nil))
         (while (and flag
-                    (< (point) (point-max)))
+                    (< (point) (point-max))
+                    (<= (point) point-upper-bound)) ; is it with or without equals?
           (let ((c (char-after)))
-            (message "%c" c)
             (cond
              ((= c ?\N{QUOTATION MARK})
               (setq flag nil)
@@ -232,9 +232,6 @@ Special care has to be taken to ignore pairs in the middle of strings."
              ((= c ?\N{BACKSLASH})
               (forward-char)
               (forward-char))
-             ((gethash c copilot-balancer-lisp-pairs)
-              (setq flag nil)
-              (setq ret nil))
              (t
               (forward-char)))))
         ret))))
@@ -243,8 +240,8 @@ Special care has to be taken to ignore pairs in the middle of strings."
   (pcase-let*
       ((prefix (copilot-balancer-get-top-level-form-beginning-to-point start))
        (suffix (copilot-balancer-get-point-to-top-level-form-end end))
-       (trimmed-completion (copilot-balancer-trim-closing-pairs-at-end
-                            completion))
+       (point-upper-bound (+ (point) (length suffix)))
+       (trimmed-completion (copilot-balancer-trim-closing-pairs-at-end completion))
 
        (prefix-pairs (copilot-balancer-extract-pairs prefix))
        (completion-pairs (copilot-balancer-extract-pairs trimmed-completion))
@@ -255,7 +252,7 @@ Special care has to be taken to ignore pairs in the middle of strings."
 
        (end-is-missing-double-quote
         (and in-string
-             (not (copilot-balancer-see-string-end-p end))))
+             (not (copilot-balancer-see-string-end-p end point-upper-bound))))
 
        (`(,trimmed-completion ,meta-prefix-pairs ,in-string)
         (if end-is-missing-double-quote

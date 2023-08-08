@@ -43,25 +43,27 @@
 (defun copilot-balancer--debug (args)
   (let* ((start (plist-get args :start))
          (end (plist-get args :end))
+         (deleted-text (plist-get args :deleted-text))
          (completion (plist-get args :completion))
          (trimmed-completion (plist-get args :trimmed-completion))
          (prefix-pairs (plist-get args :prefix-pairs))
          (completion-pairs (plist-get args :completion-pairs))
+         (in-string (plist-get args :in-string))
+         (end-is-missing-double-quote (plist-get args :end-is-missing-double-quote))
          (meta-prefix-pairs (plist-get args :meta-prefix-pairs))
          (suffix-pairs (plist-get args :suffix-pairs))
          (flipped-suffix-pairs (plist-get args :flipped-suffix-pairs))
          (completion-suffix-str (plist-get args :completion-suffix-str))
          (new-completion (plist-get args :new-completion))
          (prefix (plist-get args :prefix))
-         (suffix (plist-get args :suffix))
-         (region-to-be-deleted (buffer-substring-no-properties start end)))
+         (suffix (plist-get args :suffix)))
     (with-current-buffer copilot-balancer-debug-buffer
       (erase-buffer)
       (insert "start end " (number-to-string start)
               " "
               (number-to-string end)
               "\n")
-      (insert "region for deletion:<STX>" region-to-be-deleted "<EOT>\n")
+      (insert "deleted text:<STX>" deleted-text "<EOT>\n")
       
       
       (insert "completion:<STX>" completion "<EOT>\n")
@@ -73,6 +75,9 @@
       (insert "meta-prefix-pairs:<STX>" (prin1-to-string meta-prefix-pairs) "<EOT>\n")
       (insert "suffix-pairs:<STX>" (prin1-to-string suffix-pairs) "<EOT>\n")
       (insert "\n")
+
+      (insert "in-string:" (prin1-to-string in-string) "\n")
+      (insert "end-is-missing-double-quote:" (prin1-to-string end-is-missing-double-quote) "\n")
       
       (insert "flipped-suffix-pairs:<STX>" (prin1-to-string flipped-suffix-pairs) "<EOT>\n")
       
@@ -238,9 +243,9 @@ Special care has to be taken to ignore pairs in the middle of strings."
 
 (defun copilot-balancer--fix-lisp (start end completion)
   (pcase-let*
-      ((prefix (copilot-balancer-get-top-level-form-beginning-to-point start))
+      ((deleted-text (buffer-substring-no-properties start end))
+       (prefix (copilot-balancer-get-top-level-form-beginning-to-point start))
        (suffix (copilot-balancer-get-point-to-top-level-form-end end))
-       (point-upper-bound (+ (point) (length suffix)))
        (trimmed-completion (copilot-balancer-trim-closing-pairs-at-end completion))
 
        (prefix-pairs (copilot-balancer-extract-pairs prefix))
@@ -250,8 +255,11 @@ Special care has to be taken to ignore pairs in the middle of strings."
         (-> (append prefix-pairs completion-pairs)
             (copilot-balancer-collapse-matching-pairs nil)))
 
+       (point-upper-bound (+ (point)
+                             (min (length meta-prefix-pairs) (length suffix))))
        (end-is-missing-double-quote
         (and in-string
+             (or (string-match-p (string ?\N{QUOTATION MARK}) deleted-text))
              (not (copilot-balancer-see-string-end-p end point-upper-bound))))
 
        (`(,trimmed-completion ,meta-prefix-pairs ,in-string)
@@ -279,8 +287,9 @@ Special care has to be taken to ignore pairs in the middle of strings."
                                completion-suffix-str))
 
        (debug-vars (copilot-balancer-to-plist
-                    start end prefix completion trimmed-completion suffix
+                    start end deleted-text prefix completion trimmed-completion suffix
                     prefix-pairs completion-pairs suffix-pairs
+                    in-string end-is-missing-double-quote
                     meta-prefix-pairs flipped-suffix-pairs
                     rem-flipped-completion-suffix new-completion)))
     (copilot-balancer--debug debug-vars)

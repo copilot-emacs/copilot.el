@@ -37,12 +37,24 @@
 (defvar copilot-balancer-debug-buffer (get-buffer-create "*copilot-balancer*")
   "Buffer for debugging copilot-balancer.")
 
-(defun copilot-balancer--debug
-    (start end prefix completion trimmed-completion suffix
-           prefix-pairs completion-pairs suffix-pairs
-           meta-prefix-pairs flipped-suffix-pairs
-           completion-suffix-str new-completion)
-  (let ((region-to-be-deleted (buffer-substring-no-properties start end)))
+(defmacro copilot-balancer-to-plist (&rest vars)
+  `(list ,@(mapcan (lambda (var) (list (intern (concat ":" (symbol-name var))) var)) vars)))
+
+(defun copilot-balancer--debug (args)
+  (let* ((start (plist-get args :start))
+         (end (plist-get args :end))
+         (completion (plist-get args :completion))
+         (trimmed-completion (plist-get args :trimmed-completion))
+         (prefix-pairs (plist-get args :prefix-pairs))
+         (completion-pairs (plist-get args :completion-pairs))
+         (meta-prefix-pairs (plist-get args :meta-prefix-pairs))
+         (suffix-pairs (plist-get args :suffix-pairs))
+         (flipped-suffix-pairs (plist-get args :flipped-suffix-pairs))
+         (completion-suffix-str (plist-get args :completion-suffix-str))
+         (new-completion (plist-get args :new-completion))
+         (prefix (plist-get args :prefix))
+         (suffix (plist-get args :suffix))
+         (region-to-be-deleted (buffer-substring-no-properties start end)))
     (with-current-buffer copilot-balancer-debug-buffer
       (erase-buffer)
       (insert "start end " (number-to-string start)
@@ -267,11 +279,14 @@ Special care has to be taken to ignore pairs in the middle of strings."
                
        (completion-suffix-str (apply #'string (nreverse completion-suffix)))
        (new-completion (concat trimmed-completion
-                               completion-suffix-str)))
-    (copilot-balancer--debug start end prefix completion trimmed-completion suffix
-                             prefix-pairs completion-pairs suffix-pairs
-                             meta-prefix-pairs flipped-suffix-pairs
-                             rem-flipped-completion-suffix new-completion)
+                               completion-suffix-str))
+
+       (debug-vars (copilot-balancer-to-plist
+                    start end prefix completion trimmed-completion suffix
+                    prefix-pairs completion-pairs suffix-pairs
+                    meta-prefix-pairs flipped-suffix-pairs
+                    rem-flipped-completion-suffix new-completion)))
+    (copilot-balancer--debug debug-vars)
     
     new-completion))
 

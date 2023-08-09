@@ -620,37 +620,59 @@ Use TRANSFORM-FN to transform completion if provided."
 
 (defun copilot--on-doc-focus (&rest _args)
   "Notify that the document has been focussed or opened."
-  (message "Focussed: %s" (current-buffer))
   (if (-contains-p copilot--opened-buffers (current-buffer))
       (progn
-		(message " -> focussed" (current-buffer))
-		(copilot--notify ':textDocument/didFocus
-					   (list :textDocument (list :uri (copilot--get-uri)))))
+        (copilot--notify ':textDocument/didFocus
+                       (list :textDocument (list :uri (copilot--get-uri)))))
     (add-to-list 'copilot--opened-buffers (current-buffer))
-	(message " -> opened" (current-buffer))
     (copilot--notify ':textDocument/didOpen
                      (list :textDocument (list :uri (copilot--get-uri)
                                                :languageId (copilot--get-language-id)
                                                :version copilot--doc-version
                                                :text (copilot--get-source))))))
 
-(defun copilot--on-doc-change (&optional start end chars-changed)
+(defun copilot--on-doc-change (&optional start end chars-replaced-length)
   "Notify that the document has changed."
-  ;; Todo: Calculate the changed region and it's text and send it as contentChanges.
-  (when start
-	(message "Changed: %s %s" (current-buffer) (list start end chars-changed))
-	(cl-incf copilot--doc-version)
-	(copilot--notify 'textDocument/didChange
-					 (list :textDocument (list :uri (copilot--get-uri)
-                                               :version copilot--doc-version)
-                           :contentChanges (vector (list :text (copilot--get-source)))))))
+  (let* ((is-after-change (not (eq chars-replaced-length nil)))
+         (is-before-change (not is-after-change))
+         (is-insertion (or (and is-before-change (eq start end))
+                           (and is-after-change (eq chars-replaced-length 0))))
+         (is-deletion (not is-insertion)))
+
+    (when (or
+         (and is-before-change is-deletion)
+         (and is-after-change is-insertion))
+        (let* ((text (if is-insertion (buffer-substring-no-properties start end) ""))
+               (range-start (list :line
+                                  (- (line-number-at-pos start) copilot--line-bias)
+                                  :character
+                                  (- start (save-excursion (goto-char start) (line-beginning-position)))))
+
+               (range-end (if is-insertion
+                              range-start
+                            (list :line
+                                  (- (line-number-at-pos end) copilot--line-bias)
+                                  :character
+                                  (- end (save-excursion (goto-char end) (line-beginning-position))))))
+
+               (content-changes (vector (list :range
+                                              (list :start range-start
+                                                    :end range-end)
+                                              :text text))))
+
+          (cl-incf copilot--doc-version)
+          (copilot--notify 'textDocument/didChange
+                           (list
+                            :textDocument (list :uri (copilot--get-uri)
+                                                :version copilot--doc-version)
+                            :contentChanges content-changes))))))
 
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."
-  (message "Closed: %s" (current-buffer))
-  (setq copilot--opened-buffers (delete (current-buffer) copilot--opened-buffers))
-  (copilot--notify 'textDocument/didClose
-                   (list :textDocument (list :uri (copilot--get-uri)))))
+  (when (-contains-p copilot--opened-buffers (current-buffer))
+    (copilot--notify 'textDocument/didClose
+                       (list :textDocument (list :uri (copilot--get-uri))))
+    (setq copilot--opened-buffers (delete (current-buffer) copilot--opened-buffers))))
 
 
 ;;;###autoload
@@ -730,13 +752,15 @@ Use this for custom bindings in `copilot-mode'.")
   (if copilot-mode
       (progn
         (add-hook 'post-command-hook #'copilot--post-command nil 'local)
+        (add-hook 'before-change-functions #'copilot--on-doc-change nil 'local)
         (add-hook 'after-change-functions #'copilot--on-doc-change nil 'local)
-		(add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
-    	(add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local))
+        (add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
+        (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local))
     (remove-hook 'post-command-hook #'copilot--post-command 'local)
+    (remove-hook 'before-change-functions #'copilot--on-doc-change 'local)
     (remove-hook 'after-change-functions #'copilot--on-doc-change 'local)
-	(remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
-	(remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)))
+    (remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
+    (remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)))
 
 (defun copilot--posn-advice (&rest args)
   "Remap posn if in copilot-mode."

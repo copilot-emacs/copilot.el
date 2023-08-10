@@ -748,7 +748,10 @@ Use this for custom bindings in `copilot-mode'.")
   (add-hook 'post-command-hook #'copilot--post-command nil 'local)
   (add-hook 'before-change-functions #'copilot--on-doc-change nil 'local)
   (add-hook 'after-change-functions #'copilot--on-doc-change nil 'local)
+  ;; Hook onto both window-selection-change-functions and window-buffer-change-functions
+  ;; since both are separate ways of 'focussing' a buffer.
   (add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
+  (add-hook 'window-buffer-change-functions #'copilot--on-doc-focus nil 'local)
   (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local))
 
 (defun copilot-mode-exit ()
@@ -757,6 +760,7 @@ Use this for custom bindings in `copilot-mode'.")
   (remove-hook 'before-change-functions #'copilot--on-doc-change 'local)
   (remove-hook 'after-change-functions #'copilot--on-doc-change 'local)
   (remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
+  (remove-hook 'window-buffer-change-functions #'copilot--on-doc-focus 'local)
   (remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)
   (setq copilot--opened-buffers (delete (current-buffer) copilot--opened-buffers)))
 

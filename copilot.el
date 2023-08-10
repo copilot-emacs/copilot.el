@@ -743,6 +743,23 @@ Copilot will show completions only if all predicates return t."
   "Keymap for Copilot minor mode.
 Use this for custom bindings in `copilot-mode'.")
 
+(defun copilot-mode-enter ()
+  "Set up copilot mode when entering."
+  (add-hook 'post-command-hook #'copilot--post-command nil 'local)
+  (add-hook 'before-change-functions #'copilot--on-doc-change nil 'local)
+  (add-hook 'after-change-functions #'copilot--on-doc-change nil 'local)
+  (add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
+  (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local))
+
+(defun copilot-mode-exit ()
+  "Clean up copilot mode when exiting."
+  (remove-hook 'post-command-hook #'copilot--post-command 'local)
+  (remove-hook 'before-change-functions #'copilot--on-doc-change 'local)
+  (remove-hook 'after-change-functions #'copilot--on-doc-change 'local)
+  (remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
+  (remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)
+  (setq copilot--opened-buffers (delete (current-buffer) copilot--opened-buffers)))
+
 ;;;###autoload
 (define-minor-mode copilot-mode
   "Minor mode for Copilot."
@@ -751,17 +768,8 @@ Use this for custom bindings in `copilot-mode'.")
   (copilot-clear-overlay)
   (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
   (if copilot-mode
-      (progn
-        (add-hook 'post-command-hook #'copilot--post-command nil 'local)
-        (add-hook 'before-change-functions #'copilot--on-doc-change nil 'local)
-        (add-hook 'after-change-functions #'copilot--on-doc-change nil 'local)
-        (add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
-        (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local))
-    (remove-hook 'post-command-hook #'copilot--post-command 'local)
-    (remove-hook 'before-change-functions #'copilot--on-doc-change 'local)
-    (remove-hook 'after-change-functions #'copilot--on-doc-change 'local)
-    (remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
-    (remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)))
+      (copilot-mode-enter)
+    (copilot-mode-exit)))
 
 (defun copilot--posn-advice (&rest args)
   "Remap posn if in copilot-mode."

@@ -259,8 +259,8 @@ Special care has to be taken to ignore pairs in the middle of strings."
                              (min (length meta-prefix-pairs) (length suffix))))
        (end-is-missing-double-quote
         (and in-string
-             (or (string-match-p (string ?\N{QUOTATION MARK}) deleted-text))
-             (not (copilot-balancer-see-string-end-p end point-upper-bound))))
+             (or (string-match-p (string ?\N{QUOTATION MARK}) deleted-text)
+                 (not (copilot-balancer-see-string-end-p end point-upper-bound)))))
 
        (`(,trimmed-completion ,meta-prefix-pairs ,in-string)
         (if end-is-missing-double-quote

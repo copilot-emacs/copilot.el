@@ -620,16 +620,17 @@ Use TRANSFORM-FN to transform completion if provided."
 
 (defun copilot--on-doc-focus (&rest _args)
   "Notify that the document has been focussed or opened."
-  (if (-contains-p copilot--opened-buffers (current-buffer))
-      (progn
-        (copilot--notify ':textDocument/didFocus
-                       (list :textDocument (list :uri (copilot--get-uri)))))
-    (add-to-list 'copilot--opened-buffers (current-buffer))
-    (copilot--notify ':textDocument/didOpen
-                     (list :textDocument (list :uri (copilot--get-uri)
-                                               :languageId (copilot--get-language-id)
-                                               :version copilot--doc-version
-                                               :text (copilot--get-source))))))
+  (when copilot-mode
+	(if (-contains-p copilot--opened-buffers (current-buffer))
+		(progn
+          (copilot--notify ':textDocument/didFocus
+						   (list :textDocument (list :uri (copilot--get-uri)))))
+      (add-to-list 'copilot--opened-buffers (current-buffer))
+      (copilot--notify ':textDocument/didOpen
+                       (list :textDocument (list :uri (copilot--get-uri)
+												 :languageId (copilot--get-language-id)
+												 :version copilot--doc-version
+												 :text (copilot--get-source)))))))
 
 (defun copilot--on-doc-change (&optional start end chars-replaced-length)
   "Notify that the document has changed."

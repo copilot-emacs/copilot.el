@@ -564,7 +564,7 @@ Use TRANSFORM-FN to transform completion if provided."
             (vterm-insert t-completion))
         (delete-region start end)
         (insert t-completion))
-	  ;; if it is a partial completion
+      ;; if it is a partial completion
       (when (and (s-prefix-p t-completion completion)
                  (not (s-equals-p t-completion completion)))
         (copilot--set-overlay-text (copilot--get-overlay) (s-chop-prefix t-completion completion)))

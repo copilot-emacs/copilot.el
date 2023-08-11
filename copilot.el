@@ -738,7 +738,7 @@ Copilot will show completions only if all predicates return t."
   "Keymap for Copilot minor mode.
 Use this for custom bindings in `copilot-mode'.")
 
-(defun copilot-mode-enter ()
+(defun copilot--mode-enter ()
   "Set up copilot mode when entering."
   (add-hook 'post-command-hook #'copilot--post-command nil 'local)
   (add-hook 'before-change-functions #'copilot--on-doc-change nil 'local)
@@ -749,7 +749,7 @@ Use this for custom bindings in `copilot-mode'.")
   (add-hook 'window-buffer-change-functions #'copilot--on-doc-focus nil 'local)
   (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local))
 
-(defun copilot-mode-exit ()
+(defun copilot--mode-exit ()
   "Clean up copilot mode when exiting."
   (remove-hook 'post-command-hook #'copilot--post-command 'local)
   (remove-hook 'before-change-functions #'copilot--on-doc-change 'local)
@@ -768,8 +768,8 @@ Use this for custom bindings in `copilot-mode'.")
   (copilot-clear-overlay)
   (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
   (if copilot-mode
-      (copilot-mode-enter)
-    (copilot-mode-exit)))
+      (copilot--mode-enter)
+    (copilot--mode-exit)))
 
 (defun copilot--posn-advice (&rest args)
   "Remap posn if in copilot-mode."

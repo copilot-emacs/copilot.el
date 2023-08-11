@@ -618,9 +618,13 @@ Use TRANSFORM-FN to transform completion if provided."
               (goto-char p)
               (copilot--display-overlay-completion balanced-text uuid start end))))))))
 
-(defun copilot--on-doc-focus (&rest _args)
+(defun copilot--on-doc-focus (window)
   "Notify that the document has been focussed or opened."
-  (when copilot-mode
+  ;; When switching windows, this function is called twice, once for the
+  ;; window losing focus and once for the window gaining focus. We only want to
+  ;; send a notification for the window gaining focus and only if the buffer has
+  ;; copilot-mode enabled.
+  (when (and copilot-mode (eq window (selected-window)))
 	(if (-contains-p copilot--opened-buffers (current-buffer))
 		(progn
           (copilot--notify ':textDocument/didFocus

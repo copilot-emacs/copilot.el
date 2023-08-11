@@ -766,8 +766,7 @@ Use this for custom bindings in `copilot-mode'.")
   (remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
   (remove-hook 'window-buffer-change-functions #'copilot--on-doc-focus 'local)
   (remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)
-  ;; Send the close event for the active buffer since activating the mode will send
-  ;; open it again.
+  ;; Send the close event for the active buffer since activating the mode will open it again.
   (copilot--on-doc-close))
 
 ;;;###autoload

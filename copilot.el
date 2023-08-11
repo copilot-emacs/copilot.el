@@ -206,7 +206,7 @@ Enabling event logging may slightly affect performance."
     (condition-case err
         (copilot--request 'signInConfirm (list :userCode user-code))
       (jsonrpc-error
-        (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
+       (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
     (copilot--dbind (:user) (copilot--request 'checkStatus '(:dummy "checkStatus"))
       (message "Authenticated as GitHub user %s." user))))
 
@@ -463,8 +463,8 @@ Enabling event logging may slightly affect performance."
   (setq copilot--panel-lang (copilot--get-language-id))
 
   (copilot--get-panel-completions
-    (jsonrpc-lambda (&key solutionCountTarget)
-      (message "Copilot: Synthesizing %d solutions..." solutionCountTarget)))
+   (jsonrpc-lambda (&key solutionCountTarget)
+     (message "Copilot: Synthesizing %d solutions..." solutionCountTarget)))
   (with-current-buffer (get-buffer-create "*copilot-panel*")
     (org-mode)
     (erase-buffer)))
@@ -564,7 +564,7 @@ Use TRANSFORM-FN to transform completion if provided."
             (vterm-insert t-completion))
         (delete-region start end)
         (insert t-completion))
-      ; if it is a partial completion
+	  ;; if it is a partial completion
       (when (and (s-prefix-p t-completion completion)
                  (not (s-equals-p t-completion completion)))
         (copilot--set-overlay-text (copilot--get-overlay) (s-chop-prefix t-completion completion)))
@@ -644,39 +644,30 @@ Use TRANSFORM-FN to transform completion if provided."
                            (and is-after-change (eq chars-replaced-length 0))))
          (is-deletion (not is-insertion)))
 
-    (when (or
-         (and is-before-change is-deletion)
-         (and is-after-change is-insertion))
-        (let* ((text (if is-insertion (buffer-substring-no-properties start end) ""))
-               (range-start (list :line
-                                  (- (line-number-at-pos start) copilot--line-bias)
-                                  :character
-                                  (- start (save-excursion (goto-char start) (line-beginning-position)))))
+    (when (or (and is-before-change is-deletion)
+			  (and is-after-change is-insertion))
+      (let* ((text (if is-insertion (buffer-substring-no-properties start end) ""))
+             (range-start (list :line (- (line-number-at-pos start) copilot--line-bias)
+                                :character (- start (save-excursion (goto-char start) (line-beginning-position)))))
 
-               (range-end (if is-insertion
-                              range-start
-                            (list :line
-                                  (- (line-number-at-pos end) copilot--line-bias)
-                                  :character
-                                  (- end (save-excursion (goto-char end) (line-beginning-position))))))
+             (range-end (if is-insertion
+                            range-start
+                          (list :line (- (line-number-at-pos end) copilot--line-bias)
+                                :character (- end (save-excursion (goto-char end) (line-beginning-position))))))
 
-               (content-changes (vector (list :range
-                                              (list :start range-start
-                                                    :end range-end)
-                                              :text text))))
+             (content-changes (vector (list :range (list :start range-start :end range-end)
+                                            :text text))))
 
-          (cl-incf copilot--doc-version)
-          (copilot--notify 'textDocument/didChange
-                           (list
-                            :textDocument (list :uri (copilot--get-uri)
-                                                :version copilot--doc-version)
-                            :contentChanges content-changes))))))
+        (cl-incf copilot--doc-version)
+        (copilot--notify 'textDocument/didChange
+                         (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
+							   :contentChanges content-changes))))))
 
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."
   (when (-contains-p copilot--opened-buffers (current-buffer))
     (copilot--notify 'textDocument/didClose
-                       (list :textDocument (list :uri (copilot--get-uri))))
+                     (list :textDocument (list :uri (copilot--get-uri))))
     (setq copilot--opened-buffers (delete (current-buffer) copilot--opened-buffers))))
 
 
@@ -691,12 +682,12 @@ Use TRANSFORM-FN to transform completion if provided."
 
   (let ((called-interactively (called-interactively-p 'interactive)))
     (copilot--get-completion
-      (jsonrpc-lambda (&key completions &allow-other-keys)
-        (let ((completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
-          (if completion
-              (copilot--show-completion completion)
-            (when called-interactively
-              (message "No completion is available."))))))))
+     (jsonrpc-lambda (&key completions &allow-other-keys)
+       (let ((completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
+         (if completion
+             (copilot--show-completion completion)
+           (when called-interactively
+             (message "No completion is available."))))))))
 
 ;;
 ;; minor mode
@@ -791,7 +782,7 @@ Use this for custom bindings in `copilot-mode'.")
 
 ;;;###autoload
 (define-global-minor-mode global-copilot-mode
-    copilot-mode copilot-mode)
+  copilot-mode copilot-mode)
 
 (defun copilot--post-command ()
   "Complete in `post-command-hook' hook."
@@ -832,7 +823,7 @@ command that triggered `post-command-hook'."
              (equal (current-buffer) buffer)
              copilot-mode
              (copilot--satisfy-trigger-predicates))
-        (copilot-complete)))
+    (copilot-complete)))
 
 (provide 'copilot)
 ;;; copilot.el ends here

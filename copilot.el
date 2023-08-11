@@ -747,7 +747,9 @@ Use this for custom bindings in `copilot-mode'.")
   ;; since both are separate ways of 'focussing' a buffer.
   (add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
   (add-hook 'window-buffer-change-functions #'copilot--on-doc-focus nil 'local)
-  (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local))
+  (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local)
+  ;; The mode may be activated manually while focus remains on the current window/buffer.
+  (copilot--on-doc-focus (selected-window)))
 
 (defun copilot--mode-exit ()
   "Clean up copilot mode when exiting."

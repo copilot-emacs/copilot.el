@@ -383,7 +383,7 @@ Enabling event logging may slightly affect performance."
 
 (defun copilot--get-language-id ()
   "Get language ID of current buffer."
-  (let ((mode (s-chop-suffix "-mode" (symbol-name major-mode))))
+  (let ((mode (s-chop-suffixes '("-ts-mode" "-mode") (symbol-name major-mode))))
     (alist-get mode copilot-major-mode-alist mode nil 'equal)))
 
 (defun copilot--generate-doc ()

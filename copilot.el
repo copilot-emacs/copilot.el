@@ -56,47 +56,22 @@ Enabling event logging may slightly affect performance."
   :group 'copilot
   :type 'integer)
 
-
 (defcustom copilot-clear-overlay-ignore-commands nil
   "List of commands that should not clear the overlay when called."
   :group 'copilot
   :type '(repeat function))
 
-
-(defun copilot--fix-base-dir (base-dir)
-  "Fix BASE-DIR to be the root of the Copilot repository.
-If BASE-DIR is either .../builds/copilot/ or .../build/copilot/,
-return .../repos/copilot/.  This is needed if copilot is
-installed via straight.el or elpaca."
-  (or
-   (when-let* ((final-part ; copilot
-		(file-name-nondirectory
-		 (directory-file-name base-dir)))
-	       (directory-without-copilot ; .../builds/
-		(file-name-directory
-		 (directory-file-name base-dir)))
-	       (directory-without-copilot-without-slash ; .../builds
-		(directory-file-name directory-without-copilot))
-	       (parent-folder-name ; builds
-		(file-name-nondirectory
-		 directory-without-copilot-without-slash))
-	       (the-rest ; ...
-		(file-name-directory
-		 directory-without-copilot-without-slash)))
-     (when (member parent-folder-name '("build" "builds"))
-       (let ((new-directory-without-copilot-without-slash ; .../repos
-	      (concat the-rest "repos")))
-	 (concat new-directory-without-copilot-without-slash
-		 "/"
-		 final-part
-		 "/")))) ; .../repos/copilot/
-   base-dir))
-
 (defconst copilot--base-dir
-  (copilot--fix-base-dir
-   (file-name-directory
-   (or load-file-name
-       (buffer-file-name))))
+  (let* ((this-file
+	  (or load-file-name
+	      (buffer-file-name)))
+	 (el-file
+	  (concat (file-name-sans-extension this-file)
+		  ".el"))
+	 (true-el-file
+	  (file-truename el-file)))
+  (file-name-directory
+   true-el-file))
   "Directory containing this file.")
 
 (defconst copilot-version "0.10.0"

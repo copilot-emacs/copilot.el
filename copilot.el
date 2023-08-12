@@ -19,19 +19,24 @@
   :group 'completion
   :prefix "copilot-")
 
-
+(print system-type)
 ;; node.js on windows cant understand cygwin paths
 (defun copilot--cygwinify-path (dir &optional mixed)
-  (let* ((mode-flag (if mixed
-			"-m"
-		      "-w"))	 
-	 (retstr (shell-command-to-string (format "cygpath %s %s" mode-flag dir)))
-	 (retlen (length retstr))
-	 (ret    (cond
-		  ((and (> retlen 0) (eql (aref retstr (- retlen 1)) ?\n))
-		   (substring retstr 0 (- retlen 1)))
-		  (t retstr))))
-    ret))
+  (if (not (eq "cygwin" system-type))
+      dir
+    (let* ((mode-flag (if mixed
+			  "-m"
+		        "-w"))	 
+	   (retstr (shell-command-to-string (format "cygpath %s %s" mode-flag dir)))
+	   (retlen (length retstr))
+	   (ret    (cond
+		    ((and (> retlen 0) (eql (aref retstr (- retlen 1)) ?\n))
+		     (substring retstr 0 (- retlen 1)))
+		    (t retstr))))
+      ret)))
+
+
+
 
 
 (defcustom copilot-idle-delay 0
@@ -226,6 +231,7 @@ Enabling event logging may slightly affect performance."
   (copilot--dbind
       (:status :user :userCode user-code :verificationUri verification-uri)
       (copilot--request 'signInInitiate '(:dummy "signInInitiate"))
+    (print verification-uri)
     (when (s-equals-p status "AlreadySignedIn")
       (user-error "Already signed in as %s" user))
     (if (display-graphic-p)
@@ -242,7 +248,7 @@ Enabling event logging may slightly affect performance."
       (jsonrpc-error
        (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
     (copilot--dbind (:user) (copilot--request 'checkStatus '(:dummy "checkStatus"))
-      (message "Authenticated as GitHub user %s." user))))
+      (message "Authenticated as GitHub user %s." user)))) 
 
 (defun copilot-logout ()
   "Logout from Copilot."

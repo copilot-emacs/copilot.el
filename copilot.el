@@ -62,10 +62,41 @@ Enabling event logging may slightly affect performance."
   :group 'copilot
   :type '(repeat function))
 
+
+(defun copilot--fix-base-dir (base-dir)
+  "Fix BASE-DIR to be the root of the Copilot repository.
+If BASE-DIR is either .../builds/copilot/ or .../build/copilot/,
+return .../repos/copilot/.  This is needed if copilot is
+installed via straight.el or elpaca."
+  (or
+   (when-let* ((final-part ; copilot
+		(file-name-nondirectory
+		 (directory-file-name base-dir)))
+	       (directory-without-copilot ; .../builds/
+		(file-name-directory
+		 (directory-file-name base-dir)))
+	       (directory-without-copilot-without-slash ; .../builds
+		(directory-file-name directory-without-copilot))
+	       (parent-folder-name ; builds
+		(file-name-nondirectory
+		 directory-without-copilot-without-slash))
+	       (the-rest ; ...
+		(file-name-directory
+		 directory-without-copilot-without-slash)))
+     (when (member parent-folder-name '("build" "builds"))
+       (let ((new-directory-without-copilot-without-slash ; .../repos
+	      (concat the-rest "repos")))
+	 (concat new-directory-without-copilot-without-slash
+		 "/"
+		 final-part
+		 "/")))) ; .../repos/copilot/
+   base-dir))
+
 (defconst copilot--base-dir
-  (file-name-directory
+  (copilot--fix-base-dir
+   (file-name-directory
    (or load-file-name
-       (buffer-file-name)))
+       (buffer-file-name))))
   "Directory containing this file.")
 
 (defconst copilot-version "0.10.0"

@@ -1,6 +1,13 @@
-# Copilot.el
+# Copilot.el (with cygwin support)
 
-Copilot.el is an Emacs plugin for GitHub Copilot.
+Copilot.el is an Emacs plugin for GitHub Copilot, created by zerolfx.
+
+This fork is extended to run on emacs running in cygwin (on windows 10 at
+least). Because we must use the windows native node.js outside of the cygwin
+environment from within cygwin there were path issues. The fix is just to call
+cygpath from within emacs before calling node. Setup should be the same with the
+addition of ensuring the windows installed node.js is in the cygwin path. 
+
 
 ![](assets/demo.gif)
 
@@ -10,13 +17,13 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 ## Installation
 
-0. Ensure your Emacs version is at least 27.
+0. Ensure your Emacs version is at least 27, and the dependency package `editorconfig` ([melpa](https://melpa.org/#/editorconfig)) is also installed.
 
-1. Install [Node.js](https://nodejs.org/en/download/).
+1. Install [Node.js](https://nodejs.org/en/download/) v16+. (You can specify the path to `node` executable by setting `copilot-node-executable`.)
 
 2. Setup `copilot.el` as described in the next section.
 
-3. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose`.
+3. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose` (`NotAuthorized` means you don't have a valid subscription).
 
 4. Enjoy!
 
@@ -88,12 +95,11 @@ dotspacemacs-additional-packages
   
 (with-eval-after-load 'copilot
   (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
-  (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion))
+  (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
+  (define-key copilot-completion-map (kbd "C-TAB") 'copilot-accept-completion-by-word)
+  (define-key copilot-completion-map (kbd "C-<tab>") 'copilot-accept-completion-by-word))
 
 (add-hook 'prog-mode-hook 'copilot-mode)
-
-(define-key evil-insert-state-map (kbd "C-<tab>") 'copilot-accept-completion-by-word)
-(define-key evil-insert-state-map (kbd "C-TAB") 'copilot-accept-completion-by-word)
 ```
 
 </details>
@@ -158,60 +164,23 @@ You need to bind `copilot-complete` to some key and call `copilot-clear-overlay`
 
 #### 3. Configure completion acceptation
 
-In general, you need to bind `copilot-accept-completion` to some key in order to accept the completion. Also, you may find `copilot-accept-completion-by-word` is useful.
-
-#### Example of using tab with `company-mode`
+Use tab to accept completions (you may also want to bind `copilot-accept-completion-by-word` to some key):
 
 ```elisp
-(with-eval-after-load 'company
-  ;; disable inline previews
-  (delq 'company-preview-if-just-one-frontend company-frontends))
-  
 (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
 (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
-```
-
-#### Example of using tab with `auto-complete`
-
-```elisp
-; complete by copilot first, then auto-complete
-(defun my-tab ()
-  (interactive)
-  (or (copilot-accept-completion)
-      (ac-expand nil)))
-
-(with-eval-after-load 'auto-complete
-  ; disable inline preview
-  (setq ac-disable-inline t)
-  ; show menu if have only one candidate
-  (setq ac-candidate-menu-min 0))
-  
-(define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
-(define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
-```
-
-#### Example of defining tab in copilot-mode
-
-This is useful if you don't want to depend on a particular completion framework.
-
-```elisp
-(defun my/copilot-tab ()
-  (interactive)
-  (or (copilot-accept-completion)
-      (indent-for-tab-command)))
-
-(with-eval-after-load 'copilot
-  (define-key copilot-mode-map (kbd "<tab>") #'my/copilot-tab))
-```
-
-Or with evil-mode:
-```elisp
-(with-eval-after-load 'copilot
-  (evil-define-key 'insert copilot-mode-map
-    (kbd "<tab>") #'my/copilot-tab))
 ```
 
 </details>
+
+### Programming language detection
+
+Copilot.el detects the programming language of a buffer based on the major-mode name, stripping the `-mode` part. Resulting languageId should match table [here](https://code.visualstudio.com/docs/languages/identifiers#_known-language-identifiers).
+You can add unusual major-mode mappings to `copilot-major-mode-alist`. Without the proper language set suggestions may be of poorer quality.
+
+```elisp
+(add-to-list 'copilot-major-mode-alist '("enh-ruby" . "ruby"))
+```
 
 ## Commands
 
@@ -272,8 +241,12 @@ A list of commands that won't cause the overlay to be cleared.
 
 #### copilot-network-proxy
 
-Format: `'(:host "127.0.0.1" :port "7890" :username: "user" :password: "password")`, where `:username` and `:password` are optional.
+Format: `'(:host "127.0.0.1" :port 7890 :username: "user" :password: "password")`, where `:username` and `:password` are optional.
 
+For example:
+```elisp
+(setq copilot-network-proxy '(:host "127.0.0.1" :port 7890))
+```
 
 ## Known Issues
 
@@ -298,7 +271,7 @@ But I decided to allow them to coexist, allowing you to choose a better one at a
 ## Reporting Bugs
 
 + Make sure you have restarted your Emacs (and rebuild the plugin if necessary) after updating the plugin.
-+ Please paste related logs in the `*copilot events*` and `*copilot stderr*` buffer.
++ Please enable event logging by customize `copilot-log-max` (to e.g. 1000), then paste related logs in the `*copilot events*` and `*copilot stderr*` buffer.
 + If an exception is thrown, please also paste the stack trace (use `M-x toggle-debug-on-error` to enable stack trace).
 
 ## Roadmap

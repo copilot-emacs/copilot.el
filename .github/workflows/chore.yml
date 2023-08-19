@@ -10,26 +10,25 @@ jobs:
     env:
       upstream_repo: github/copilot.vim
       upstream_branch: release
-      upstream_dir: copilot/dist
+      upstream_dir: dist
       dest_dir: dist
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 2
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Clone upstream branch
-        id: clone_upstream
+        id: clone-upstream
         run: |
           mkdir .tmp
           cd .tmp
           git clone https://github.com/$upstream_repo.git --filter=tree:0 upstream
           cd upstream
           cp ./$upstream_dir ../../ -rf
-          echo "::set-output name=commit_msg::`git log -n 1 --format=%B ./$upstream_dir`"
+          echo "commit_msg=`git log -n 1 --format=%B ./$upstream_dir`" >> "$GITHUB_OUTPUT"
       - name: Sync
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add $dest_dir/
-          git commit -am "${{ steps.clone_upstream.outputs.commit_msg }}" && git push origin || (exit 0)
-          
+          git commit -am "${{ steps.clone-upstream.outputs.commit_msg }}" && git push origin || (exit 0)

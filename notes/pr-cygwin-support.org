@@ -1,0 +1,14 @@
+Added support for emacs within cygwin
+
+Small changes to make this plugin work within cygwin, which doesn't have a
+standard node.js implementation in it's repos but works with the standard
+node.js for windows package. When emacs calls node.js without these changes, it
+feeds node.js a posix/cygwin path that node doesn't recognize. The workaround is
+just call the standard cygwin cli tool [cygpath
+](https://cygwin.com/cygwin-ug-net/cygpath.html) from within copilot.el if
+cygwin is detected.
+
+It's possible there's a better way, or that my environment is so janky that this
+is unnecessary elsewhere.
+
+Codebase needs cleanup, holding off on official PR/draft PR for now.

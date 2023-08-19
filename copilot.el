@@ -326,6 +326,8 @@ Enabling event logging may slightly affect performance."
          (pmax (point-max))
          (pmin (point-min))
          (half-window (/ copilot-max-char 2)))
+    (when (and (>= copilot-max-char 0) (> pmax copilot-max-char))
+      (warn "%s size exceeds 'copilot-max-char' (%s), copilot completions may not work" (current-buffer) copilot-max-char))
     (cond
      ;; using whole buffer
      ((or (< copilot-max-char 0) (< pmax copilot-max-char))

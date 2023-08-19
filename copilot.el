@@ -625,43 +625,36 @@ Use TRANSFORM-FN to transform completion if provided."
   ;; send a notification for the window gaining focus and only if the buffer has
   ;; copilot-mode enabled.
   (when (and copilot-mode (eq window (selected-window)))
-	(if (-contains-p copilot--opened-buffers (current-buffer))
-		(progn
-          (copilot--notify ':textDocument/didFocus
-						   (list :textDocument (list :uri (copilot--get-uri)))))
+    (if (-contains-p copilot--opened-buffers (current-buffer))
+        (copilot--notify ':textDocument/didFocus
+                         (list :textDocument (list :uri (copilot--get-uri))))
       (add-to-list 'copilot--opened-buffers (current-buffer))
       (copilot--notify ':textDocument/didOpen
                        (list :textDocument (list :uri (copilot--get-uri)
-												 :languageId (copilot--get-language-id)
-												 :version copilot--doc-version
-												 :text (copilot--get-source)))))))
+                                                 :languageId (copilot--get-language-id)
+                                                 :version copilot--doc-version
+                                                 :text (copilot--get-source)))))))
 
-(defun copilot--on-doc-change (&optional start end chars-replaced-length)
+(defun copilot--on-doc-change (&optional beg end chars-replaced)
   "Notify that the document has changed."
-  (let* ((is-after-change (not (eq chars-replaced-length nil)))
-         (is-before-change (not is-after-change))
-         (is-insertion (or (and is-before-change (eq start end))
-                           (and is-after-change (eq chars-replaced-length 0))))
-         (is-deletion (not is-insertion)))
-
-    (when (or (and is-before-change is-deletion)
-			  (and is-after-change is-insertion))
-      (let* ((text (if is-insertion (buffer-substring-no-properties start end) ""))
-             (range-start (list :line (- (line-number-at-pos start) copilot--line-bias)
-                                :character (- start (save-excursion (goto-char start) (line-beginning-position)))))
-
-             (range-end (if is-insertion
-                            range-start
+  (let* ((is-before-change (eq chars-replaced nil))
+         (is-after-change (not is-before-change))
+         ;; for a deletion, the post-change beginning and end are at the same place.
+         (is-insertion (and is-after-change (not (equal beg end))))
+         (is-deletion (and is-before-change (not (equal beg end)))))
+    (when (or is-insertion is-deletion)
+      (let* ((range-start (list :line (- (line-number-at-pos beg) copilot--line-bias)
+                                :character (- beg (save-excursion (goto-char beg) (line-beginning-position)))))
+             (range-end (if is-insertion range-start
                           (list :line (- (line-number-at-pos end) copilot--line-bias)
                                 :character (- end (save-excursion (goto-char end) (line-beginning-position))))))
-
+             (text (if is-insertion (buffer-substring-no-properties beg end) ""))
              (content-changes (vector (list :range (list :start range-start :end range-end)
                                             :text text))))
-
         (cl-incf copilot--doc-version)
         (copilot--notify 'textDocument/didChange
                          (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
-							   :contentChanges content-changes))))))
+                               :contentChanges content-changes))))))
 
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."

@@ -313,7 +313,7 @@ Enabling event logging may slightly affect performance."
   "Get URI of current buffer."
   (cond
    ((not buffer-file-name)
-    "")
+	(concat "buffer://" (url-encode-url (buffer-name (current-buffer)))))
    ((and (eq system-type 'windows-nt)
          (not (s-starts-with-p "/" buffer-file-name)))
     (concat "file:///" (url-encode-url buffer-file-name)))

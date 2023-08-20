@@ -51,7 +51,7 @@ Enabling event logging may slightly affect performance."
   :type 'string)
 
 
-(defcustom copilot-max-char 30000
+(defcustom copilot-max-char 100000
   "Maximum number of characters to send to Copilot, -1 means no limit."
   :group 'copilot
   :type 'integer)

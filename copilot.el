@@ -616,9 +616,10 @@ Use TRANSFORM-FN to transform completion if provided."
                           (funcall goto-line!)
                           (forward-char end-char)
                           (point)))
-                   (balanced-text (copilot-balancer-fix-completion start end text)))
+                   (fixed-completion (copilot-balancer-fix-completion start end text)))
               (goto-char p)
-              (copilot--display-overlay-completion balanced-text uuid start end))))))))
+              (pcase-let ((`(,start ,end ,balanced-text) fixed-completion))
+                (copilot--display-overlay-completion balanced-text uuid start end)))))))))
 
 (defun copilot--on-doc-focus (window)
   "Notify that the document has been focussed or opened."

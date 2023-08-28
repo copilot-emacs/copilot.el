@@ -241,19 +241,43 @@ Special care has to be taken to ignore pairs in the middle of strings."
               (forward-char)))))
         ret))))
 
+(defun copilot-balancer-odd-dquote-count-p (s)
+  (let ((n (length s))
+        (i 0)
+        (count 0))
+    (while (< i n)
+      (let ((c (elt s i)))
+        (cond
+         ((= c ?\N{BACKSLASH})
+          (setq i (1+ i)))
+         ((= c ?\N{QUOTATION MARK})
+          (setq count (1+ count)))))
+      (setq i (1+ i)))
+    (oddp count)))
+
 (defun copilot-balancer--fix-lisp (start end completion)
   (pcase-let*
-      ((deleted-text (buffer-substring-no-properties start end))
-       (prefix (copilot-balancer-get-top-level-form-beginning-to-point start))
-       (suffix (copilot-balancer-get-point-to-top-level-form-end end))
-       (trimmed-completion (copilot-balancer-trim-closing-pairs-at-end completion))
-
+      ((prefix (copilot-balancer-get-top-level-form-beginning-to-point start))
        (prefix-pairs (copilot-balancer-extract-pairs prefix))
+
+       (trimmed-completion (copilot-balancer-trim-closing-pairs-at-end completion))
        (completion-pairs (copilot-balancer-extract-pairs trimmed-completion))
-               
+
        (`(,meta-prefix-pairs . ,in-string)
         (-> (append prefix-pairs completion-pairs)
             (copilot-balancer-collapse-matching-pairs nil)))
+
+       (infix-string-fixup-needed
+        (and in-string
+             (= start end)
+             (eql (char-after end) ?\N{QUOTATION MARK})
+             (copilot-balancer-odd-dquote-count-p completion)))
+       (end (if infix-string-fixup-needed
+                (1+ end)
+              end))
+
+       (deleted-text (buffer-substring-no-properties start end))
+       (suffix (copilot-balancer-get-point-to-top-level-form-end end))
 
        (point-upper-bound (+ (point)
                              (min (length meta-prefix-pairs) (length suffix))))
@@ -294,13 +318,13 @@ Special care has to be taken to ignore pairs in the middle of strings."
                     rem-flipped-completion-suffix new-completion)))
     (copilot-balancer--debug debug-vars)
     
-    new-completion))
+    (list start end new-completion)))
 
 (defun copilot-balancer-fix-completion (start end completion)
   (let* ()
     (cond
      ((apply #'derived-mode-p copilot-balancer-lisp-modes)
       (copilot-balancer--fix-lisp start end completion))
-     (t completion))))
+     (t (list start end completion)))))
 
 (provide 'copilot-balancer)

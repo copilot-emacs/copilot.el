@@ -268,8 +268,7 @@ Special care has to be taken to ignore pairs in the middle of strings."
             (copilot-balancer-collapse-matching-pairs nil)))
 
        (infix-string-fixup-needed
-        (and in-string
-             (= start end)
+        (and (= start end)
              (eql (char-after end) ?\N{QUOTATION MARK})
              (copilot-balancer-odd-dquote-count-p completion)))
        (end (if infix-string-fixup-needed

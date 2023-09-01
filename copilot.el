@@ -644,6 +644,12 @@ Use TRANSFORM-FN to transform completion if provided."
                                                  :version copilot--doc-version
                                                  :text (copilot--get-source)))))))
 
+(defvar copilot--doc-change-queue '()
+  "Pending queue of document changes to be sent to the copilot agent.
+
+Due to limitations of Emacs data structures, this is implemented as
+a list that needs to be reversed")
+
 (defun copilot--on-doc-change (&optional beg end chars-replaced)
   "Notify that the document has changed."
   (let* ((is-before-change (eq chars-replaced nil))
@@ -663,9 +669,14 @@ Use TRANSFORM-FN to transform completion if provided."
                (content-changes (vector (list :range (list :start range-start :end range-end)
                                               :text text))))
           (cl-incf copilot--doc-version)
-          (copilot--notify 'textDocument/didChange
-                           (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
-                                 :contentChanges content-changes)))))))
+          (push (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
+                      :contentChanges content-changes)
+                copilot--doc-change-queue)))
+      (when is-after-change
+        (nreverse copilot--doc-change-queue)
+        (dolist (x copilot--doc-change-queue)
+          (copilot--notify 'textDocument/didChange x))
+        (setq copilot--doc-change-queue '())))))
 
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."

@@ -645,18 +645,20 @@ Use TRANSFORM-FN to transform completion if provided."
          (is-insertion (and is-after-change (not (equal beg end))))
          (is-deletion (and is-before-change (not (equal beg end)))))
     (when (or is-insertion is-deletion)
-      (let* ((range-start (list :line (- (line-number-at-pos beg) copilot--line-bias)
-                                :character (- beg (save-excursion (goto-char beg) (line-beginning-position)))))
-             (range-end (if is-insertion range-start
-                          (list :line (- (line-number-at-pos end) copilot--line-bias)
-                                :character (- end (save-excursion (goto-char end) (line-beginning-position))))))
-             (text (if is-insertion (buffer-substring-no-properties beg end) ""))
-             (content-changes (vector (list :range (list :start range-start :end range-end)
-                                            :text text))))
-        (cl-incf copilot--doc-version)
-        (copilot--notify 'textDocument/didChange
-                         (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
-                               :contentChanges content-changes))))))
+      (save-restriction
+        (widen)
+        (let* ((range-start (list :line (- (line-number-at-pos beg) copilot--line-bias)
+                                  :character (- beg (save-excursion (goto-char beg) (line-beginning-position)))))
+               (range-end (if is-insertion range-start
+                            (list :line (- (line-number-at-pos end) copilot--line-bias)
+                                  :character (- end (save-excursion (goto-char end) (line-beginning-position))))))
+               (text (if is-insertion (buffer-substring-no-properties beg end) ""))
+               (content-changes (vector (list :range (list :start range-start :end range-end)
+                                              :text text))))
+          (cl-incf copilot--doc-version)
+          (copilot--notify 'textDocument/didChange
+                           (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
+                                 :contentChanges content-changes)))))))
 
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."

@@ -276,6 +276,7 @@ Enabling event logging may slightly affect performance."
 (defconst copilot--indentation-alist
   (append '((latex-mode tex-indent-basic)
             (nxml-mode nxml-child-indent)
+            (emacs-lisp-mode 1)
             (python-mode python-indent py-indent-offset python-indent-offset)
             (python-ts-mode python-indent py-indent-offset python-indent-offset)
             (web-mode web-mode-markup-indent-offset web-mode-html-offset))
@@ -291,9 +292,11 @@ Enabling event logging may slightly affect performance."
         (while (and (not (assq mode copilot--indentation-alist))
                     (setq mode (get mode 'derived-mode-parent))))
         (when mode
-          (cl-some (lambda (s)
-                     (when (and (boundp s) (numberp (symbol-value s)))
-                       (symbol-value s)))
+          (cl-some (lambda (s) (cond
+                                ((numberp s)
+                                 s)
+                                ((and (boundp s) (numberp (symbol-value s)))
+                                 (symbol-value s))))
                    (alist-get mode copilot--indentation-alist))))
       tab-width))
 

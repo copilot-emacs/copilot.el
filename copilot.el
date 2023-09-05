@@ -227,21 +227,27 @@ Enabling event logging may slightly affect performance."
     (jsonrpc-shutdown copilot--connection)
     (setq copilot--connection nil))
   (setq copilot--opened-buffers nil)
+  ;; We are going to send a test request for the current buffer so we have to activate the mode
+  ;; if it is not already activated.
+  ;; If it the mode is already active, we have to make sure the current buffer is loaded in the
+  ;; agent.
+  (if copilot-mode
+      (copilot--on-doc-focus (selected-window))
+    (copilot-mode))
   (copilot--async-request 'getCompletions
-                          '(:doc (:version 0
-                                  :source "\n"
-                                  :path ""
-                                  :uri ""
-                                  :relativePath ""
-                                  :languageId "text"
-                                  :position (:line 0 :character 0)))
+                          `(:doc (:version 0
+                                           :source "\n"
+                                           :path ""
+                                           :uri ,(copilot--get-uri)
+                                           :relativePath ""
+                                           :languageId "text"
+                                           :position (:line 0 :character 0)))
                           :success-fn (lambda (_)
                                         (message "Copilot OK."))
                           :error-fn (lambda (err)
                                       (message "Copilot error: %S" err))
                           :timeout-fn (lambda ()
                                         (message "Copilot agent timeout."))))
-
 
 ;;
 ;; Auto completion

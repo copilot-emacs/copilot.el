@@ -649,6 +649,11 @@ Use TRANSFORM-FN to transform completion if provided."
 
 Due to limitations of Emacs data structures, this is implemented as
 a list that needs to be reversed")
+(defun copilot--flush-pending-doc-changes ()
+  (nreverse copilot--doc-change-queue)
+  (dolist (x copilot--doc-change-queue)
+    (copilot--notify 'textDocument/didChange x))
+  (setq copilot--doc-change-queue '()))
 
 (defun copilot--on-doc-change (&optional beg end chars-replaced)
   "Notify that the document has changed."
@@ -673,10 +678,7 @@ a list that needs to be reversed")
                       :contentChanges content-changes)
                 copilot--doc-change-queue)))
       (when is-after-change
-        (nreverse copilot--doc-change-queue)
-        (dolist (x copilot--doc-change-queue)
-          (copilot--notify 'textDocument/didChange x))
-        (setq copilot--doc-change-queue '())))))
+        (copilot--flush-pending-doc-changes)))))
 
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."
@@ -803,6 +805,7 @@ Use this for custom bindings in `copilot-mode'.")
 
 (defun copilot--post-command ()
   "Complete in `post-command-hook' hook."
+  (copilot--flush-pending-doc-changes)
   (when (and this-command
              (not (and (symbolp this-command)
                        (or
@@ -822,6 +825,7 @@ Use this for custom bindings in `copilot-mode'.")
   "Handle the case where the char just inserted is the start of the completion.
 If so, update the overlays and continue. COMMAND is the
 command that triggered `post-command-hook'."
+  (copilot--flush-pending-doc-changes)
   (when (and (eq command 'self-insert-command)
              (copilot--overlay-visible)
              (copilot--satisfy-display-predicates))

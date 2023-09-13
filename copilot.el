@@ -650,8 +650,7 @@ Use TRANSFORM-FN to transform completion if provided."
 Due to limitations of Emacs data structures, this is implemented as
 a list that needs to be reversed")
 (defun copilot--flush-pending-doc-changes ()
-  (nreverse copilot--doc-change-queue)
-  (dolist (x copilot--doc-change-queue)
+  (dolist (x (nreverse copilot--doc-change-queue))
     (copilot--notify 'textDocument/didChange x))
   (setq copilot--doc-change-queue '()))
 

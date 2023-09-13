@@ -691,6 +691,7 @@ a list that needs to be reversed")
 (defun copilot-complete ()
   "Complete at the current point."
   (interactive)
+  (copilot--flush-pending-doc-changes)
   (setq copilot--last-doc-version copilot--doc-version)
 
   (setq copilot--completion-cache nil)
@@ -839,6 +840,7 @@ command that triggered `post-command-hook'."
 
 (defun copilot--post-command-debounce (buffer)
   "Complete in BUFFER."
+  (copilot--flush-pending-doc-changes)
   (when (and (buffer-live-p buffer)
              (equal (current-buffer) buffer)
              copilot-mode

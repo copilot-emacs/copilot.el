@@ -690,6 +690,15 @@ a list that needs to be reversed")
       (when is-after-change
         (copilot--flush-pending-doc-changes)))))
 
+(defun copilot-resync-buffer ()
+  "Resyncs the buffer state in the copilot agent by sending the entire buffer to the agent."
+  (interactive)
+  (cl-incf copilot--doc-version)
+  (copilot--notify
+   'textDocument/didChange
+   (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
+         :contentChanges (vector (list :text (copilot--get-source))))))
+
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."
   (when (-contains-p copilot--opened-buffers (current-buffer))

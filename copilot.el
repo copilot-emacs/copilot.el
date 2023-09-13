@@ -662,20 +662,31 @@ a list that needs to be reversed")
          (is-insertion (and is-after-change (not (equal beg end))))
          (is-deletion (and is-before-change (not (equal beg end)))))
     (when (or is-insertion is-deletion)
-      (save-restriction
-        (widen)
-        (let* ((range-start (list :line (- (line-number-at-pos beg) copilot--line-bias)
-                                  :character (- beg (save-excursion (goto-char beg) (line-beginning-position)))))
-               (range-end (if is-insertion range-start
-                            (list :line (- (line-number-at-pos end) copilot--line-bias)
-                                  :character (- end (save-excursion (goto-char end) (line-beginning-position))))))
-               (text (if is-insertion (buffer-substring-no-properties beg end) ""))
-               (content-changes (vector (list :range (list :start range-start :end range-end)
-                                              :text text))))
-          (cl-incf copilot--doc-version)
-          (push (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
-                      :contentChanges content-changes)
-                copilot--doc-change-queue)))
+      (save-excursion
+        (save-restriction
+          (widen)
+          (let* ((p (point))
+                 (range-start-line (- (line-number-at-pos beg) copilot--line-bias))
+                 (range-end-line (- (line-number-at-pos end) copilot--line-bias))
+                 (range-start (list :line range-start-line
+                                    :character (- beg (progn (goto-char beg)
+                                                             (line-beginning-position)))))
+                 (range-end (if is-insertion
+                                range-start
+                            (list :line range-end-line
+                                  :character (- end (progn (goto-char end)
+                                                           (line-beginning-position))))))
+                 (text (if is-insertion (buffer-substring-no-properties beg end) ""))
+                 (content-changes (vector (list :range (list :start range-start :end range-end)
+                                                :text text))))
+            (cl-incf copilot--doc-version)
+            ;; (message "beg: %s end: %s chars-replaced: %s\nis-before-change: %s is-insertion: %s is-deletion: %s \n%s\n"
+                     ;; beg end chars-replaced
+                     ;; is-before-change is-insertion is-deletion
+                     ;; (with-output-to-string (prin1 content-changes)))
+            (push (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
+                        :contentChanges content-changes)
+                  copilot--doc-change-queue))))
       (when is-after-change
         (copilot--flush-pending-doc-changes)))))
 

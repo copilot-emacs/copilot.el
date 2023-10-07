@@ -1,5 +1,6 @@
 ;; -*- lexical-binding: t -*-
 
+(require 'cl-lib)
 (require 'pcase)
 (require 'dash)
 (require 'rx)
@@ -253,7 +254,7 @@ Special care has to be taken to ignore pairs in the middle of strings."
          ((= c ?\N{QUOTATION MARK})
           (setq count (1+ count)))))
       (setq i (1+ i)))
-    (oddp count)))
+    (cl-oddp count)))
 
 (defun copilot-balancer--fix-lisp (start end completion)
   (pcase-let*

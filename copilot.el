@@ -791,7 +791,12 @@ Use this for custom bindings in `copilot-mode'.")
 
 ;;;###autoload
 (define-global-minor-mode global-copilot-mode
-  copilot-mode copilot-mode)
+  copilot-mode copilot-turn-on-unless-buffer-read-only)
+
+(defun copilot-turn-on-unless-buffer-read-only ()
+  "Turn on `copilot-mode' if the buffer is writable."
+  (unless buffer-read-only
+    (copilot-mode 1)))
 
 (defun copilot--post-command ()
   "Complete in `post-command-hook' hook."

@@ -292,7 +292,7 @@ Enabling event logging may slightly affect performance."
 (defvar-local copilot--completion-idx 0)
 
 (defcustom copilot-indent-warning-suppress nil
-  "If nil, then warn when no more-specific offset is found."
+  "If nil, then warn when copilot finds no mode-specific offset."
   :type 'boolean
   :group 'copilot)
 

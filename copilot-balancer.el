@@ -35,7 +35,7 @@
     h)
   "Hash table of closing lisp pairs, such as right parenthese, etc.")
 
-(defvar copilot-balancer-debug-buffer (get-buffer-create "*copilot-balancer*")
+(defvar copilot-balancer-debug-buffer (get-buffer-create " *copilot-balancer*")
   "Buffer for debugging copilot-balancer.")
 
 (defmacro copilot-balancer-to-plist (&rest vars)

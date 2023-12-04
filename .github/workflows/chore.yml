@@ -25,7 +25,7 @@ jobs:
           git clone https://github.com/$upstream_repo.git --filter=tree:0 upstream
           cd upstream
           cp ./$upstream_dir ../../ -rf
-          echo "commit_msg=`git log -n 1 --format=%B ./$upstream_dir`" >> "$GITHUB_OUTPUT"
+          echo "commit_msg=`git log -n 1 --format=%B ./$upstream_dir | head -n 1`" >> "$GITHUB_OUTPUT"
       - name: Sync
         run: |
           git config user.name 'github-actions[bot]'

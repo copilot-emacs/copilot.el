@@ -8,7 +8,9 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 **Note:** You need access to [GitHub Copilot](https://github.com/features/copilot) to use this plugin.
 
-Current maintainer: [@emil-vdw](https://github.com/emil-vdw)
+Current maintainer: [@emil-vdw](https://github.com/emil-vdw), [@rakotomandimby](https://github.com/rakotomandimby).
+
+Retired maintainer: [@zerolfx](https://github.com/zerolfx).
 
 ## Installation
 

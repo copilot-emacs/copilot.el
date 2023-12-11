@@ -143,8 +143,8 @@ Enabling event logging may slightly affect performance."
                              (s-trim)
                              (s-chop-prefix "v")
                              (string-to-number))))
-      (cond ((< node-version 16)
-             (user-error "Node 16+ is required but found %s" node-version))
+      (cond ((< node-version 18)
+             (user-error "Node 18+ is required but found %s" node-version))
             (t
              (setq copilot--connection
                    (make-instance 'jsonrpc-process-connection

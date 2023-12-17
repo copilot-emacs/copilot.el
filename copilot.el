@@ -291,14 +291,6 @@ Enabling event logging may slightly affect performance."
 (defvar-local copilot--completion-cache nil)
 (defvar-local copilot--completion-idx 0)
 
-(defcustom copilot-indent-warning-suppress nil
-  "If nil, then warn when copilot finds no mode-specific offset."
-  :type 'boolean
-  :group 'copilot)
-
-(defvar-local copilot--indent-warning-printed-p nil
-  "Flag indicating whether indent warning was already printed.")
-
 (defun copilot--infer-indentation-offset ()
   "Infer indentation offset."
   (or (let ((mode major-mode))
@@ -310,10 +302,8 @@ Enabling event logging may slightly affect performance."
                        (symbol-value s)))
                    (alist-get mode copilot--indentation-alist))))
       (progn
-        (when (and (not copilot-indent-warning-suppress)
-                   (not copilot--indent-warning-printed-p))
-          (message "Warning: copilot--infer-indentation-offset found no mode-specific indentation offset, using 'tab-width' instead.  You can suppress this error message by customizing 'copilot-indent-warning-suppress'.")
-          (setq-local copilot--indent-warning-printed-p t))
+        (display-warning '(copilot copilot-no-mode-indent)
+                         "copilot--infer-indentation-offset found no mode-specific indentation offset, using 'tab-width' instead.")
         tab-width)))
 
 (defun copilot--get-relative-path ()

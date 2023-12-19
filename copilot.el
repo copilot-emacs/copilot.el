@@ -291,6 +291,9 @@ Enabling event logging may slightly affect performance."
 (defvar-local copilot--completion-cache nil)
 (defvar-local copilot--completion-idx 0)
 
+(defvar-local copilot--indent-warning-printed-p nil
+  "Flag indicating whether indent warning was already printed.")
+
 (defun copilot--infer-indentation-offset ()
   "Infer indentation offset."
   (or (let ((mode major-mode))
@@ -302,8 +305,10 @@ Enabling event logging may slightly affect performance."
                        (symbol-value s)))
                    (alist-get mode copilot--indentation-alist))))
       (progn
-        (display-warning '(copilot copilot-no-mode-indent)
-                         "copilot--infer-indentation-offset found no mode-specific indentation offset, using 'tab-width' instead.")
+        (when (not copilot--indent-warning-printed-p)
+          (display-warning '(copilot copilot-no-mode-indent)
+                           "copilot--infer-indentation-offset found no mode-specific indentation offset.")
+          (setq-local copilot--indent-warning-printed-p t))
         tab-width)))
 
 (defun copilot--get-relative-path ()

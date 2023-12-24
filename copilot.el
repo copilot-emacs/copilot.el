@@ -17,8 +17,13 @@
   :prefix "copilot-")
 
 (defcustom copilot-idle-delay 0
-  "Time in seconds to wait before starting completion. Complete immediately if set to 0."
-  :type 'float
+  "Time in seconds to wait before starting completion.
+
+Complete immediately if set to 0.
+Disable idle completion if set to nil."
+  :type '(choice
+          (number :tag "Seconds of delay")
+          (const :tag "Idle completion disabled" nil))
   :group 'copilot)
 
 (defcustom copilot-network-proxy nil
@@ -815,11 +820,12 @@ Use this for custom bindings in `copilot-mode'.")
     (copilot-clear-overlay)
     (when copilot--post-command-timer
       (cancel-timer copilot--post-command-timer))
-    (setq copilot--post-command-timer
+    (when (numberp copilot-idle-delay)
+      (setq copilot--post-command-timer
           (run-with-idle-timer copilot-idle-delay
                                nil
                                #'copilot--post-command-debounce
-                               (current-buffer)))))
+                               (current-buffer))))))
 
 (defun copilot--self-insert (command)
   "Handle the case where the char just inserted is the start of the completion.

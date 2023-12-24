@@ -52,6 +52,23 @@ Configure copilot in `~/.doom.d/config.el`:
 
 Strongly recommend to enable `childframe` option in `company` module (`(company +childframe)`) to prevent overlay conflict.
 
+If pressing tab to complete sometimes doesn't work you might want to bind completion to another key or try:
+
+```elisp
+(after! (evil copilot)
+  ;; Define the custom function that either accepts the completion or does the default behavior
+  (defun my/copilot-tab-or-default ()
+    (interactive)
+    (if (and (bound-and-true-p copilot-mode)
+             ;; Add any other conditions to check for active copilot suggestions if necessary
+             )
+        (copilot-accept-completion)
+      (evil-insert 1))) ; Default action to insert a tab. Adjust as needed.
+
+  ;; Bind the custom function to <tab> in Evil's insert state
+  (evil-define-key 'insert 'global (kbd "<tab>") 'my/copilot-tab-or-default))
+```
+
 </details>
 
 ### Example for Spacemacs

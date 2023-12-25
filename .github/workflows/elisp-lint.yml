@@ -23,8 +23,8 @@ jobs:
         run: |
           emacs -Q --batch --eval "\
           (progn\
-           (setq package-archives '((\"melpa\" . \"https://melpa.org/packages/\")))\
            (package-initialize)\
+           (add-to-list 'package-archives '(\"melpa\" . \"https://melpa.org/packages/\") t)\
            (package-refresh-contents)\
            (package-install 'package-lint)\
            (package-install 'dash))\
@@ -32,4 +32,4 @@ jobs:
 
       - name: Lint with elisp-lint
         run: |
-          emacs -Q --batch -l elisp-lint/elisp-lint.el -f elisp-lint-files-batch *.el
+          emacs -Q --batch --eval "(package-initialize)" -l elisp-lint/elisp-lint.el -f elisp-lint-files-batch *.el

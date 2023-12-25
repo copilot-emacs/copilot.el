@@ -14,7 +14,7 @@ jobs:
       - name: Setup Emacs
         uses: purcell/setup-emacs@master
         with:
-          version: '28.3'
+          version: '28.2'
 
       - name: Clone elisp-lint
         run: git clone https://github.com/gonewest818/elisp-lint.git

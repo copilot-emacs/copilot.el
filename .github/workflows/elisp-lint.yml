@@ -19,6 +19,15 @@ jobs:
       - name: Clone elisp-lint
         run: git clone https://github.com/gonewest818/elisp-lint.git
 
+      - name: Install Emacs dependencies
+        run: |
+          emacs -Q --batch --eval "\
+          (progn\
+           (package-refresh-contents)\
+           (package-install \"package-lint\")\
+           (package-install \"dash\"))\
+           "
+
       - name: Lint with elisp-lint
         run: |
           emacs -Q --batch -l elisp-lint/elisp-lint.el -f elisp-lint-files-batch *.el

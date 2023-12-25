@@ -2,8 +2,6 @@ name: Elisp Lint
 
 on:
   pull_request:
-    paths:
-      - '**.el' # Trigger the action for any .el file changes in pull requests
 
 jobs:
   lint:

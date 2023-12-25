@@ -23,9 +23,11 @@ jobs:
         run: |
           emacs -Q --batch --eval "\
           (progn\
+           (setq package-archives '((\"melpa\" . \"https://melpa.org/packages/\")))\
+           (package-initialize)\
            (package-refresh-contents)\
-           (package-install \"package-lint\")\
-           (package-install \"dash\"))\
+           (package-install 'package-lint)\
+           (package-install 'dash))\
            "
 
       - name: Lint with elisp-lint

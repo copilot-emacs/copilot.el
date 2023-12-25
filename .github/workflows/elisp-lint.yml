@@ -1,0 +1,26 @@
+name: Elisp Lint
+
+on:
+  pull_request:
+    paths:
+      - '**.el' # Trigger the action for any .el file changes in pull requests
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Setup Emacs
+        uses: purcell/setup-emacs@master
+        with:
+          version: '28.3'
+
+      - name: Clone elisp-lint
+        run: git clone https://github.com/gonewest818/elisp-lint.git
+
+      - name: Lint with elisp-lint
+        run: |
+          emacs -Q --batch -l elisp-lint/elisp-lint.el -f elisp-lint-files-batch *.el

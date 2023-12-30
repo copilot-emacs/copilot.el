@@ -140,11 +140,8 @@ Enabling event logging may slightly affect performance."
                               ,@args))))
 
 (defun copilot--slot-exists-p (slot-list slot-name)
-  (cl-loop for slot in slot-list
-           when (and (eq 'cl-slot-descriptor (type-of slot))
-                     (eq slot-name (cl-struct-slot-value 'cl-slot-descriptor 'name slot)))
-           return t
-           finally return nil))
+  "Return t if SLOT-NAME exists in SLOT-LIST, nil otherwise."
+  (not (null (member slot-name (mapcar #'cl--slot-descriptor-name slot-list)))))
 
 (defun copilot--make-process ()
   "Make a process for copilot agent."

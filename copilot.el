@@ -1,6 +1,6 @@
 ;;; copilot.el --- An unofficial Copilot plugin for Emacs  -*- lexical-binding:t -*-
 
-;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.23"))
+;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.14"))
 
 ;;; Code:
 (require 'cl-lib)
@@ -139,6 +139,23 @@ Enabling event logging may slightly affect performance."
                                               (funcall ,success-fn result)))
                               ,@args))))
 
+(defun copilot--slot-exists-p (slot-list slot-name)
+  (cl-loop for slot in slot-list
+           when (and (eq 'cl-slot-descriptor (type-of slot))
+                     (eq slot-name (cl-struct-slot-value 'cl-slot-descriptor 'name slot)))
+           return t
+           finally return nil))
+
+(defun copilot--make-process ()
+  "Make a process for copilot agent."
+  (make-process :name "copilot agent"
+                :command (list copilot-node-executable
+                               (concat copilot--base-dir "/dist/agent.js"))
+                :coding 'utf-8-emacs-unix
+                :connection-type 'pipe
+                :stderr (get-buffer-create "*copilot stderr*")
+                :noquery t))
+
 (defun copilot--start-agent ()
   "Start the copilot agent process in local."
   (if (not (locate-file copilot-node-executable exec-path))
@@ -152,17 +169,18 @@ Enabling event logging may slightly affect performance."
              (user-error "Node 18+ is required but found %s" node-version))
             (t
              (setq copilot--connection
-                   (make-instance 'jsonrpc-process-connection
-                                  :name "copilot"
-                                  :events-buffer-config `(:size ,copilot-log-max)
-                                  :notification-dispatcher #'copilot--handle-notification
-                                  :process (make-process :name "copilot agent"
-                                                         :command (list copilot-node-executable
-                                                                        (concat copilot--base-dir "/dist/agent.js"))
-                                                         :coding 'utf-8-emacs-unix
-                                                         :connection-type 'pipe
-                                                         :stderr (get-buffer-create "*copilot stderr*")
-                                                         :noquery t)))
+                   ;; Check for existance of '-events-buffer-config' slot in 'jsonrpc-process-connection' for backwards compatibility
+                   (if (copilot--slot-exists-p (eieio-class-slots 'jsonrpc-process-connection) '-events-buffer-config)
+                       (make-instance 'jsonrpc-process-connection
+                                      :name "copilot"
+                                      :events-buffer-config `(:size ,copilot-log-max)
+                                      :notification-dispatcher #'copilot--handle-notification
+                                      :process (copilot--make-process))
+                     (make-instance 'jsonrpc-process-connection
+                                    :name "copilot"
+                                    :events-buffer-scrollback-size copilot-log-max
+                                    :notification-dispatcher #'copilot--handle-notification
+                                    :process (copilot--make-process))))
              (message "Copilot agent started.")
              (copilot--request 'initialize '(:capabilities (:workspace (:workspaceFolders t))))
              (copilot--async-request 'setEditorInfo

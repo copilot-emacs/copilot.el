@@ -67,6 +67,11 @@ Enabling event logging may slightly affect performance."
   :group 'copilot
   :type '(repeat function))
 
+(defcustom copilot-indent-offset-warning-disable nil
+  "Disable warning when copilot--infer-indentation-offset cannot find indentation offset."
+  :group 'copilot
+  :type 'boolean)
+
 (defconst copilot--base-dir
   (file-name-directory
    (or load-file-name
@@ -310,7 +315,9 @@ Enabling event logging may slightly affect performance."
                        (symbol-value s)))
                    (alist-get mode copilot--indentation-alist))))
       (progn
-        (when (not copilot--indent-warning-printed-p)
+        (when (and
+               (not copilot-indent-offset-warning-disable)
+               (not copilot--indent-warning-printed-p))
           (display-warning '(copilot copilot-no-mode-indent)
                            "copilot--infer-indentation-offset found no mode-specific indentation offset.")
           (setq-local copilot--indent-warning-printed-p t))

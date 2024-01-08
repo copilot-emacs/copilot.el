@@ -72,6 +72,17 @@ Enabling event logging may slightly affect performance."
   :group 'copilot
   :type 'boolean)
 
+(defcustom copilot-indentation-alist
+  (append '((latex-mode tex-indent-basic)
+            (nxml-mode nxml-child-indent)
+            (python-mode python-indent py-indent-offset python-indent-offset)
+            (python-ts-mode python-indent py-indent-offset python-indent-offset)
+            (web-mode web-mode-markup-indent-offset web-mode-html-offset))
+          editorconfig-indentation-alist)
+  "Alist of `major-mode' to indentation map with optional fallbacks."
+  :type '(alist :key-type symbol :value-type (choice integer symbol))
+  :group 'copilot)
+
 (defconst copilot--base-dir
   (file-name-directory
    (or load-file-name
@@ -739,17 +750,6 @@ Copilot will not show completions if any predicate returns t."
   "A list of predicate functions with no argument to enable Copilot.
 Copilot will show completions only if all predicates return t."
   :type '(repeat function)
-  :group 'copilot)
-
-(defcustom copilot-indentation-alist
-  (append '((latex-mode tex-indent-basic)
-            (nxml-mode nxml-child-indent)
-            (python-mode python-indent py-indent-offset python-indent-offset)
-            (python-ts-mode python-indent py-indent-offset python-indent-offset)
-            (web-mode web-mode-markup-indent-offset web-mode-html-offset))
-          editorconfig-indentation-alist)
-  "Alist of `major-mode' to indentation map with optional fallbacks."
-  :type '(alist :key-type symbol :value-type (choice integer symbol))
   :group 'copilot)
 
 (defmacro copilot--satisfy-predicates (enable disable)

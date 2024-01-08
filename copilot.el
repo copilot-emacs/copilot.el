@@ -1,6 +1,6 @@
 ;;; copilot.el --- An unofficial Copilot plugin for Emacs  -*- lexical-binding:t -*-
 
-;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.14"))
+;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.23"))
 
 ;;; Code:
 (require 'cl-lib)
@@ -159,7 +159,7 @@ Enabling event logging may slightly affect performance."
              (setq copilot--connection
                    (make-instance 'jsonrpc-process-connection
                                   :name "copilot"
-                                  :events-buffer-scrollback-size copilot-log-max
+                                  :events-buffer-config `(:size ,copilot-log-max)
                                   :notification-dispatcher #'copilot--handle-notification
                                   :process (make-process :name "copilot agent"
                                                          :command (list copilot-node-executable

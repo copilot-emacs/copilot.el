@@ -289,15 +289,6 @@ Enabling event logging may slightly affect performance."
                                    ("nxml" . "xml"))
   "Alist mapping major mode names (with -mode removed) to copilot language ID's.")
 
-(defconst copilot--indentation-alist
-  (append '((latex-mode tex-indent-basic)
-            (nxml-mode nxml-child-indent)
-            (python-mode python-indent py-indent-offset python-indent-offset)
-            (python-ts-mode python-indent py-indent-offset python-indent-offset)
-            (web-mode web-mode-markup-indent-offset web-mode-html-offset))
-          editorconfig-indentation-alist)
-  "Alist of `major-mode' to indentation map with optional fallbacks.")
-
 (defvar-local copilot--completion-cache nil)
 (defvar-local copilot--completion-idx 0)
 
@@ -307,13 +298,13 @@ Enabling event logging may slightly affect performance."
 (defun copilot--infer-indentation-offset ()
   "Infer indentation offset."
   (or (let ((mode major-mode))
-        (while (and (not (assq mode copilot--indentation-alist))
+        (while (and (not (assq mode copilot-indentation-alist))
                     (setq mode (get mode 'derived-mode-parent))))
         (when mode
           (cl-some (lambda (s)
                      (when (and (boundp s) (numberp (symbol-value s)))
                        (symbol-value s)))
-                   (alist-get mode copilot--indentation-alist))))
+                   (alist-get mode copilot-indentation-alist))))
       (progn
         (when (and
                (not copilot-indent-offset-warning-disable)
@@ -748,6 +739,17 @@ Copilot will not show completions if any predicate returns t."
   "A list of predicate functions with no argument to enable Copilot.
 Copilot will show completions only if all predicates return t."
   :type '(repeat function)
+  :group 'copilot)
+
+(defcustom copilot-indentation-alist
+  (append '((latex-mode tex-indent-basic)
+            (nxml-mode nxml-child-indent)
+            (python-mode python-indent py-indent-offset python-indent-offset)
+            (python-ts-mode python-indent py-indent-offset python-indent-offset)
+            (web-mode web-mode-markup-indent-offset web-mode-html-offset))
+          editorconfig-indentation-alist)
+  "Alist of `major-mode' to indentation map with optional fallbacks."
+  :type '(alist :key-type symbol :value-type (choice integer symbol))
   :group 'copilot)
 
 (defmacro copilot--satisfy-predicates (enable disable)

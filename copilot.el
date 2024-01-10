@@ -67,6 +67,22 @@ Enabling event logging may slightly affect performance."
   :group 'copilot
   :type '(repeat function))
 
+(defcustom copilot-indent-offset-warning-disable nil
+  "Disable warning when copilot--infer-indentation-offset cannot find indentation offset."
+  :group 'copilot
+  :type 'boolean)
+
+(defcustom copilot-indentation-alist
+  (append '((latex-mode tex-indent-basic)
+            (nxml-mode nxml-child-indent)
+            (python-mode python-indent py-indent-offset python-indent-offset)
+            (python-ts-mode python-indent py-indent-offset python-indent-offset)
+            (web-mode web-mode-markup-indent-offset web-mode-html-offset))
+          editorconfig-indentation-alist)
+  "Alist of `major-mode' to indentation map with optional fallbacks."
+  :type '(alist :key-type symbol :value-type (choice integer symbol))
+  :group 'copilot)
+
 (defconst copilot--base-dir
   (file-name-directory
    (or load-file-name
@@ -284,15 +300,6 @@ Enabling event logging may slightly affect performance."
                                    ("nxml" . "xml"))
   "Alist mapping major mode names (with -mode removed) to copilot language ID's.")
 
-(defconst copilot--indentation-alist
-  (append '((latex-mode tex-indent-basic)
-            (nxml-mode nxml-child-indent)
-            (python-mode python-indent py-indent-offset python-indent-offset)
-            (python-ts-mode python-indent py-indent-offset python-indent-offset)
-            (web-mode web-mode-markup-indent-offset web-mode-html-offset))
-          editorconfig-indentation-alist)
-  "Alist of `major-mode' to indentation map with optional fallbacks.")
-
 (defvar-local copilot--completion-cache nil)
 (defvar-local copilot--completion-idx 0)
 
@@ -302,15 +309,17 @@ Enabling event logging may slightly affect performance."
 (defun copilot--infer-indentation-offset ()
   "Infer indentation offset."
   (or (let ((mode major-mode))
-        (while (and (not (assq mode copilot--indentation-alist))
+        (while (and (not (assq mode copilot-indentation-alist))
                     (setq mode (get mode 'derived-mode-parent))))
         (when mode
           (cl-some (lambda (s)
                      (when (and (boundp s) (numberp (symbol-value s)))
                        (symbol-value s)))
-                   (alist-get mode copilot--indentation-alist))))
+                   (alist-get mode copilot-indentation-alist))))
       (progn
-        (when (not copilot--indent-warning-printed-p)
+        (when (and
+               (not copilot-indent-offset-warning-disable)
+               (not copilot--indent-warning-printed-p))
           (display-warning '(copilot copilot-no-mode-indent)
                            "copilot--infer-indentation-offset found no mode-specific indentation offset.")
           (setq-local copilot--indent-warning-printed-p t))

@@ -534,27 +534,19 @@ To work around posn problems with after-string property.")
 
 (defun copilot--set-overlay-text (ov completion)
   "Set overlay OV with COMPLETION."
-  ;; Clear old overlay content.
-  (overlay-put ov 'display "")
-  (overlay-put ov 'after-string "")
-  (setq copilot--real-posn (cons (point) (posn-at-point)))
   (move-overlay ov (point) (line-end-position))
-
   (let* ((tail (buffer-substring (copilot--overlay-end ov) (line-end-position)))
-         (p-completion
-          (concat (propertize completion 'face 'copilot-overlay-face) tail))
-         (completion-starts-with-newline (equal (substring completion 0 1) "\n"))
-         (completion-overlay-text
-          ;; If completion starts with newline, create a space before it to
-          ;; position the cursor, otherwise the cursor will be displayed at the
-          ;; end of the overlay because it can't be displayed on the first char
-          ;; (which is a newline) of the overlay.
-          (if (and (eolp) completion-starts-with-newline)
-              (concat " " p-completion)
-            p-completion)))
-    ;; Make sure the cursor is displayed on the first char of the completion.
-    (put-text-property 0 1 'cursor t completion-overlay-text)
-    (overlay-put ov 'after-string completion-overlay-text)
+         (p-completion (concat (propertize completion 'face 'copilot-overlay-face)
+                               tail)))
+    (if (eolp)
+        (progn
+          (overlay-put ov 'after-string "") ; make sure posn is correct
+          (setq copilot--real-posn (cons (point) (posn-at-point)))
+          (put-text-property 0 1 'cursor t p-completion)
+          (overlay-put ov 'display "")
+          (overlay-put ov 'after-string p-completion))
+      (overlay-put ov 'display (substring p-completion 0 1))
+      (overlay-put ov 'after-string (substring p-completion 1)))
     (overlay-put ov 'completion completion)
     (overlay-put ov 'start (point))))
 

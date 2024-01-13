@@ -168,12 +168,13 @@ Special care has to be taken to ignore pairs in the middle of strings."
 
 (defvar copilot-balancer-top-level-form-start-regexp
   (rx line-start (or (literal "(") (literal "[") (literal "{")))
-  "Regexp for the start of a top level form. Assumes cursor is at the start of a line.")
+  "Regexp for the start of a top level form. Assumes cursor is at the start
+of a line.")
 
 (defvar copilot-balancer-form-end-regexp
   (rx (or (literal "}") (literal "]") (literal ")")) line-end)
-  "Regexp for the end of a form. Assumes cursor is at the last character of the line
-(not the actual newline character).")
+  "Regexp for the end of a form. Assumes cursor is at the last character of
+the line (not the actual newline character).")
 
 (defun copilot-balancer-get-top-level-form-beginning-to-point (x)
   (save-excursion

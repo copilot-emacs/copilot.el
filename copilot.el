@@ -28,12 +28,13 @@ Disable idle completion if set to nil."
 
 (defcustom copilot-network-proxy nil
   "Network proxy to use for Copilot. Nil means no proxy.
-Format: '(:host \"127.0.0.1\" :port 80 :username \"username\" :password \"password\")
+Format: \='(:host \"127.0.0.1\" :port 80
+:username \"username\" :password \"password\")
 Username and password are optional.
 
-If you are using a MITM proxy which intercepts TLS connections, you may need to disable
-TLS verification. This can be done by setting a pair ':rejectUnauthorized :json-false' 
-in the proxy plist. For example:
+If you are using a MITM proxy which intercepts TLS connections, you may need
+to disable TLS verification. This can be done by setting a pair
+':rejectUnauthorized :json-false' in the proxy plist. For example:
 
   (:host \"127.0.0.1\" :port 80 :rejectUnauthorized :json-false)
 "
@@ -68,7 +69,8 @@ Enabling event logging may slightly affect performance."
   :type '(repeat function))
 
 (defcustom copilot-indent-offset-warning-disable nil
-  "Disable warning when copilot--infer-indentation-offset cannot find indentation offset."
+  "Disable warning when copilot--infer-indentation-offset cannot find
+indentation offset."
   :group 'copilot
   :type 'boolean)
 

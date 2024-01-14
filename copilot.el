@@ -220,7 +220,9 @@ indentation offset."
     (if (display-graphic-p)
         (progn
           (gui-set-selection 'CLIPBOARD user-code)
-          (read-from-minibuffer (format "Your one-time code %s is copied. Press ENTER to open GitHub in your browser." user-code))
+          (read-from-minibuffer (format "Your one-time code %s is copied. Press \
+ENTER to open GitHub in your browser. If your browser does not open \
+automatically, browse to %s." user-code verification-uri))
           (browse-url verification-uri)
           (read-from-minibuffer "Press ENTER if you finish authorizing."))
       (read-from-minibuffer (format "First copy your one-time code: %s. Press ENTER to continue." user-code))

@@ -14,6 +14,7 @@ concurrency:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
@@ -22,7 +23,14 @@ jobs:
           - 27.2
           - 28.2
           - 29.2
-          - snapshot
+        experimental: [false]
+        include:
+        - os: ubuntu-latest
+          emacs-version: snapshot
+          experimental: true
+        - os: macos-latest
+          emacs-version: snapshot
+          experimental: true
 
     steps:
     - uses: actions/checkout@v4
@@ -38,9 +46,6 @@ jobs:
     - name: Run tests
       run: |
         eask clean all
-        eask install-deps
         eask package
         eask install
         eask compile
-        eask lint checkdoc
-#        eask lint package

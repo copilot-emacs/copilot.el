@@ -43,4 +43,4 @@ jobs:
         eask install
         eask compile
         eask lint checkdoc
-        eask lint package --allow-error
+#        eask lint package

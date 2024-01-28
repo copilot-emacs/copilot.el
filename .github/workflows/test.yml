@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        emacs-version:
+          - 28.2
+          - 29.1
+          - snapshot
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: jcs090218/setup-emacs@master
+      with:
+        version: ${{ matrix.emacs-version }}
+
+    - uses: emacs-eask/setup-eask@master
+      with:
+        version: 'snapshot'
+
+    - name: Run tests
+      run: |
+        eask clean all
+        eask package
+        eask install
+        eask compile
+        eask lint checkdoc
+        eask lint package --allow-error

@@ -1,1 +1,5 @@
 *.elc
+
+# build tools
+/.eask
+/dist

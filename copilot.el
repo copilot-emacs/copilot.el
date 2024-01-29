@@ -1,11 +1,14 @@
 ;;; copilot.el --- An unofficial Copilot plugin for Emacs  -*- lexical-binding:t -*-
 
-;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.23"))
+;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.23") (f "0.20.0"))
 
 ;;; Code:
+
 (require 'cl-lib)
+(require 'compile)
 (require 'json)
 (require 'jsonrpc)
+
 (require 's)
 (require 'dash)
 (require 'editorconfig)
@@ -91,8 +94,10 @@ indentation offset."
        (buffer-file-name)))
   "Directory containing this file.")
 
-(defconst copilot-version "0.10.0"
-  "Copilot version.")
+(defcustom copilot-version "1.14.0"
+  "Copilot version."
+  :type 'string
+  :group 'copilot)
 
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
@@ -185,9 +190,9 @@ indentation offset."
              (copilot--request 'initialize '(:capabilities (:workspace (:workspaceFolders t))))
              (copilot--async-request 'setEditorInfo
                                      `(:editorInfo (:name "Emacs" :version ,emacs-version)
-                                       :editorPluginInfo (:name "copilot.el" :version ,copilot-version)
-                                       ,@(when copilot-network-proxy
-                                           `(:networkProxy ,copilot-network-proxy)))))))))
+                                                   :editorPluginInfo (:name "copilot.el" :version ,copilot-version)
+                                                   ,@(when copilot-network-proxy
+                                                       `(:networkProxy ,copilot-network-proxy)))))))))
 
 ;;
 ;; login / logout
@@ -213,27 +218,27 @@ indentation offset."
   "Login to Copilot."
   (interactive)
   (copilot--dbind
-      (:status :user :userCode user-code :verificationUri verification-uri)
-      (copilot--request 'signInInitiate '(:dummy "signInInitiate"))
-    (when (s-equals-p status "AlreadySignedIn")
-      (user-error "Already signed in as %s" user))
-    (if (display-graphic-p)
-        (progn
-          (gui-set-selection 'CLIPBOARD user-code)
-          (read-from-minibuffer (format "Your one-time code %s is copied. Press \
+   (:status :user :userCode user-code :verificationUri verification-uri)
+   (copilot--request 'signInInitiate '(:dummy "signInInitiate"))
+   (when (s-equals-p status "AlreadySignedIn")
+     (user-error "Already signed in as %s" user))
+   (if (display-graphic-p)
+       (progn
+         (gui-set-selection 'CLIPBOARD user-code)
+         (read-from-minibuffer (format "Your one-time code %s is copied. Press \
 ENTER to open GitHub in your browser. If your browser does not open \
 automatically, browse to %s." user-code verification-uri))
-          (browse-url verification-uri)
-          (read-from-minibuffer "Press ENTER if you finish authorizing."))
-      (read-from-minibuffer (format "First copy your one-time code: %s. Press ENTER to continue." user-code))
-      (read-from-minibuffer (format "Please open %s in your browser. Press ENTER if you finish authorizing." verification-uri)))
-    (message "Verifying...")
-    (condition-case err
-        (copilot--request 'signInConfirm (list :userCode user-code))
-      (jsonrpc-error
-       (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
-    (copilot--dbind (:user) (copilot--request 'checkStatus '(:dummy "checkStatus"))
-      (message "Authenticated as GitHub user %s." user))))
+         (browse-url verification-uri)
+         (read-from-minibuffer "Press ENTER if you finish authorizing."))
+     (read-from-minibuffer (format "First copy your one-time code: %s. Press ENTER to continue." user-code))
+     (read-from-minibuffer (format "Please open %s in your browser. Press ENTER if you finish authorizing." verification-uri)))
+   (message "Verifying...")
+   (condition-case err
+       (copilot--request 'signInConfirm (list :userCode user-code))
+     (jsonrpc-error
+      (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
+   (copilot--dbind (:user) (copilot--request 'checkStatus '(:dummy "checkStatus"))
+                   (message "Authenticated as GitHub user %s." user))))
 
 (defun copilot-logout ()
   "Logout from Copilot."
@@ -456,20 +461,20 @@ automatically, browse to %s." user-code verification-uri))
   "Handle MSG of type METHOD."
   (when (eql method 'PanelSolution)
     (copilot--dbind (:completionText completion-text :score completion-score) msg
-      (with-current-buffer "*copilot-panel*"
-        (unless (member (secure-hash 'sha256 completion-text)
-                        (org-map-entries (lambda () (org-entry-get nil "SHA"))))
-          (save-excursion
-            (goto-char (point-max))
-            (insert "* Solution\n"
-                    "  :PROPERTIES:\n"
-                    "  :SCORE: " (number-to-string completion-score) "\n"
-                    "  :SHA: " (secure-hash 'sha256 completion-text) "\n"
-                    "  :END:\n"
-                    "#+BEGIN_SRC " copilot--panel-lang "\n"
-                    completion-text "\n#+END_SRC\n\n")
-            (mark-whole-buffer)
-            (org-sort-entries nil ?R nil nil "SCORE"))))))
+                    (with-current-buffer "*copilot-panel*"
+                      (unless (member (secure-hash 'sha256 completion-text)
+                                      (org-map-entries (lambda () (org-entry-get nil "SHA"))))
+                        (save-excursion
+                          (goto-char (point-max))
+                          (insert "* Solution\n"
+                                  "  :PROPERTIES:\n"
+                                  "  :SCORE: " (number-to-string completion-score) "\n"
+                                  "  :SHA: " (secure-hash 'sha256 completion-text) "\n"
+                                  "  :END:\n"
+                                  "#+BEGIN_SRC " copilot--panel-lang "\n"
+                                  completion-text "\n#+END_SRC\n\n")
+                          (mark-whole-buffer)
+                          (org-sort-entries nil ?R nil nil "SCORE"))))))
   (when (eql method 'PanelSolutionsDone)
     (message "Copilot: Finish synthesizing solutions.")
     (display-buffer "*copilot-panel*")
@@ -625,34 +630,34 @@ Use TRANSFORM-FN to transform completion if provided."
   "Show COMPLETION-DATA."
   (when (copilot--satisfy-display-predicates)
     (copilot--dbind
-        (:text :uuid :docVersion doc-version
-         :range (:start (:line :character start-char)
-                 :end (:character end-char)))
-        completion-data
-      (when (= doc-version copilot--doc-version)
-        (save-excursion
-          (save-restriction
-            (widen)
-            (let* ((p (point))
-                   (goto-line! (lambda ()
-                                 (goto-char (point-min))
-                                 (forward-line (1- (+ line copilot--line-bias)))))
-                   (start (progn
-                            (funcall goto-line!)
-                            (forward-char start-char)
-                            (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
-                                   (common-prefix-len (length (s-shared-start text cur-line))))
-                              (setq text (substring text common-prefix-len))
-                              (forward-char common-prefix-len)
-                              (point))))
-                   (end (progn
-                          (funcall goto-line!)
-                          (forward-char end-char)
-                          (point)))
-                   (fixed-completion (copilot-balancer-fix-completion start end text)))
-              (goto-char p)
-              (pcase-let ((`(,start ,end ,balanced-text) fixed-completion))
-                (copilot--display-overlay-completion balanced-text uuid start end)))))))))
+     (:text :uuid :docVersion doc-version
+            :range (:start (:line :character start-char)
+                           :end (:character end-char)))
+     completion-data
+     (when (= doc-version copilot--doc-version)
+       (save-excursion
+         (save-restriction
+           (widen)
+           (let* ((p (point))
+                  (goto-line! (lambda ()
+                                (goto-char (point-min))
+                                (forward-line (1- (+ line copilot--line-bias)))))
+                  (start (progn
+                           (funcall goto-line!)
+                           (forward-char start-char)
+                           (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
+                                  (common-prefix-len (length (s-shared-start text cur-line))))
+                             (setq text (substring text common-prefix-len))
+                             (forward-char common-prefix-len)
+                             (point))))
+                  (end (progn
+                         (funcall goto-line!)
+                         (forward-char end-char)
+                         (point)))
+                  (fixed-completion (copilot-balancer-fix-completion start end text)))
+             (goto-char p)
+             (pcase-let ((`(,start ,end ,balanced-text) fixed-completion))
+               (copilot--display-overlay-completion balanced-text uuid start end)))))))))
 
 (defun copilot--on-doc-focus (window)
   "Notify that the document has been focussed or opened."
@@ -835,10 +840,10 @@ Use this for custom bindings in `copilot-mode'.")
       (cancel-timer copilot--post-command-timer))
     (when (numberp copilot-idle-delay)
       (setq copilot--post-command-timer
-          (run-with-idle-timer copilot-idle-delay
-                               nil
-                               #'copilot--post-command-debounce
-                               (current-buffer))))))
+            (run-with-idle-timer copilot-idle-delay
+                                 nil
+                                 #'copilot--post-command-debounce
+                                 (current-buffer))))))
 
 (defun copilot--self-insert (command)
   "Handle the case where the char just inserted is the start of the completion.
@@ -863,6 +868,66 @@ command that triggered `post-command-hook'."
              copilot-mode
              (copilot--satisfy-trigger-predicates))
     (copilot-complete)))
+
+;;
+;;; Installation
+
+(defcustom copilot-install-dir (expand-file-name
+                                (locate-user-emacs-file (f-join ".cache" "copilot")))
+  "Directory in which the servers will be installed."
+  :risky t
+  :type 'directory
+  :group 'copilot)
+
+(defconst copilot-server-package-name "copilot-node-server"
+  "The name of the package to install copilot server.")
+
+;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
+;; function for more information.
+(defun copilot-async-start-process (callback error-callback &rest command)
+  "Start async process COMMAND with CALLBACK and ERROR-CALLBACK."
+  (let ((name (cl-first command)))
+    (with-current-buffer (compilation-start (mapconcat #'shell-quote-argument (-filter (lambda (cmd)
+                                                                                         (not (null cmd)))
+                                                                                       command)
+                                                       " ") t
+                                                       (lambda (&rest _)
+                                                         (generate-new-buffer-name (format "*copilot-install: %s*" name))))
+      (view-mode +1)
+      (add-hook
+       'compilation-finish-functions
+       (lambda (_buf status)
+         (if (string= "finished\n" status)
+             (condition-case err
+                 (funcall callback)
+               (error
+                (funcall error-callback (error-message-string err))))
+           (funcall error-callback (s-trim-right status))))
+       nil t))))
+
+;;;###autoload
+(defun copilot-install-server ()
+  "Interactively install or re-install server."
+  (interactive)
+  (if-let ((npm-binary (executable-find "npm")))
+      (progn
+        (make-directory copilot-install-dir 'parents)
+        (copilot-async-start-process
+         nil nil
+         npm-binary
+         "-g" "--prefix" copilot-install-dir
+         "install" (format "%s@%s" copilot-server-package-name copilot-version)))
+    (message "Unable to install %s via `npm' because it is not present" package)
+    nil))
+
+;;;###autoload
+(defun copilot-uninstall-server ()
+  "Delete a Copilot server from `copilot-install-dir'."
+  (interactive)
+  (unless (file-directory-p copilot-install-dir)
+    (user-error "Couldn't find %s directory" copilot-install-dir))
+  (delete-directory copilot-install-dir 'recursive)
+  (message "Server `%s' uninstalled." (file-name-nondirectory (directory-file-name copilot-install-dir))))
 
 (provide 'copilot)
 ;;; copilot.el ends here

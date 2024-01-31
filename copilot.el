@@ -182,6 +182,9 @@ indentation offset."
    ((not (file-exists-p copilot-install-dir))
     (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
    (t
+    (unless (equal (copilot-installed-version) copilot-version)
+      (message "[WARN] Newer versions of the Copilot server are available for installation.
+Please upgrade the server via `M-x copilot-reinstall-server`"))
     (let ((node-version (->> (with-output-to-string
                                (call-process copilot-node-executable nil standard-output nil "--version"))
                              (s-trim)
@@ -888,6 +891,17 @@ command that triggered `post-command-hook'."
 ;;
 ;;; Installation
 
+(defun copilot-installed-version ()
+  "Return the version number of currently installed `copilot-node-server'."
+  (when-let*
+      ((package-json (f-join copilot-install-dir "node_modules" "copilot-node-server" "package.json"))
+       ((file-exists-p package-json)))
+    (with-temp-buffer
+      (insert-file-contents package-json)
+      (goto-char (point-min))
+      (when (search-forward "\"version\": \"" nil t)
+        (buffer-substring-no-properties (point) (- (line-end-position) 2))))))
+
 ;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
 ;; function for more information.
 (defun copilot-async-start-process (callback error-callback &rest command)
@@ -913,7 +927,7 @@ command that triggered `post-command-hook'."
 
 ;;;###autoload
 (defun copilot-install-server ()
-  "Interactively install or re-install server."
+  "Interactively install server."
   (interactive)
   (if-let ((npm-binary (executable-find "npm")))
       (progn
@@ -925,6 +939,13 @@ command that triggered `post-command-hook'."
          "install" (format "%s@%s" copilot-server-package-name copilot-version)))
     (message "Unable to install %s via `npm' because it is not present" package)
     nil))
+
+;;;###autoload
+(defun copilot-reinstall-server ()
+  "Interactively re-install server."
+  (interactive)
+  (copilot-uninstall-server)
+  (copilot-install-server))
 
 ;;;###autoload
 (defun copilot-uninstall-server ()

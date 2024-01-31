@@ -14,7 +14,7 @@ Retired maintainer: [@zerolfx](https://github.com/zerolfx).
 
 ## Installation
 
-0. Ensure your Emacs version is at least 27, and the dependency package `editorconfig` ([melpa](https://melpa.org/#/editorconfig)) is also installed.
+0. Ensure your Emacs version is at least 27, the dependency package `editorconfig` ([melpa](https://melpa.org/#/editorconfig)) and `jsonrpc` ([elpa](https://elpa.gnu.org/packages/jsonrpc.html), >= 1.0.24) are both installed.
 
 1. Install [Node.js](https://nodejs.org/en/download/) v18+. (You can specify the path to `node` executable by setting `copilot-node-executable`.)
 

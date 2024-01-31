@@ -15,6 +15,7 @@
 (require 'json)
 (require 'jsonrpc)
 
+(require 'f)
 (require 's)
 (require 'dash)
 (require 'editorconfig)
@@ -57,10 +58,7 @@ Enabling event logging may slightly affect performance."
   :group 'copilot
   :type 'integer)
 
-(defcustom copilot-node-executable
-  (if (eq system-type 'windows-nt)
-      "node.exe"
-    "node")
+(defcustom copilot-node-executable (executable-find "node")
   "Node executable path."
   :group 'copilot
   :type 'string)
@@ -94,11 +92,19 @@ indentation offset."
   :type '(alist :key-type symbol :value-type (choice integer symbol))
   :group 'copilot)
 
-(defconst copilot--base-dir
-  (file-name-directory
-   (or load-file-name
-       (buffer-file-name)))
-  "Directory containing this file.")
+(defconst copilot-server-package-name "copilot-node-server"
+  "The name of the package to install copilot server.")
+
+(defcustom copilot-install-dir (expand-file-name
+                                (locate-user-emacs-file (f-join ".cache" "copilot")))
+  "Directory in which the servers will be installed."
+  :risky t
+  :type 'directory
+  :group 'copilot)
+
+(defconst copilot--dist-dir
+  (f-join copilot-install-dir "node_modules" "copilot-node-server" "copilot" "dist")
+  "The dist directory containing agent.js file.")
 
 (defcustom copilot-version "1.14.0"
   "Copilot version."
@@ -170,8 +176,12 @@ indentation offset."
 
 (defun copilot--start-agent ()
   "Start the copilot agent process in local."
-  (if (not (locate-file copilot-node-executable exec-path))
-      (user-error "Could not find node executable")
+  (cond
+   ((null copilot-node-executable)
+    (user-error "Could not find node executable"))
+   ((not (file-exists-p copilot-install-dir))
+    (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
+   (t
     (let ((node-version (->> (with-output-to-string
                                (call-process copilot-node-executable nil standard-output nil "--version"))
                              (s-trim)
@@ -187,7 +197,7 @@ indentation offset."
                                   :notification-dispatcher #'copilot--handle-notification
                                   :process (make-process :name "copilot agent"
                                                          :command (list copilot-node-executable
-                                                                        (concat copilot--base-dir "/dist/agent.js"))
+                                                                        (concat copilot--dist-dir "/agent.js"))
                                                          :coding 'utf-8-emacs-unix
                                                          :connection-type 'pipe
                                                          :stderr (get-buffer-create "*copilot stderr*")
@@ -198,7 +208,7 @@ indentation offset."
                                      `(:editorInfo (:name "Emacs" :version ,emacs-version)
                                                    :editorPluginInfo (:name "copilot.el" :version ,copilot-version)
                                                    ,@(when copilot-network-proxy
-                                                       `(:networkProxy ,copilot-network-proxy)))))))))
+                                                       `(:networkProxy ,copilot-network-proxy))))))))))
 
 ;;
 ;; login / logout
@@ -877,16 +887,6 @@ command that triggered `post-command-hook'."
 
 ;;
 ;;; Installation
-
-(defcustom copilot-install-dir (expand-file-name
-                                (locate-user-emacs-file (f-join ".cache" "copilot")))
-  "Directory in which the servers will be installed."
-  :risky t
-  :type 'directory
-  :group 'copilot)
-
-(defconst copilot-server-package-name "copilot-node-server"
-  "The name of the package to install copilot server.")
 
 ;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
 ;; function for more information.

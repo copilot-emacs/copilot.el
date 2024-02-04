@@ -323,8 +323,9 @@ automatically, browse to %s." user-code verification-uri))
                     (setq mode (get mode 'derived-mode-parent))))
         (when mode
           (cl-some (lambda (s)
-                     (when (and (boundp s) (numberp (symbol-value s)))
-                       (symbol-value s)))
+                     ;; s can be a symbol or a number.
+                     (cond ((numberp s) s)
+                           ((and (boundp s) (numberp (symbol-value s))) (symbol-value s))))
                    (alist-get mode copilot-indentation-alist))))
       (progn
         (when (and

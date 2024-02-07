@@ -103,7 +103,9 @@ indentation offset."
   :group 'copilot)
 
 (defconst copilot--dist-dir
-  (f-join copilot-install-dir "node_modules" "copilot-node-server" "copilot" "dist")
+  (if (eq system-type 'windows-nt)
+      (f-join copilot-install-dir "node_modules" "copilot-node-server" "copilot" "dist")
+    (f-join copilot-install-dir "bin" "copilot-node-server"))
   "The dist directory containing agent.js file.")
 
 (defcustom copilot-version "1.14.0"

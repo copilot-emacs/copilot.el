@@ -912,7 +912,7 @@ command that triggered `post-command-hook'."
                                                                                        command)
                                                        " ") t
                                                        (lambda (&rest _)
-                                                         (generate-new-buffer-name (format "*copilot-install: %s*" name))))
+                                                         (generate-new-buffer-name "*copilot-install-server*")))
       (view-mode +1)
       (add-hook
        'compilation-finish-functions

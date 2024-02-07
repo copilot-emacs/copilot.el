@@ -183,7 +183,7 @@ indentation offset."
     (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
    (t
     (unless (equal (copilot-installed-version) copilot-version)
-      (message "[WARN] Newer versions of the Copilot server are available for installation.
+      (warn "Newer versions of the Copilot server are available for installation.
 Please upgrade the server via `M-x copilot-reinstall-server`"))
     (let ((node-version (->> (with-output-to-string
                                (call-process copilot-node-executable nil standard-output nil "--version"))

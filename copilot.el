@@ -109,7 +109,10 @@ indentation offset."
   "The dist directory containing agent.js file.")
 
 (defcustom copilot-version "1.14.0"
-  "Copilot version."
+  "Copilot version.
+
+The default value is the preferred version and ensures functionality.
+You may adjust this variable at your own risk."
   :type 'string
   :group 'copilot)
 

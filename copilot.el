@@ -928,11 +928,13 @@ command that triggered `post-command-hook'."
        'compilation-finish-functions
        (lambda (_buf status)
          (if (string= "finished\n" status)
-             (condition-case err
-                 (funcall callback)
-               (error
-                (funcall error-callback (error-message-string err))))
-           (funcall error-callback (s-trim-right status))))
+             (when callback
+               (condition-case err
+                   (funcall callback)
+                 (error
+                  (funcall error-callback (error-message-string err)))))
+           (when error-callback
+             (funcall error-callback (s-trim-right status)))))
        nil t))))
 
 ;;;###autoload

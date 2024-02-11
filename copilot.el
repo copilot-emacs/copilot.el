@@ -559,9 +559,9 @@ To work around posn problems with after-string property.")
 
   ;; set overlay position for the keymap, to activate copilot-completion-map
   ;;
-  ;; if the point is at the end of the buffer, we will create a 0-length buffer.
-  ;; But this is ok, since the keymap
-  ;; will still activate _so long_ as no other overlay contains the point
+  ;; if the point is at the end of the buffer, we will create a
+  ;; 0-length buffer. But this is ok, since the keymap will still
+  ;; activate _so long_ as no other overlay contains the point.
   ;;
   ;; see https://github.com/copilot-emacs/copilot.el/issues/251 for details.
   (move-overlay (overlay-get ov 'keymap-overlay) (point) (min (point-max) (+ 1 (point))))

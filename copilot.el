@@ -103,6 +103,9 @@ indentation offset."
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
 
+(defvar-local copilot--keymap-overlay nil
+  "Overlay used to surround point and make copilot-completion-keymap activate.")
+
 (defvar copilot--connection nil
   "Copilot agent jsonrpc connection instance.")
 
@@ -531,12 +534,20 @@ To work around posn problems with after-string property.")
 (defconst copilot-completion-map (make-sparse-keymap)
   "Keymap for Copilot completion overlay.")
 
+(defun copilot--get-or-create-keymap-overlay ()
+  "Make or return the local copilot--keymap-overlay."
+  (unless (overlayp copilot--keymap-overlay)
+    (setq copilot--keymap-overlay (make-overlay 1 1 nil nil t))
+    (overlay-put copilot--keymap-overlay 'keymap copilot-completion-map)
+    (overlay-put copilot--keymap-overlay 'priority 101))
+  copilot--keymap-overlay)
+
 (defun copilot--get-overlay ()
   "Create or get overlay for Copilot."
   (unless (overlayp copilot--overlay)
     (setq copilot--overlay (make-overlay 1 1 nil nil t))
-    (overlay-put copilot--overlay 'keymap copilot-completion-map)
-    (overlay-put copilot--overlay 'priority 100))
+    (overlay-put
+     copilot--overlay 'keymap-overlay (copilot--get-or-create-keymap-overlay)))
   copilot--overlay)
 
 (defun copilot--overlay-end (ov)
@@ -546,6 +557,16 @@ To work around posn problems with after-string property.")
 (defun copilot--set-overlay-text (ov completion)
   "Set overlay OV with COMPLETION."
   (move-overlay ov (point) (line-end-position))
+
+  ;; set overlay position for the keymap, to activate copilot-completion-map
+  ;;
+  ;; if the point is at the end of the buffer, we will create a
+  ;; 0-length buffer. But this is ok, since the keymap will still
+  ;; activate _so long_ as no other overlay contains the point.
+  ;;
+  ;; see https://github.com/copilot-emacs/copilot.el/issues/251 for details.
+  (move-overlay (overlay-get ov 'keymap-overlay) (point) (min (point-max) (+ 1 (point))))
+
   (let* ((tail (buffer-substring (copilot--overlay-end ov) (line-end-position)))
          (p-completion (concat (propertize completion 'face 'copilot-overlay-face)
                                tail)))
@@ -586,6 +607,7 @@ already saving an excursion. This is also a private function."
       (copilot--async-request 'notifyRejected
                               (list :uuids `[,(overlay-get copilot--overlay 'uuid)])))
     (delete-overlay copilot--overlay)
+    (delete-overlay copilot--keymap-overlay)
     (setq copilot--real-posn nil)))
 
 (defun copilot-accept-completion (&optional transform-fn)

@@ -912,12 +912,17 @@ command that triggered `post-command-hook'."
 (defun copilot-async-start-process (callback error-callback &rest command)
   "Start async process COMMAND with CALLBACK and ERROR-CALLBACK."
   (let ((name (cl-first command)))
-    (with-current-buffer (compilation-start (mapconcat #'shell-quote-argument (-filter (lambda (cmd)
-                                                                                         (not (null cmd)))
-                                                                                       command)
-                                                       " ") t
-                                                       (lambda (&rest _)
-                                                         (generate-new-buffer-name "*copilot-install-server*")))
+    (with-current-buffer
+        (compilation-start
+         (mapconcat
+          #'shell-quote-argument
+          (-filter
+           (lambda (cmd)
+             (not (null cmd)))
+           command) " ")
+         t
+         (lambda (&rest _)
+           (generate-new-buffer-name "*copilot-install-server*")))
       (view-mode +1)
       (add-hook
        'compilation-finish-functions

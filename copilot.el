@@ -543,10 +543,10 @@ To work around posn problems with after-string property.")
 
 (defun copilot--get-overlay ()
   "Create or get overlay for Copilot."
-
   (unless (overlayp copilot--overlay)
     (setq copilot--overlay (make-overlay 1 1 nil nil t))
-    (overlay-put copilot--overlay 'keymap-overlay (copilot--get-or-create-keymap-overlay)))
+    (overlay-put
+     copilot--overlay 'keymap-overlay (copilot--get-or-create-keymap-overlay)))
   copilot--overlay)
 
 (defun copilot--overlay-end (ov)
@@ -559,7 +559,8 @@ To work around posn problems with after-string property.")
 
   ;; set overlay position for the keymap, to activate copilot-completion-map
   ;;
-  ;; if the point is at the end of the buffer, we will create a 0-length buffer. But this is ok, since the keymap
+  ;; if the point is at the end of the buffer, we will create a 0-length buffer.
+  ;; But this is ok, since the keymap
   ;; will still activate _so long_ as no other overlay contains the point
   ;;
   ;; see https://github.com/copilot-emacs/copilot.el/issues/251 for details.

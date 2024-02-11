@@ -102,9 +102,9 @@ indentation offset."
   :type 'directory
   :group 'copilot)
 
-(defconst copilot--dist-dir
+(defconst copilot--server-executable
   (if (eq system-type 'windows-nt)
-      (f-join copilot-install-dir "node_modules" "copilot-node-server" "copilot" "dist")
+      (f-join copilot-install-dir "node_modules" "copilot-node-server" "copilot" "dist" "agent.js")
     (f-join copilot-install-dir "bin" "copilot-node-server"))
   "The dist directory containing agent.js file.")
 
@@ -205,7 +205,7 @@ Please upgrade the server via `M-x copilot-reinstall-server`"))
                                   :notification-dispatcher #'copilot--handle-notification
                                   :process (make-process :name "copilot agent"
                                                          :command (list copilot-node-executable
-                                                                        (concat copilot--dist-dir "/agent.js"))
+                                                                        copilot--server-executable)
                                                          :coding 'utf-8-emacs-unix
                                                          :connection-type 'pipe
                                                          :stderr (get-buffer-create "*copilot stderr*")

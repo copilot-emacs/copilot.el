@@ -12,6 +12,7 @@
 (require 'cl-lib)
 (require 'json)
 (require 'jsonrpc)
+(require 'package)
 (require 's)
 (require 'dash)
 (require 'editorconfig)
@@ -131,10 +132,8 @@ indentation offset."
 
 (defun copilot--jsonrpc-version ()
   "Return the jsonrpc version."
-  (let* ((desc (package-get-descriptor 'jsonrpc))
-         (vlist (package-desc-version desc))
-         (version (package-version-join vlist)))
-    version))
+  (when-let ((path (locate-library "jsonrpc")))
+    (with-current-buffer (find-file-noselect path) (package-get-version))))
 
 ;;
 ;; agent

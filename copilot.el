@@ -9,11 +9,14 @@
 ;; An unofficial Copilot plugin for Emacs
 
 ;;; Code:
+
 (require 'cl-lib)
 (require 'json)
 (require 'jsonrpc)
 (require 's)
 (require 'dash)
+(require 'package)
+
 (require 'editorconfig)
 (require 'copilot-balancer)
 

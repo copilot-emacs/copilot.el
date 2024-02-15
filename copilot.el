@@ -225,7 +225,7 @@ Please upgrade the server via `M-x copilot-reinstall-server`"))
                             :notification-dispatcher #'copilot--handle-notification
                             :process (make-process :name "copilot agent"
                                                    :command (list copilot-node-executable
-                                                                  (concat copilot--base-dir "/dist/agent.js"))
+                                                                  copilot--server-executable)
                                                    :coding 'utf-8-emacs-unix
                                                    :connection-type 'pipe
                                                    :stderr (get-buffer-create "*copilot stderr*")

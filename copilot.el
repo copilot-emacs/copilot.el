@@ -131,10 +131,10 @@ indentation offset."
 
 (defun copilot--jsonrpc-version ()
   "Return the jsonrpc version."
-  (let* ((desc (package-get-descriptor 'jsonrpc))
-         (vlist (package-desc-version desc))
-         (version (package-version-join vlist)))
-    version))
+  (when (locate-library "jsonrpc")  ; Ensure the library extists!
+    (save-window-excursion
+      (find-library "jsonrpc")
+      (package-get-version))))
 
 ;;
 ;; agent

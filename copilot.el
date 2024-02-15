@@ -135,7 +135,8 @@ indentation offset."
 (defun copilot--jsonrpc-package-desc ()
   "Return the jsonrpc package descriptor."
   (when-let* ((elc (locate-library "jsonrpc"))    ; Ensure the library extists!
-              (el (s-replace ".elc" ".el" elc))
+              (no-ext (file-name-sans-extension elc))
+              (el (concat no-ext ".el"))
               ((file-exists-p el)))
     (with-temp-buffer
       (insert-file-contents el)

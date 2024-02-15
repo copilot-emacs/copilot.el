@@ -129,12 +129,20 @@ indentation offset."
 ;; jsonrpc
 ;;
 
+(defun copilot--jsonrpc-package-desc ()
+  "Return the jsonrpc package descriptor."
+  (when-let* ((elc (locate-library "jsonrpc"))    ; Ensure the library extists!
+              (el (s-replace ".elc" ".el" elc))
+              ((file-exists-p el)))
+    (with-temp-buffer
+      (insert-file-contents el)
+      (package-buffer-info))))
+
 (defun copilot--jsonrpc-version ()
   "Return the jsonrpc version."
-  (when (locate-library "jsonrpc")  ; Ensure the library extists!
-    (save-window-excursion
-      (find-library "jsonrpc")
-      (package-get-version))))
+  (when-let* ((desc (copilot--jsonrpc-package-desc))
+              (vlist (package-desc-version desc)))
+    (package-version-join vlist)))
 
 ;;
 ;; agent
@@ -210,9 +218,9 @@ indentation offset."
              (copilot--request 'initialize '(:capabilities (:workspace (:workspaceFolders t))))
              (copilot--async-request 'setEditorInfo
                                      `(:editorInfo (:name "Emacs" :version ,emacs-version)
-                                       :editorPluginInfo (:name "copilot.el" :version ,copilot-version)
-                                       ,@(when copilot-network-proxy
-                                           `(:networkProxy ,copilot-network-proxy)))))))))
+                                                   :editorPluginInfo (:name "copilot.el" :version ,copilot-version)
+                                                   ,@(when copilot-network-proxy
+                                                       `(:networkProxy ,copilot-network-proxy)))))))))
 
 ;;
 ;; login / logout
@@ -238,27 +246,27 @@ indentation offset."
   "Login to Copilot."
   (interactive)
   (copilot--dbind
-      (:status :user :userCode user-code :verificationUri verification-uri)
-      (copilot--request 'signInInitiate '(:dummy "signInInitiate"))
-    (when (s-equals-p status "AlreadySignedIn")
-      (user-error "Already signed in as %s" user))
-    (if (display-graphic-p)
-        (progn
-          (gui-set-selection 'CLIPBOARD user-code)
-          (read-from-minibuffer (format "Your one-time code %s is copied. Press \
+   (:status :user :userCode user-code :verificationUri verification-uri)
+   (copilot--request 'signInInitiate '(:dummy "signInInitiate"))
+   (when (s-equals-p status "AlreadySignedIn")
+     (user-error "Already signed in as %s" user))
+   (if (display-graphic-p)
+       (progn
+         (gui-set-selection 'CLIPBOARD user-code)
+         (read-from-minibuffer (format "Your one-time code %s is copied. Press \
 ENTER to open GitHub in your browser. If your browser does not open \
 automatically, browse to %s." user-code verification-uri))
-          (browse-url verification-uri)
-          (read-from-minibuffer "Press ENTER if you finish authorizing."))
-      (read-from-minibuffer (format "First copy your one-time code: %s. Press ENTER to continue." user-code))
-      (read-from-minibuffer (format "Please open %s in your browser. Press ENTER if you finish authorizing." verification-uri)))
-    (message "Verifying...")
-    (condition-case err
-        (copilot--request 'signInConfirm (list :userCode user-code))
-      (jsonrpc-error
-       (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
-    (copilot--dbind (:user) (copilot--request 'checkStatus '(:dummy "checkStatus"))
-      (message "Authenticated as GitHub user %s." user))))
+         (browse-url verification-uri)
+         (read-from-minibuffer "Press ENTER if you finish authorizing."))
+     (read-from-minibuffer (format "First copy your one-time code: %s. Press ENTER to continue." user-code))
+     (read-from-minibuffer (format "Please open %s in your browser. Press ENTER if you finish authorizing." verification-uri)))
+   (message "Verifying...")
+   (condition-case err
+       (copilot--request 'signInConfirm (list :userCode user-code))
+     (jsonrpc-error
+      (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
+   (copilot--dbind (:user) (copilot--request 'checkStatus '(:dummy "checkStatus"))
+                   (message "Authenticated as GitHub user %s." user))))
 
 (defun copilot-logout ()
   "Logout from Copilot."
@@ -482,20 +490,20 @@ automatically, browse to %s." user-code verification-uri))
   "Handle MSG of type METHOD."
   (when (eql method 'PanelSolution)
     (copilot--dbind (:completionText completion-text :score completion-score) msg
-      (with-current-buffer "*copilot-panel*"
-        (unless (member (secure-hash 'sha256 completion-text)
-                        (org-map-entries (lambda () (org-entry-get nil "SHA"))))
-          (save-excursion
-            (goto-char (point-max))
-            (insert "* Solution\n"
-                    "  :PROPERTIES:\n"
-                    "  :SCORE: " (number-to-string completion-score) "\n"
-                    "  :SHA: " (secure-hash 'sha256 completion-text) "\n"
-                    "  :END:\n"
-                    "#+BEGIN_SRC " copilot--panel-lang "\n"
-                    completion-text "\n#+END_SRC\n\n")
-            (mark-whole-buffer)
-            (org-sort-entries nil ?R nil nil "SCORE"))))))
+                    (with-current-buffer "*copilot-panel*"
+                      (unless (member (secure-hash 'sha256 completion-text)
+                                      (org-map-entries (lambda () (org-entry-get nil "SHA"))))
+                        (save-excursion
+                          (goto-char (point-max))
+                          (insert "* Solution\n"
+                                  "  :PROPERTIES:\n"
+                                  "  :SCORE: " (number-to-string completion-score) "\n"
+                                  "  :SHA: " (secure-hash 'sha256 completion-text) "\n"
+                                  "  :END:\n"
+                                  "#+BEGIN_SRC " copilot--panel-lang "\n"
+                                  completion-text "\n#+END_SRC\n\n")
+                          (mark-whole-buffer)
+                          (org-sort-entries nil ?R nil nil "SCORE"))))))
   (when (eql method 'PanelSolutionsDone)
     (message "Copilot: Finish synthesizing solutions.")
     (display-buffer "*copilot-panel*")
@@ -670,34 +678,34 @@ Use TRANSFORM-FN to transform completion if provided."
   "Show COMPLETION-DATA."
   (when (copilot--satisfy-display-predicates)
     (copilot--dbind
-        (:text :uuid :docVersion doc-version
-         :range (:start (:line :character start-char)
-                 :end (:character end-char)))
-        completion-data
-      (when (= doc-version copilot--doc-version)
-        (save-excursion
-          (save-restriction
-            (widen)
-            (let* ((p (point))
-                   (goto-line! (lambda ()
-                                 (goto-char (point-min))
-                                 (forward-line (1- (+ line copilot--line-bias)))))
-                   (start (progn
-                            (funcall goto-line!)
-                            (forward-char start-char)
-                            (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
-                                   (common-prefix-len (length (s-shared-start text cur-line))))
-                              (setq text (substring text common-prefix-len))
-                              (forward-char common-prefix-len)
-                              (point))))
-                   (end (progn
-                          (funcall goto-line!)
-                          (forward-char end-char)
-                          (point)))
-                   (fixed-completion (copilot-balancer-fix-completion start end text)))
-              (goto-char p)
-              (pcase-let ((`(,start ,end ,balanced-text) fixed-completion))
-                (copilot--display-overlay-completion balanced-text uuid start end)))))))))
+     (:text :uuid :docVersion doc-version
+            :range (:start (:line :character start-char)
+                           :end (:character end-char)))
+     completion-data
+     (when (= doc-version copilot--doc-version)
+       (save-excursion
+         (save-restriction
+           (widen)
+           (let* ((p (point))
+                  (goto-line! (lambda ()
+                                (goto-char (point-min))
+                                (forward-line (1- (+ line copilot--line-bias)))))
+                  (start (progn
+                           (funcall goto-line!)
+                           (forward-char start-char)
+                           (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
+                                  (common-prefix-len (length (s-shared-start text cur-line))))
+                             (setq text (substring text common-prefix-len))
+                             (forward-char common-prefix-len)
+                             (point))))
+                  (end (progn
+                         (funcall goto-line!)
+                         (forward-char end-char)
+                         (point)))
+                  (fixed-completion (copilot-balancer-fix-completion start end text)))
+             (goto-char p)
+             (pcase-let ((`(,start ,end ,balanced-text) fixed-completion))
+               (copilot--display-overlay-completion balanced-text uuid start end)))))))))
 
 (defun copilot--on-doc-focus (window)
   "Notify that the document has been focussed or opened."
@@ -880,10 +888,10 @@ Use this for custom bindings in `copilot-mode'.")
       (cancel-timer copilot--post-command-timer))
     (when (numberp copilot-idle-delay)
       (setq copilot--post-command-timer
-          (run-with-idle-timer copilot-idle-delay
-                               nil
-                               #'copilot--post-command-debounce
-                               (current-buffer))))))
+            (run-with-idle-timer copilot-idle-delay
+                                 nil
+                                 #'copilot--post-command-debounce
+                                 (current-buffer))))))
 
 (defun copilot--self-insert (command)
   "Handle the case where the char just inserted is the start of the completion.

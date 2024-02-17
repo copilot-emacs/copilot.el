@@ -710,10 +710,8 @@ Use TRANSFORM-FN to transform completion if provided."
                                                  :text (copilot--get-source)))))))
 
 (defvar copilot--doc-change-queue '()
-  "Pending queue of document changes to be sent to the copilot agent.
+  "Pending queue of document changes to be sent to the copilot agent.")
 
-Due to limitations of Emacs data structures, this is implemented as
-a list that needs to be reversed")
 (defun copilot--flush-pending-doc-changes ()
   (dolist (x (nreverse copilot--doc-change-queue))
     (copilot--notify 'textDocument/didChange x))

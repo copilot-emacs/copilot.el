@@ -760,7 +760,6 @@ Use TRANSFORM-FN to transform completion if provided."
 (defun copilot-complete ()
   "Complete at the current point."
   (interactive)
-  (copilot--flush-pending-doc-changes)
   (setq copilot--last-doc-version copilot--doc-version)
 
   (setq copilot--completion-cache nil)
@@ -879,7 +878,6 @@ Use this for custom bindings in `copilot-mode'.")
 
 (defun copilot--post-command ()
   "Complete in `post-command-hook' hook."
-  (copilot--flush-pending-doc-changes)
   (when (and this-command
              (not (and (symbolp this-command)
                        (or
@@ -900,7 +898,6 @@ Use this for custom bindings in `copilot-mode'.")
   "Handle the case where the char just inserted is the start of the completion.
 If so, update the overlays and continue. COMMAND is the
 command that triggered `post-command-hook'."
-  (copilot--flush-pending-doc-changes)
   (when (and (eq command 'self-insert-command)
              (copilot--overlay-visible)
              (copilot--satisfy-display-predicates))
@@ -915,7 +912,6 @@ command that triggered `post-command-hook'."
 
 (defun copilot--post-command-debounce (buffer)
   "Complete in BUFFER."
-  (copilot--flush-pending-doc-changes)
   (when (and (buffer-live-p buffer)
              (equal (current-buffer) buffer)
              copilot-mode

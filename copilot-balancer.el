@@ -16,13 +16,13 @@
     (puthash ?\( ?\) h)
     (puthash ?\[ ?\] h)
     (puthash ?\{ ?\} h)
-    
+
     (puthash ?\) ?\( h)
     (puthash ?\} ?\{ h)
     (puthash ?\] ?\[ h)
-    
+
     (puthash ?\N{QUOTATION MARK} ?\N{QUOTATION MARK} h)
-    
+
     h)
   "Hash table of lisp pairs to balance.")
 
@@ -35,7 +35,7 @@
     h)
   "Hash table of closing lisp pairs, such as right parenthese, etc.")
 
-(defvar copilot-balancer-debug-buffer (get-buffer-create "*copilot-balancer*")
+(defvar copilot-balancer-debug-buffer (get-buffer-create " *copilot-balancer*")
   "Buffer for debugging copilot-balancer.")
 
 (defmacro copilot-balancer-to-plist (&rest vars)
@@ -65,12 +65,12 @@
               (number-to-string end)
               "\n")
       (insert "deleted text:<STX>" deleted-text "<EOT>\n")
-      
-      
+
+
       (insert "completion:<STX>" completion "<EOT>\n")
       (insert "trimmed-completion:<STX>" trimmed-completion "<EOT>\n")
       (insert "\n")
-      
+
       (insert "prefix-pairs:<STX>" (prin1-to-string prefix-pairs) "<EOT>\n")
       (insert "completion-pairs:<STX>" (prin1-to-string completion-pairs) "<EOT>\n")
       (insert "meta-prefix-pairs:<STX>" (prin1-to-string meta-prefix-pairs) "<EOT>\n")
@@ -79,14 +79,14 @@
 
       (insert "in-string:" (prin1-to-string in-string) "\n")
       (insert "end-is-missing-double-quote:" (prin1-to-string end-is-missing-double-quote) "\n")
-      
+
       (insert "flipped-suffix-pairs:<STX>" (prin1-to-string flipped-suffix-pairs) "<EOT>\n")
-      
+
       (insert "completion-suffix-str:<STX>"
               (prin1-to-string completion-suffix-str) "<EOT>\n")
       (insert "new-completion:<STX>" new-completion "<EOT>\n")
       (insert "\n")
-      
+
       (insert "prefix:\n<STX>" (substring prefix 0 (min 100 (length prefix))) "\n<EOT>\n")
       (insert "suffix:<STX>" suffix
               "\n<EOT>\n")
@@ -168,18 +168,19 @@ Special care has to be taken to ignore pairs in the middle of strings."
 
 (defvar copilot-balancer-top-level-form-start-regexp
   (rx line-start (or (literal "(") (literal "[") (literal "{")))
-  "Regexp for the start of a top level form. Assumes cursor is at the start of a line.")
+  "Regexp for the start of a top level form. Assumes cursor is at the start
+of a line.")
 
 (defvar copilot-balancer-form-end-regexp
   (rx (or (literal "}") (literal "]") (literal ")")) line-end)
-  "Regexp for the end of a form. Assumes cursor is at the last character of the line
-(not the actual newline character).")
+  "Regexp for the end of a form. Assumes cursor is at the last character of
+the line (not the actual newline character).")
 
 (defun copilot-balancer-get-top-level-form-beginning-to-point (x)
   (save-excursion
     (save-restriction
       (widen)
-      
+
       (beginning-of-line)
       (while (and (< 1 (point))
                   (not (looking-at-p copilot-balancer-top-level-form-start-regexp)))
@@ -191,7 +192,7 @@ Special care has to be taken to ignore pairs in the middle of strings."
   (save-excursion
     (save-restriction
       (widen)
-      
+
       (let* ((last-line-number (line-number-at-pos (point-max)))
              (on-last-line? (lambda ()
                               (= (line-number-at-pos (point)) last-line-number))))
@@ -203,7 +204,7 @@ Special care has to be taken to ignore pairs in the middle of strings."
                     (not (looking-at-p copilot-balancer-top-level-form-start-regexp)))
           (forward-line 1)
           (beginning-of-line))
-        
+
         ;; then find the end of the top level form by going backwards
         (unless (funcall on-last-line?)
           (forward-line -1)
@@ -217,7 +218,7 @@ Special care has to be taken to ignore pairs in the middle of strings."
             (end-of-line)
             (unless (bolp) (backward-char))))
         (end-of-line)
-        
+
         (buffer-substring-no-properties x (point))))))
 
 (defun copilot-balancer-see-string-end-p (p point-upper-bound)
@@ -292,7 +293,7 @@ Special care has to be taken to ignore pairs in the middle of strings."
                   (copilot-balancer-remove-last meta-prefix-pairs)
                   nil)
           (list trimmed-completion meta-prefix-pairs in-string)))
-       
+
        (`(,suffix-pairs . _)
         (-> (copilot-balancer-extract-pairs suffix)
             (copilot-balancer-collapse-matching-pairs in-string)))
@@ -305,7 +306,7 @@ Special care has to be taken to ignore pairs in the middle of strings."
        (rem-flipped-completion-suffix (car xy))
        (completion-suffix (mapcar #'copilot-balancer-get-other-pair
                                   rem-flipped-completion-suffix))
-               
+
        (completion-suffix-str (apply #'string (nreverse completion-suffix)))
        (new-completion (concat trimmed-completion
                                completion-suffix-str))
@@ -317,7 +318,7 @@ Special care has to be taken to ignore pairs in the middle of strings."
                     meta-prefix-pairs flipped-suffix-pairs
                     rem-flipped-completion-suffix new-completion)))
     (copilot-balancer--debug debug-vars)
-    
+
     (list start end new-completion)))
 
 (defun copilot-balancer-fix-completion (start end completion)

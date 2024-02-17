@@ -728,8 +728,7 @@ Use TRANSFORM-FN to transform completion if provided."
       (save-excursion
         (save-restriction
           (widen)
-          (let* ((p (point))
-                 (range-start-line (- (line-number-at-pos beg) copilot--line-bias))
+          (let* ((range-start-line (- (line-number-at-pos beg) copilot--line-bias))
                  (range-end-line (- (line-number-at-pos end) copilot--line-bias))
                  (range-start (list :line range-start-line
                                     :character (- beg (progn (goto-char beg)
@@ -748,15 +747,6 @@ Use TRANSFORM-FN to transform completion if provided."
                   copilot--doc-change-queue))))
       (when is-after-change
         (copilot--flush-pending-doc-changes)))))
-
-(defun copilot-resync-buffer ()
-  "Resyncs the buffer state in the copilot agent by sending the entire buffer to the agent."
-  (interactive)
-  (cl-incf copilot--doc-version)
-  (copilot--notify
-   'textDocument/didChange
-   (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
-         :contentChanges (vector (list :text (copilot--get-source))))))
 
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."

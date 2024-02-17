@@ -710,9 +710,11 @@ Use TRANSFORM-FN to transform completion if provided."
                                                  :text (copilot--get-source)))))))
 
 (defvar copilot--doc-change-queue '()
-  "Pending queue of document changes to be sent to the copilot agent.")
+  "Pending queue of document changes to be sent to the copilot agent.
+Each element is a list of document change parameters to be sent to the agent.")
 
 (defun copilot--flush-pending-doc-changes ()
+  "Flush the pending document changes to the copilot agent."
   (dolist (doc-change (nreverse copilot--doc-change-queue))
     (copilot--notify 'textDocument/didChange doc-change))
   (setq copilot--doc-change-queue '()))

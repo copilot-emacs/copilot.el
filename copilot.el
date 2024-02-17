@@ -713,8 +713,8 @@ Use TRANSFORM-FN to transform completion if provided."
   "Pending queue of document changes to be sent to the copilot agent.")
 
 (defun copilot--flush-pending-doc-changes ()
-  (dolist (x (nreverse copilot--doc-change-queue))
-    (copilot--notify 'textDocument/didChange x))
+  (dolist (doc-change (nreverse copilot--doc-change-queue))
+    (copilot--notify 'textDocument/didChange doc-change))
   (setq copilot--doc-change-queue '()))
 
 (defun copilot--on-doc-change (&optional beg end chars-replaced)

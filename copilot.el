@@ -745,10 +745,6 @@ a list that needs to be reversed")
                  (content-changes (vector (list :range (list :start range-start :end range-end)
                                                 :text text))))
             (cl-incf copilot--doc-version)
-            ;; (message "beg: %s end: %s chars-replaced: %s\nis-before-change: %s is-insertion: %s is-deletion: %s \n%s\n"
-                     ;; beg end chars-replaced
-                     ;; is-before-change is-insertion is-deletion
-                     ;; (with-output-to-string (prin1 content-changes)))
             (push (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
                         :contentChanges content-changes)
                   copilot--doc-change-queue))))

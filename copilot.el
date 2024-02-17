@@ -1,6 +1,6 @@
 ;;; copilot.el --- An unofficial Copilot plugin for Emacs  -*- lexical-binding:t -*-
 
-;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.23"))
+;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.14"))
 ;; Version: 0.0.1
 ;;; URL: https://github.com/copilot-emacs/copilot.el
 
@@ -126,17 +126,6 @@ indentation offset."
   "List of buffers that have been opened in Copilot.")
 
 ;;
-;; jsonrpc
-;;
-
-(defun copilot--jsonrpc-version ()
-  "Return the jsonrpc version."
-  (let* ((desc (package-get-descriptor 'jsonrpc))
-         (vlist (package-desc-version desc))
-         (version (package-version-join vlist)))
-    version))
-
-;;
 ;; agent
 ;;
 
@@ -177,6 +166,26 @@ indentation offset."
                                               (funcall ,success-fn result)))
                               ,@args))))
 
+(defun copilot--make-connection ()
+  "Establish copilot jsonrpc connection."
+  (let ((make-fn (apply-partially
+                  #'make-instance
+                  'jsonrpc-process-connection
+                  :name "copilot"
+                  :notification-dispatcher #'copilot--handle-notification
+                  :process (make-process :name "copilot agent"
+                                         :command (list copilot-node-executable
+                                                        (concat copilot--base-dir "/dist/agent.js"))
+                                         :coding 'utf-8-emacs-unix
+                                         :connection-type 'pipe
+                                         :stderr (get-buffer-create "*copilot stderr*")
+                                         :noquery t))))
+    (condition-case nil
+        (funcall make-fn :events-buffer-config `(:size ,copilot-log-max))
+      (invalid-slot-name
+       ;; handle older jsonrpc versions
+       (funcall make-fn :events-buffer-scrollback-size copilot-log-max)))))
+
 (defun copilot--start-agent ()
   "Start the copilot agent process in local."
   (if (not (locate-file copilot-node-executable exec-path))
@@ -185,27 +194,11 @@ indentation offset."
                                (call-process copilot-node-executable nil standard-output nil "--version"))
                              (s-trim)
                              (s-chop-prefix "v")
-                             (string-to-number)))
-          (old-jsonrpc (version< (copilot--jsonrpc-version) "1.0.23")))
+                             (string-to-number))))
       (cond ((< node-version 18)
              (user-error "Node 18+ is required but found %s" node-version))
             (t
-             (setq copilot--connection
-                   (funcall #'make-instance
-                            'jsonrpc-process-connection
-                            :name "copilot"
-                            (if old-jsonrpc :events-buffer-scrollback-size
-                              :events-buffer-config)
-                            (if old-jsonrpc copilot-log-max
-                              `(:size ,copilot-log-max))
-                            :notification-dispatcher #'copilot--handle-notification
-                            :process (make-process :name "copilot agent"
-                                                   :command (list copilot-node-executable
-                                                                  (concat copilot--base-dir "/dist/agent.js"))
-                                                   :coding 'utf-8-emacs-unix
-                                                   :connection-type 'pipe
-                                                   :stderr (get-buffer-create "*copilot stderr*")
-                                                   :noquery t)))
+             (setq copilot--connection (copilot--make-connection))
              (message "Copilot agent started.")
              (copilot--request 'initialize '(:capabilities (:workspace (:workspaceFolders t))))
              (copilot--async-request 'setEditorInfo

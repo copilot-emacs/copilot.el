@@ -6,17 +6,17 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 **Warning:** This plugin is unofficial and based on binaries provided by [copilot.vim](https://github.com/github/copilot.vim).
 
-**Note:** You need access to [GitHub Copilot](https://github.com/features/copilot) to use this plugin.
+**Note:** You need access to [GitHub Copilot][] to use this plugin.
 
-Current maintainer: [@emil-vdw](https://github.com/emil-vdw), [@rakotomandimby](https://github.com/rakotomandimby).
+Current maintainer: [@emil-vdw][], [@jcs090218][], [@rakotomandimby][].
 
-Retired maintainer: [@zerolfx](https://github.com/zerolfx).
+Retired maintainer: [@zerolfx][].
 
 ## Installation
 
 0. Ensure your Emacs version is at least 27, the dependency package `editorconfig` ([melpa](https://melpa.org/#/editorconfig)) and `jsonrpc` ([elpa](https://elpa.gnu.org/packages/jsonrpc.html), >= 1.0.24) are both installed.
 
-1. Install [Node.js](https://nodejs.org/en/download/) v18+. (You can specify the path to `node` executable by setting `copilot-node-executable`.)
+1. Install [Node.js][] v18+. (You can specify the path to `node` executable by setting `copilot-node-executable`.)
 
 2. Setup `copilot.el` as described in the next section.
 
@@ -156,7 +156,7 @@ Please make sure you have these dependencies installed (available in ELPA/MELPA)
 
 After installing those, clone this repository then insert the below snippet into your config file.
 
-```
+```elisp
 (add-to-list 'load-path "/path/to/copilot.el")
 (require 'copilot)
 ```
@@ -232,13 +232,13 @@ Cycle through the completion list.
 
 #### copilot-logout
 
-Logout from GitHub.
+Log out from GitHub.
 
 ## Customization
 
 #### copilot-node-executable
 
-The executable path of Node.js.
+The executable path of [Node.js][].
 
 #### copilot-idle-delay
 
@@ -302,3 +302,14 @@ These projects helped me a lot:
 + https://github.com/TommyX12/company-tabnine/
 + https://github.com/cryptobadger/flight-attendant.el
 + https://github.com/github/copilot.vim
+
+
+<!-- Links -->
+
+[@emil-vdw]: https://github.com/emil-vdw
+[@jcs090218]: https://github.com/jcs090218
+[@rakotomandimby]: https://github.com/rakotomandimby
+[@zerolfx]: https://github.com/zerolfx
+
+[GitHub Copilot]: https://github.com/features/copilot
+[Node.js]: https://nodejs.org/en/download/

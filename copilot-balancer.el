@@ -1,14 +1,22 @@
-;; -*- lexical-binding: t -*-
+;;; copilot-balancer.el --- Balancer module  -*- lexical-binding:t -*-
+
+;;; Commentary:
+
+;; Balancer module
+
+;;; Code:
 
 (require 'cl-lib)
 (require 'pcase)
-(require 'dash)
 (require 'rx)
 
-(defvar copilot-balancer-lisp-modes '(emacs-lisp-mode
-                                      lisp-mode
-                                      scheme-mode
-                                      clojure-mode)
+(require 'dash)
+
+(defvar copilot-balancer-lisp-modes '( emacs-lisp-mode
+                                       lisp-mode
+                                       lisp-interaction-mode
+                                       scheme-mode
+                                       clojure-mode)
   "List of lisp modes to balance.")
 
 (defvar copilot-balancer-lisp-pairs
@@ -329,3 +337,4 @@ the line (not the actual newline character).")
      (t (list start end completion)))))
 
 (provide 'copilot-balancer)
+;;; copilot-balancer.el ends here

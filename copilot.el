@@ -985,7 +985,7 @@ command that triggered `post-command-hook'."
          npm-binary
          "-g" "--prefix" copilot-install-dir
          "install" (format "%s@%s" copilot-server-package-name copilot-version)))
-    (message "Unable to install %s via `npm' because it is not present" package)
+    (message "Unable to install %s via `npm' because it is not present" copilot-server-package-name)
     nil))
 
 ;;;###autoload

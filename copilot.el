@@ -104,7 +104,7 @@ indentation offset."
 
 (defconst copilot--server-executable
   (if (eq system-type 'windows-nt)
-      (f-join copilot-install-dir "node_modules" "copilot-node-server" "copilot"
+      (f-join copilot-install-dir "node_modules" "copilot-node-server"
               "bin" "copilot-node-server")
     (f-join copilot-install-dir "bin" "copilot-node-server"))
   "The dist directory containing agent.js file.")

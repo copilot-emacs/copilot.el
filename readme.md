@@ -153,6 +153,7 @@ Please make sure you have these dependencies installed (available in ELPA/MELPA)
 + `dash`
 + `s`
 + `editorconfig`
++ `f`
 
 After installing those, clone this repository then insert the below snippet into your config file.
 

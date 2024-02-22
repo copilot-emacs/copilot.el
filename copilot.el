@@ -931,17 +931,20 @@ command that triggered `post-command-hook'."
 
 (defun copilot-installed-version ()
   "Return the version number of currently installed `copilot-node-server'."
-  (when-let*
-      ((package-json
-        (if (eq system-type 'windows-nt)
-            (f-join copilot-install-dir "node_modules" "copilot-node-server" "package.json")
-          (f-join copilot-install-dir "lib" "node_modules" "copilot-node-server" "package.json")))
-       ((file-exists-p package-json)))
-    (with-temp-buffer
-      (insert-file-contents package-json)
-      (save-match-data
-        (when (re-search-forward "\"version\": \"\\([0-9]+\.[0-9]+\.[0-9]+\\)")
-          (match-string 1))))))
+  (let ((possible-paths (list
+                         (when (eq system-type 'windows-nt)
+                           (f-join copilot-install-dir "node_modules" "copilot-node-server" "package.json"))
+                         (f-join copilot-install-dir "lib" "node_modules" "copilot-node-server" "package.json")
+                         (f-join copilot-install-dir "lib64" "node_modules" "copilot-node-server" "package.json"))))
+    (seq-some
+     (lambda (path)
+       (when (and path (file-exists-p path))
+         (with-temp-buffer
+           (insert-file-contents path)
+           (save-match-data
+             (when (re-search-forward "\"version\": \"\\([0-9]+\\.[0-9]+\\.[0-9]+\\)\"" nil t)
+               (match-string 1))))))
+     possible-paths)))
 
 ;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
 ;; function for more information.

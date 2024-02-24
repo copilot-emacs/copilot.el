@@ -346,6 +346,9 @@ automatically, browse to %s." user-code verification-uri))
                                    ("nxml" . "xml"))
   "Alist mapping major mode names (with -mode removed) to copilot language ID's.")
 
+(defvar copilot-minor-mode-alist '(("git-commit" . "git-commit"))
+  "Alist mapping minor mode names (with -mode removed) to copilot language ID's.")
+
 (defvar-local copilot--completion-cache nil)
 (defvar-local copilot--completion-idx 0)
 
@@ -423,10 +426,25 @@ automatically, browse to %s." user-code verification-uri))
       (buffer-substring-no-properties (- p half-window)
                                       (+ p half-window))))))
 
+(defun copilot--get-minor-mode-language-id ()
+  "Get language ID from minor mode if available."
+  (let ((pair
+         (seq-find
+          (lambda (pair)
+            (let ((minor-mode-symbol (intern (concat (car pair) "-mode"))))
+              (and (boundp minor-mode-symbol) (symbol-value minor-mode-symbol))))
+          copilot-minor-mode-alist)))
+    (cdr pair)))
+
+(defun copilot--get-major-mode-language-id ()
+  "Get language ID from major mode."
+  (let ((major-mode-symbol (s-chop-suffixes '("-ts-mode" "-mode") (symbol-name major-mode))))
+    (alist-get major-mode copilot-major-mode-alist major-mode-symbol nil 'equal)))
+
 (defun copilot--get-language-id ()
   "Get language ID of current buffer."
-  (let ((mode (s-chop-suffixes '("-ts-mode" "-mode") (symbol-name major-mode))))
-    (alist-get mode copilot-major-mode-alist mode nil 'equal)))
+  (or (copilot--get-minor-mode-language-id)
+      (copilot--get-major-mode-language-id)))
 
 (defun copilot--generate-doc ()
   "Generate doc parameters for completion request."

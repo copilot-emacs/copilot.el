@@ -1,17 +1,21 @@
 ;;; copilot.el --- An unofficial Copilot plugin for Emacs  -*- lexical-binding:t -*-
 
-;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.14"))
+;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0"))
 ;; Version: 0.0.1
-;;; URL: https://github.com/copilot-emacs/copilot.el
+;; URL: https://github.com/copilot-emacs/copilot.el
 
 ;;; Commentary:
 
 ;; An unofficial Copilot plugin for Emacs
 
 ;;; Code:
+
 (require 'cl-lib)
+(require 'compile)
 (require 'json)
 (require 'jsonrpc)
+
+(require 'f)
 (require 's)
 (require 'dash)
 (require 'editorconfig)
@@ -54,10 +58,7 @@ Enabling event logging may slightly affect performance."
   :group 'copilot
   :type 'integer)
 
-(defcustom copilot-node-executable
-  (if (eq system-type 'windows-nt)
-      "node.exe"
-    "node")
+(defcustom copilot-node-executable (executable-find "node")
   "Node executable path."
   :group 'copilot
   :type 'string)
@@ -91,14 +92,30 @@ indentation offset."
   :type '(alist :key-type symbol :value-type (choice integer symbol))
   :group 'copilot)
 
-(defconst copilot--base-dir
-  (file-name-directory
-   (or load-file-name
-       (buffer-file-name)))
-  "Directory containing this file.")
+(defconst copilot-server-package-name "copilot-node-server"
+  "The name of the package to install copilot server.")
 
-(defconst copilot-version "0.10.0"
-  "Copilot version.")
+(defcustom copilot-install-dir (expand-file-name
+                                (locate-user-emacs-file (f-join ".cache" "copilot")))
+  "Directory in which the servers will be installed."
+  :risky t
+  :type 'directory
+  :group 'copilot)
+
+(defconst copilot--server-executable
+  (if (eq system-type 'windows-nt)
+      (f-join copilot-install-dir "node_modules" "copilot-node-server"
+              "bin" "copilot-node-server")
+    (f-join copilot-install-dir "bin" "copilot-node-server"))
+  "The dist directory containing agent.js file.")
+
+(defcustom copilot-version "1.14.0"
+  "Copilot version.
+
+The default value is the preferred version and ensures functionality.
+You may adjust this variable at your own risk."
+  :type 'string
+  :group 'copilot)
 
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
@@ -175,7 +192,7 @@ indentation offset."
                   :notification-dispatcher #'copilot--handle-notification
                   :process (make-process :name "copilot agent"
                                          :command (list copilot-node-executable
-                                                        (concat copilot--base-dir "/dist/agent.js"))
+                                                        copilot--server-executable)
                                          :coding 'utf-8-emacs-unix
                                          :connection-type 'pipe
                                          :stderr (get-buffer-create "*copilot stderr*")
@@ -188,8 +205,15 @@ indentation offset."
 
 (defun copilot--start-agent ()
   "Start the copilot agent process in local."
-  (if (not (locate-file copilot-node-executable exec-path))
-      (user-error "Could not find node executable")
+  (cond
+   ((null copilot-node-executable)
+    (user-error "Could not find node executable"))
+   ((not (file-exists-p copilot-install-dir))
+    (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
+   (t
+    (unless (equal (copilot-installed-version) copilot-version)
+      (warn "Newer versions of the Copilot server are available for installation.
+Please upgrade the server via `M-x copilot-reinstall-server`"))
     (let ((node-version (->> (with-output-to-string
                                (call-process copilot-node-executable nil standard-output nil "--version"))
                              (s-trim)
@@ -203,9 +227,9 @@ indentation offset."
              (copilot--request 'initialize '(:capabilities (:workspace (:workspaceFolders t))))
              (copilot--async-request 'setEditorInfo
                                      `(:editorInfo (:name "Emacs" :version ,emacs-version)
-                                       :editorPluginInfo (:name "copilot.el" :version ,copilot-version)
-                                       ,@(when copilot-network-proxy
-                                           `(:networkProxy ,copilot-network-proxy)))))))))
+                                                   :editorPluginInfo (:name "copilot.el" :version ,copilot-version)
+                                                   ,@(when copilot-network-proxy
+                                                       `(:networkProxy ,copilot-network-proxy))))))))))
 
 ;;
 ;; login / logout
@@ -322,6 +346,9 @@ automatically, browse to %s." user-code verification-uri))
                                    ("nxml" . "xml"))
   "Alist mapping major mode names (with -mode removed) to copilot language ID's.")
 
+(defvar copilot-minor-mode-alist '(("git-commit" . "git-commit"))
+  "Alist mapping minor mode names (with -mode removed) to copilot language ID's.")
+
 (defvar-local copilot--completion-cache nil)
 (defvar-local copilot--completion-idx 0)
 
@@ -399,10 +426,25 @@ automatically, browse to %s." user-code verification-uri))
       (buffer-substring-no-properties (- p half-window)
                                       (+ p half-window))))))
 
+(defun copilot--get-minor-mode-language-id ()
+  "Get language ID from minor mode if available."
+  (let ((pair
+         (seq-find
+          (lambda (pair)
+            (let ((minor-mode-symbol (intern (concat (car pair) "-mode"))))
+              (and (boundp minor-mode-symbol) (symbol-value minor-mode-symbol))))
+          copilot-minor-mode-alist)))
+    (cdr pair)))
+
+(defun copilot--get-major-mode-language-id ()
+  "Get language ID from major mode."
+  (let ((major-mode-symbol (s-chop-suffixes '("-ts-mode" "-mode") (symbol-name major-mode))))
+    (alist-get major-mode copilot-major-mode-alist major-mode-symbol nil 'equal)))
+
 (defun copilot--get-language-id ()
   "Get language ID of current buffer."
-  (let ((mode (s-chop-suffixes '("-ts-mode" "-mode") (symbol-name major-mode))))
-    (alist-get mode copilot-major-mode-alist mode nil 'equal)))
+  (or (copilot--get-minor-mode-language-id)
+      (copilot--get-major-mode-language-id)))
 
 (defun copilot--generate-doc ()
   "Generate doc parameters for completion request."
@@ -664,8 +706,8 @@ Use TRANSFORM-FN to transform completion if provided."
   (when (copilot--satisfy-display-predicates)
     (copilot--dbind
         (:text :uuid :docVersion doc-version
-         :range (:start (:line :character start-char)
-                 :end (:character end-char)))
+               :range (:start (:line :character start-char)
+                              :end (:character end-char)))
         completion-data
       (when (= doc-version copilot--doc-version)
         (save-excursion
@@ -891,10 +933,10 @@ Use this for custom bindings in `copilot-mode'.")
       (cancel-timer copilot--post-command-timer))
     (when (numberp copilot-idle-delay)
       (setq copilot--post-command-timer
-          (run-with-idle-timer copilot-idle-delay
-                               nil
-                               #'copilot--post-command-debounce
-                               (current-buffer))))))
+            (run-with-idle-timer copilot-idle-delay
+                                 nil
+                                 #'copilot--post-command-debounce
+                                 (current-buffer))))))
 
 (defun copilot--self-insert (command)
   "Handle the case where the char just inserted is the start of the completion.
@@ -919,6 +961,87 @@ command that triggered `post-command-hook'."
              copilot-mode
              (copilot--satisfy-trigger-predicates))
     (copilot-complete)))
+
+;;
+;;; Installation
+
+(defun copilot-installed-version ()
+  "Return the version number of currently installed `copilot-node-server'."
+  (let ((possible-paths (list
+                         (when (eq system-type 'windows-nt)
+                           (f-join copilot-install-dir "node_modules" "copilot-node-server" "package.json"))
+                         (f-join copilot-install-dir "lib" "node_modules" "copilot-node-server" "package.json")
+                         (f-join copilot-install-dir "lib64" "node_modules" "copilot-node-server" "package.json"))))
+    (seq-some
+     (lambda (path)
+       (when (and path (file-exists-p path))
+         (with-temp-buffer
+           (insert-file-contents path)
+           (save-match-data
+             (when (re-search-forward "\"version\": \"\\([0-9]+\\.[0-9]+\\.[0-9]+\\)\"" nil t)
+               (match-string 1))))))
+     possible-paths)))
+
+;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
+;; function for more information.
+(defun copilot-async-start-process (callback error-callback &rest command)
+  "Start async process COMMAND with CALLBACK and ERROR-CALLBACK."
+  (let ((name (cl-first command)))
+    (with-current-buffer
+        (compilation-start
+         (mapconcat
+          #'shell-quote-argument
+          (-filter
+           (lambda (cmd)
+             (not (null cmd)))
+           command) " ")
+         t
+         (lambda (&rest _)
+           (generate-new-buffer-name "*copilot-install-server*")))
+      (view-mode +1)
+      (add-hook
+       'compilation-finish-functions
+       (lambda (_buf status)
+         (if (string= "finished\n" status)
+             (when callback
+               (condition-case err
+                   (funcall callback)
+                 (error
+                  (funcall error-callback (error-message-string err)))))
+           (when error-callback
+             (funcall error-callback (s-trim-right status)))))
+       nil t))))
+
+;;;###autoload
+(defun copilot-install-server ()
+  "Interactively install server."
+  (interactive)
+  (if-let ((npm-binary (executable-find "npm")))
+      (progn
+        (make-directory copilot-install-dir 'parents)
+        (copilot-async-start-process
+         nil nil
+         npm-binary
+         "-g" "--prefix" copilot-install-dir
+         "install" (format "%s@%s" copilot-server-package-name copilot-version)))
+    (message "Unable to install %s via `npm' because it is not present" copilot-server-package-name)
+    nil))
+
+;;;###autoload
+(defun copilot-reinstall-server ()
+  "Interactively re-install server."
+  (interactive)
+  (copilot-uninstall-server)
+  (copilot-install-server))
+
+;;;###autoload
+(defun copilot-uninstall-server ()
+  "Delete a Copilot server from `copilot-install-dir'."
+  (interactive)
+  (unless (file-directory-p copilot-install-dir)
+    (user-error "Couldn't find %s directory" copilot-install-dir))
+  (delete-directory copilot-install-dir 'recursive)
+  (message "Server `%s' uninstalled." (file-name-nondirectory (directory-file-name copilot-install-dir))))
 
 (provide 'copilot)
 ;;; copilot.el ends here

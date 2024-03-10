@@ -589,7 +589,8 @@ Each element is a list of document change parameters to be sent to the agent.")
 (defun copilot--ensure-server-up-to-date ()
   "Ensure that the copilot server is ready by immediately sending any
 pending changes."
-  (when copilot--change-idle-timer (cancel-timer copilot--change-idle-timer))
+  (when (timerp copilot--change-idle-timer)
+    (cancel-timer copilot--change-idle-timer))
   ;; We flush the changes using the lambda constructed in copilot--on-doc-change
   ;; so that we can ensure that the buffer is still alive and in copilot mode.
   (funcall (timer--function copilot--change-idle-timer))
@@ -647,7 +648,8 @@ pending changes."
     ;; that will flush the pending changes to the copilot agent.
     (when is-after-change
       ;; If the idle timer is already set, cancel it and set a new one.
-      (when copilot--change-idle-timer (cancel-timer copilot--change-idle-timer))
+      (when (timerp copilot--change-idle-timer)
+        (cancel-timer copilot--change-idle-timer))
       (let ((buf (current-buffer)))
         (setq copilot--change-idle-timer
               (run-with-idle-timer

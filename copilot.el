@@ -26,7 +26,7 @@
   :group 'completion
   :prefix "copilot-")
 
-(defcustom copilot-idle-delay 0
+(defcustom copilot-completion-idle-delay 0
   "Time in seconds to wait before starting completion.
 
 Complete immediately if set to 0.
@@ -116,6 +116,10 @@ The default value is the preferred version and ensures functionality.
 You may adjust this variable at your own risk."
   :type 'string
   :group 'copilot)
+
+(defcustom copilot-send-changes-idle-time 0.5
+  "Don't tell server of changes before Emacs's been idle for this many seconds."
+  :type 'number)
 
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
@@ -751,9 +755,12 @@ Use TRANSFORM-FN to transform completion if provided."
                                                  :version copilot--doc-version
                                                  :text (copilot--get-source)))))))
 
-(defvar copilot--doc-change-queue '()
+(defvar-local copilot--doc-change-queue '()
   "Pending queue of document changes to be sent to the copilot agent.
 Each element is a list of document change parameters to be sent to the agent.")
+
+(defvar-local copilot--change-idle-timer nil
+  "Idle timer for didChange signals.")
 
 (defun copilot--flush-pending-doc-changes ()
   "Flush the pending document changes to the copilot agent."
@@ -779,18 +786,34 @@ Each element is a list of document change parameters to be sent to the agent.")
                                                              (line-beginning-position)))))
                  (range-end (if is-insertion
                                 range-start
-                            (list :line range-end-line
-                                  :character (- end (progn (goto-char end)
-                                                           (line-beginning-position))))))
+                              (list :line range-end-line
+                                    :character (- end (progn (goto-char end)
+                                                             (line-beginning-position))))))
                  (text (if is-insertion (buffer-substring-no-properties beg end) ""))
                  (content-changes (vector (list :range (list :start range-start :end range-end)
                                                 :text text))))
             (cl-incf copilot--doc-version)
             (push (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
                         :contentChanges content-changes)
-                  copilot--doc-change-queue))))
-      (when is-after-change
-        (copilot--flush-pending-doc-changes)))))
+                  copilot--doc-change-queue)))))
+
+    ;; If this is the after change hook, we need to set/reset the idle timer
+    ;; that will flush the pending changes to the copilot agent.
+    (when is-after-change
+      ;; If the idle timer is already set, cancel it and set a new one.
+      (when copilot--change-idle-timer (cancel-timer copilot--change-idle-timer))
+      (let ((buf (current-buffer)))
+        (setq copilot--change-idle-timer
+              (run-with-idle-timer
+               copilot-send-changes-idle-time
+               nil (lambda ()
+                     ;; Only flush the pending changes if the buffer is still
+                     ;; alive and in copilot mode.
+                     (when (buffer-live-p buf)
+                       (with-current-buffer buf
+                         (when copilot-mode
+                           (copilot--flush-pending-doc-changes)
+                           (setq copilot--change-idle-timer nil)))))))))))
 
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."
@@ -931,9 +954,9 @@ Use this for custom bindings in `copilot-mode'.")
     (copilot-clear-overlay)
     (when copilot--post-command-timer
       (cancel-timer copilot--post-command-timer))
-    (when (numberp copilot-idle-delay)
+    (when (numberp copilot-completion-idle-delay)
       (setq copilot--post-command-timer
-            (run-with-idle-timer copilot-idle-delay
+            (run-with-idle-timer copilot-completion-idle-delay
                                  nil
                                  #'copilot--post-command-debounce
                                  (current-buffer))))))

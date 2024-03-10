@@ -579,7 +579,7 @@ automatically, browse to %s." user-code verification-uri))
   "Save excursion and restriction.  Widen.  Then run BODY." (declare (debug t))
   `(save-excursion (save-restriction (widen) ,@body)))
 
-(defvar-local copilot--doc-change-queue '()
+(defvar-local copilot--doc-change-queue nil
   "Pending queue of document changes to be sent to the copilot agent.
 Each element is a list of document change parameters to be sent to the agent.")
 
@@ -614,7 +614,7 @@ pending changes."
   "Flush the pending document changes to the copilot agent."
   (dolist (doc-change (nreverse copilot--doc-change-queue))
     (copilot--notify 'textDocument/didChange doc-change))
-  (setq copilot--doc-change-queue '()))
+  (setq copilot--doc-change-queue nil))
 
 (defun copilot--on-doc-change (&optional beg end chars-replaced)
   "Notify that the document has changed."

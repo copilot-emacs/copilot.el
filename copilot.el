@@ -119,7 +119,8 @@ You may adjust this variable at your own risk."
 
 (defcustom copilot-send-changes-idle-time 0.5
   "Don't tell server of changes before Emacs's been idle for this many seconds."
-  :type 'number)
+  :type 'number
+  :group 'copilot)
 
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")

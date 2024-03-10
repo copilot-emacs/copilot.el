@@ -1,7 +1,7 @@
 ;;; copilot.el --- An unofficial Copilot plugin for Emacs  -*- lexical-binding:t -*-
 
 ;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0"))
-;; Version: 0.0.1
+;; Version: 0.1.0
 ;; URL: https://github.com/copilot-emacs/copilot.el
 
 ;;; Commentary:
@@ -35,6 +35,9 @@ Disable idle completion if set to nil."
           (number :tag "Seconds of delay")
           (const :tag "Idle completion disabled" nil))
   :group 'copilot)
+
+(defvaralias 'copilot-idle-delay 'copilot-completion-idle-delay)
+(make-obsolete-variable 'copilot-idle-delay 'copilot-completion-idle-delay "0.1.0")
 
 (defcustom copilot-network-proxy nil
   "Network proxy to use for Copilot. Nil means no proxy.

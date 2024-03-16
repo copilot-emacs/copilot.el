@@ -628,7 +628,6 @@ pending changes."
          (is-deletion (and is-before-change (not (equal beg end)))))
     (when (or is-insertion is-deletion)
       (copilot--widening
-        (widen)
         (let* ((range-start-line (- (line-number-at-pos beg) copilot--line-bias))
                (range-end-line (- (line-number-at-pos end) copilot--line-bias))
                (range-start (list :line range-start-line
@@ -836,7 +835,6 @@ Use TRANSFORM-FN to transform completion if provided."
         completion-data
       (when (= doc-version copilot--doc-version)
         (copilot--widening
-          (widen)
           (let* ((p (point))
                  (goto-line! (lambda ()
                                (goto-char (point-min))

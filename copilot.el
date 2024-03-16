@@ -568,6 +568,9 @@ automatically, browse to %s." user-code verification-uri))
   (setq copilot--last-doc-version copilot--doc-version)
   (setq copilot--panel-lang (copilot--get-language-id))
 
+  (when (or copilot--change-idle-timer copilot--doc-change-queue)
+    (copilot--ensure-server-up-to-date))
+
   (copilot--get-panel-completions
    (jsonrpc-lambda (&key solutionCountTarget)
      (message "Copilot: Synthesizing %d solutions..." solutionCountTarget)))

@@ -1,7 +1,7 @@
 ;;; copilot.el --- An unofficial Copilot plugin for Emacs  -*- lexical-binding:t -*-
 
 ;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0"))
-;; Version: 0.0.1
+;; Version: 0.1.0
 ;; URL: https://github.com/copilot-emacs/copilot.el
 
 ;;; Commentary:
@@ -26,7 +26,7 @@
   :group 'completion
   :prefix "copilot-")
 
-(defcustom copilot-idle-delay 0
+(defcustom copilot-completion-idle-delay 0
   "Time in seconds to wait before starting completion.
 
 Complete immediately if set to 0.
@@ -35,6 +35,9 @@ Disable idle completion if set to nil."
           (number :tag "Seconds of delay")
           (const :tag "Idle completion disabled" nil))
   :group 'copilot)
+
+(defvaralias 'copilot-idle-delay 'copilot-completion-idle-delay)
+(make-obsolete-variable 'copilot-idle-delay 'copilot-completion-idle-delay "0.1.0")
 
 (defcustom copilot-network-proxy nil
   "Network proxy to use for Copilot. Nil means no proxy.
@@ -117,6 +120,11 @@ You may adjust this variable at your own risk."
   :type 'string
   :group 'copilot)
 
+(defcustom copilot-send-changes-idle-time 0.5
+  "Don't tell server of changes before Emacs's been idle for this many seconds."
+  :type 'number
+  :group 'copilot)
+
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
 
@@ -130,8 +138,10 @@ You may adjust this variable at your own risk."
   "Line bias for Copilot completion.")
 
 (defvar copilot--post-command-timer nil)
+
 (defvar-local copilot--last-doc-version 0
   "The document version of the last completion.")
+
 (defvar-local copilot--doc-version 0
   "The document version of the current buffer. Incremented after each change.")
 
@@ -560,12 +570,129 @@ automatically, browse to %s." user-code verification-uri))
   (setq copilot--last-doc-version copilot--doc-version)
   (setq copilot--panel-lang (copilot--get-language-id))
 
+  (when (or copilot--change-idle-timer copilot--doc-change-queue)
+    (copilot--ensure-server-up-to-date))
+
   (copilot--get-panel-completions
    (jsonrpc-lambda (&key solutionCountTarget)
      (message "Copilot: Synthesizing %d solutions..." solutionCountTarget)))
   (with-current-buffer (get-buffer-create "*copilot-panel*")
     (org-mode)
     (erase-buffer)))
+
+;;
+;; Doc changes
+;;
+(cl-defmacro copilot--widening (&rest body)
+  "Save excursion and restriction.  Widen.  Then run BODY." (declare (debug t))
+  `(save-excursion (save-restriction (widen) ,@body)))
+
+(defvar-local copilot--doc-change-queue nil
+  "Pending queue of document changes to be sent to the copilot agent.
+Each element is a list of document change parameters to be sent to the agent.")
+
+(defvar-local copilot--change-idle-timer nil
+  "Idle timer for didChange signals.")
+
+(defun copilot--ensure-server-up-to-date ()
+  "Ensure that the copilot server is ready by immediately sending any
+pending changes."
+  (when (timerp copilot--change-idle-timer)
+    (cancel-timer copilot--change-idle-timer)
+    ;; We flush the changes using the lambda constructed in copilot--on-doc-change
+    ;; so that we can ensure that the buffer is still alive and in copilot mode.
+    (funcall (timer--function copilot--change-idle-timer))
+    (setq copilot--change-idle-timer nil)))
+
+(defun copilot-sync-doc ()
+  "Re-sync the document with the copilot agent."
+  (interactive)
+  (copilot--ensure-server-up-to-date)
+  (cl-incf copilot--doc-version)
+  (copilot--notify
+   'textDocument/didChange
+   (list :textDocument
+         (list :uri (copilot--get-uri) :version copilot--doc-version)
+         :contentChanges
+         (vector `(:text ,(copilot--widening
+                              (buffer-substring-no-properties (point-min)
+                                                              (point-max))))))))
+
+(defun copilot--flush-pending-doc-changes ()
+  "Flush the pending document changes to the copilot agent."
+  (dolist (doc-change (nreverse copilot--doc-change-queue))
+    (copilot--notify 'textDocument/didChange doc-change))
+  (setq copilot--doc-change-queue nil))
+
+(defun copilot--on-doc-change (&optional beg end chars-replaced)
+  "Notify that the document has changed."
+  (let* ((is-before-change (eq chars-replaced nil))
+         (is-after-change (not is-before-change))
+         ;; for a deletion, the post-change beginning and end are at the same place.
+         (is-insertion (and is-after-change (not (equal beg end))))
+         (is-deletion (and is-before-change (not (equal beg end)))))
+    (when (or is-insertion is-deletion)
+      (copilot--widening
+        (let* ((range-start-line (- (line-number-at-pos beg) copilot--line-bias))
+               (range-end-line (- (line-number-at-pos end) copilot--line-bias))
+               (range-start (list :line range-start-line
+                                  :character (- beg (progn (goto-char beg)
+                                                           (line-beginning-position)))))
+               (range-end (if is-insertion
+                              range-start
+                            (list :line range-end-line
+                                  :character (- end (progn (goto-char end)
+                                                           (line-beginning-position))))))
+               (text (if is-insertion (buffer-substring-no-properties beg end) ""))
+               (content-changes (vector (list :range (list :start range-start :end range-end)
+                                              :text text))))
+          (cl-incf copilot--doc-version)
+          (push (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
+                      :contentChanges content-changes)
+                copilot--doc-change-queue))))
+
+    ;; If this is the after change hook, we need to set/reset the idle timer
+    ;; that will flush the pending changes to the copilot agent.
+    (when is-after-change
+      ;; If the idle timer is already set, cancel it and set a new one.
+      (when (timerp copilot--change-idle-timer)
+        (cancel-timer copilot--change-idle-timer))
+      (let ((buf (current-buffer)))
+        (setq copilot--change-idle-timer
+              (run-with-idle-timer
+               copilot-send-changes-idle-time
+               nil (lambda ()
+                     ;; Only flush the pending changes if the buffer is still
+                     ;; alive and in copilot mode.
+                     (when (buffer-live-p buf)
+                       (with-current-buffer buf
+                         (when copilot-mode
+                           (copilot--flush-pending-doc-changes)
+                           (setq copilot--change-idle-timer nil)))))))))))
+
+(defun copilot--on-doc-focus (window)
+  "Notify that the document has been focussed or opened."
+  ;; When switching windows, this function is called twice, once for the
+  ;; window losing focus and once for the window gaining focus. We only want to
+  ;; send a notification for the window gaining focus and only if the buffer has
+  ;; copilot-mode enabled.
+  (when (and copilot-mode (eq window (selected-window)))
+    (if (-contains-p copilot--opened-buffers (current-buffer))
+        (copilot--notify ':textDocument/didFocus
+                         (list :textDocument (list :uri (copilot--get-uri))))
+      (add-to-list 'copilot--opened-buffers (current-buffer))
+      (copilot--notify ':textDocument/didOpen
+                       (list :textDocument (list :uri (copilot--get-uri)
+                                                 :languageId (copilot--get-language-id)
+                                                 :version copilot--doc-version
+                                                 :text (copilot--get-source)))))))
+
+(defun copilot--on-doc-close (&rest _args)
+  "Notify that the document has been closed."
+  (when (-contains-p copilot--opened-buffers (current-buffer))
+    (copilot--notify 'textDocument/didClose
+                     (list :textDocument (list :uri (copilot--get-uri))))
+    (setq copilot--opened-buffers (delete (current-buffer) copilot--opened-buffers))))
 
 ;;
 ;; UI
@@ -712,84 +839,37 @@ Use TRANSFORM-FN to transform completion if provided."
                               :end (:character end-char)))
         completion-data
       (when (= doc-version copilot--doc-version)
-        (save-excursion
-          (save-restriction
-            (widen)
-            (let* ((p (point))
-                   (goto-line! (lambda ()
-                                 (goto-char (point-min))
-                                 (forward-line (1- (+ line copilot--line-bias)))))
-                   (start (progn
-                            (funcall goto-line!)
-                            (forward-char start-char)
-                            (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
-                                   (common-prefix-len (length (s-shared-start text cur-line))))
-                              (setq text (substring text common-prefix-len))
-                              (forward-char common-prefix-len)
-                              (point))))
-                   (end (progn
+        (copilot--widening
+          (let* ((p (point))
+                 (goto-line! (lambda ()
+                               (goto-char (point-min))
+                               (forward-line (1- (+ line copilot--line-bias)))))
+                 (start (progn
                           (funcall goto-line!)
-                          (forward-char end-char)
-                          (point)))
-                   (fixed-completion (copilot-balancer-fix-completion start end text)))
-              (goto-char p)
-              (pcase-let ((`(,start ,end ,balanced-text) fixed-completion))
-                (copilot--display-overlay-completion balanced-text uuid start end)))))))))
-
-(defun copilot--on-doc-focus (window)
-  "Notify that the document has been focussed or opened."
-  ;; When switching windows, this function is called twice, once for the
-  ;; window losing focus and once for the window gaining focus. We only want to
-  ;; send a notification for the window gaining focus and only if the buffer has
-  ;; copilot-mode enabled.
-  (when (and copilot-mode (eq window (selected-window)))
-    (if (-contains-p copilot--opened-buffers (current-buffer))
-        (copilot--notify ':textDocument/didFocus
-                         (list :textDocument (list :uri (copilot--get-uri))))
-      (add-to-list 'copilot--opened-buffers (current-buffer))
-      (copilot--notify ':textDocument/didOpen
-                       (list :textDocument (list :uri (copilot--get-uri)
-                                                 :languageId (copilot--get-language-id)
-                                                 :version copilot--doc-version
-                                                 :text (copilot--get-source)))))))
-
-(defun copilot--on-doc-change (&optional beg end chars-replaced)
-  "Notify that the document has changed."
-  (let* ((is-before-change (eq chars-replaced nil))
-         (is-after-change (not is-before-change))
-         ;; for a deletion, the post-change beginning and end are at the same place.
-         (is-insertion (and is-after-change (not (equal beg end))))
-         (is-deletion (and is-before-change (not (equal beg end)))))
-    (when (or is-insertion is-deletion)
-      (save-restriction
-        (widen)
-        (let* ((range-start (list :line (- (line-number-at-pos beg) copilot--line-bias)
-                                  :character (- beg (save-excursion (goto-char beg) (line-beginning-position)))))
-               (range-end (if is-insertion range-start
-                            (list :line (- (line-number-at-pos end) copilot--line-bias)
-                                  :character (- end (save-excursion (goto-char end) (line-beginning-position))))))
-               (text (if is-insertion (buffer-substring-no-properties beg end) ""))
-               (content-changes (vector (list :range (list :start range-start :end range-end)
-                                              :text text))))
-          (cl-incf copilot--doc-version)
-          (copilot--notify 'textDocument/didChange
-                           (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
-                                 :contentChanges content-changes)))))))
-
-(defun copilot--on-doc-close (&rest _args)
-  "Notify that the document has been closed."
-  (when (-contains-p copilot--opened-buffers (current-buffer))
-    (copilot--notify 'textDocument/didClose
-                     (list :textDocument (list :uri (copilot--get-uri))))
-    (setq copilot--opened-buffers (delete (current-buffer) copilot--opened-buffers))))
+                          (forward-char start-char)
+                          (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
+                                 (common-prefix-len (length (s-shared-start text cur-line))))
+                            (setq text (substring text common-prefix-len))
+                            (forward-char common-prefix-len)
+                            (point))))
+                 (end (progn
+                        (funcall goto-line!)
+                        (forward-char end-char)
+                        (point)))
+                 (fixed-completion (copilot-balancer-fix-completion start end text)))
+            (goto-char p)
+            (pcase-let ((`(,start ,end ,balanced-text) fixed-completion))
+              (copilot--display-overlay-completion balanced-text uuid start end))))))))
 
 
 ;;;###autoload
 (defun copilot-complete ()
   "Complete at the current point."
   (interactive)
+  ;; Make sure the server is up to date before sending the completion request.
+  (when (or copilot--change-idle-timer copilot--doc-change-queue)
+    (copilot--ensure-server-up-to-date))
   (setq copilot--last-doc-version copilot--doc-version)
-
   (setq copilot--completion-cache nil)
   (setq copilot--completion-idx 0)
 
@@ -915,9 +995,9 @@ Use this for custom bindings in `copilot-mode'.")
     (copilot-clear-overlay)
     (when copilot--post-command-timer
       (cancel-timer copilot--post-command-timer))
-    (when (numberp copilot-idle-delay)
+    (when (numberp copilot-completion-idle-delay)
       (setq copilot--post-command-timer
-            (run-with-idle-timer copilot-idle-delay
+            (run-with-idle-timer copilot-completion-idle-delay
                                  nil
                                  #'copilot--post-command-debounce
                                  (current-buffer))))))

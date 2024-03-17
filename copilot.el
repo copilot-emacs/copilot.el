@@ -1,8 +1,35 @@
-;;; copilot.el --- An unofficial Copilot plugin for Emacs  -*- lexical-binding:t -*-
+;;; copilot.el --- An unofficial Copilot plugin for Emacs  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2022-2024  copilot-emacs maintainers
+
+;; Author: zerol <z@zerol.me>
+;; Maintainer: Emil van der Westhuizen
+;;             Shen, Jen-Chieh <jcs090218@gmail.com>
+;;             Rakotomandimby Mihamina <mihamina.rakotomandimby@rktmb.org>
+;; URL: https://github.com/copilot-emacs/copilot.el
 ;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0"))
 ;; Version: 0.0.1
-;; URL: https://github.com/copilot-emacs/copilot.el
+;; Keywords: convenience copilot
+
+;; The MIT License (MIT)
+
+;; Permission is hereby granted, free of charge, to any person obtaining a copy
+;; of this software and associated documentation files (the "Software"), to deal
+;; in the Software without restriction, including without limitation the rights
+;; to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+;; copies of the Software, and to permit persons to whom the Software is
+;; furnished to do so, subject to the following conditions:
+
+;; The above copyright notice and this permission notice shall be included in all
+;; copies or substantial portions of the Software.
+
+;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;; IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;; FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;; AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+;; OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+;; SOFTWARE.
 
 ;;; Commentary:
 
@@ -37,24 +64,26 @@ Disable idle completion if set to nil."
   :group 'copilot)
 
 (defcustom copilot-network-proxy nil
-  "Network proxy to use for Copilot. Nil means no proxy.
-Format: \='(:host \"127.0.0.1\" :port 80
-:username \"username\" :password \"password\")
+  "Network proxy to use for Copilot.
+
+Nil means no proxy.
+Format: \='(:host \"127.0.0.1\" :port 80 :username \"username\"
+            :password \"password\")
 Username and password are optional.
 
 If you are using a MITM proxy which intercepts TLS connections, you may need
-to disable TLS verification. This can be done by setting a pair
-':rejectUnauthorized :json-false' in the proxy plist. For example:
+to disable TLS verification.  This can be done by setting a pair
+':rejectUnauthorized :json-false' in the proxy plist.  For example:
 
-  (:host \"127.0.0.1\" :port 80 :rejectUnauthorized :json-false)
-"
+  (:host \"127.0.0.1\" :port 80 :rejectUnauthorized :json-false)"
   :type '(plist :tag "Uncheck all to disable proxy" :key-type symbol)
   :options '((:host string) (:port integer) (:username string) (:password string))
   :group 'copilot)
 
 (defcustom copilot-log-max 0
-  "Max size of events buffer. 0 disables, nil means infinite.
-Enabling event logging may slightly affect performance."
+  "Max size of events buffer.
+0 disables, nil means infinite.  Enabling event logging may slightly affect
+performance."
   :group 'copilot
   :type 'integer)
 
@@ -141,6 +170,68 @@ You may adjust this variable at your own risk."
 
 (defvar copilot--opened-buffers nil
   "List of buffers that have been opened in Copilot.")
+
+;;
+;; Externals
+;;
+
+(declare-function vterm-delete-region "ext:vterm.el")
+(declare-function vterm-insert "ext:vterm.el")
+(declare-function org-sort-entries "ext:org.el")
+(declare-function org-entry-get "ext:org.el")
+(declare-function org-map-entries "ext:org.el")
+
+;;
+;; Entry
+;;
+
+(defvar copilot-mode-map (make-sparse-keymap)
+  "Keymap for Copilot minor mode.
+Use this for custom bindings in `copilot-mode'.")
+
+(defun copilot--mode-enter ()
+  "Set up copilot mode when entering."
+  (add-hook 'post-command-hook #'copilot--post-command nil 'local)
+  (add-hook 'before-change-functions #'copilot--on-doc-change nil 'local)
+  (add-hook 'after-change-functions #'copilot--on-doc-change nil 'local)
+  ;; Hook onto both window-selection-change-functions and window-buffer-change-functions
+  ;; since both are separate ways of 'focussing' a buffer.
+  (add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
+  (add-hook 'window-buffer-change-functions #'copilot--on-doc-focus nil 'local)
+  (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local)
+  ;; The mode may be activated manually while focus remains on the current window/buffer.
+  (copilot--on-doc-focus (selected-window)))
+
+(defun copilot--mode-exit ()
+  "Clean up copilot mode when exiting."
+  (remove-hook 'post-command-hook #'copilot--post-command 'local)
+  (remove-hook 'before-change-functions #'copilot--on-doc-change 'local)
+  (remove-hook 'after-change-functions #'copilot--on-doc-change 'local)
+  (remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
+  (remove-hook 'window-buffer-change-functions #'copilot--on-doc-focus 'local)
+  (remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)
+  ;; Send the close event for the active buffer since activating the mode will open it again.
+  (copilot--on-doc-close))
+
+;;;###autoload
+(define-minor-mode copilot-mode
+  "Minor mode for Copilot."
+  :init-value nil
+  :lighter " Copilot"
+  (copilot-clear-overlay)
+  (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
+  (if copilot-mode
+      (copilot--mode-enter)
+    (copilot--mode-exit)))
+
+(defun copilot-turn-on-unless-buffer-read-only ()
+  "Turn on `copilot-mode' if the buffer is writable."
+  (unless buffer-read-only
+    (copilot-mode 1)))
+
+;;;###autoload
+(define-global-minor-mode global-copilot-mode
+  copilot-mode copilot-turn-on-unless-buffer-read-only)
 
 ;;
 ;; agent
@@ -531,7 +622,7 @@ automatically, browse to %s." user-code verification-uri))
                     "  :END:\n"
                     "#+BEGIN_SRC " copilot--panel-lang "\n"
                     completion-text "\n#+END_SRC\n\n")
-            (mark-whole-buffer)
+            (call-interactively #'mark-whole-buffer)
             (org-sort-entries nil ?R nil nil "SCORE"))))))
   (when (eql method 'PanelSolutionsDone)
     (message "Copilot: Finish synthesizing solutions.")
@@ -586,6 +677,14 @@ To work around posn problems with after-string property.")
 
 (defconst copilot-completion-map (make-sparse-keymap)
   "Keymap for Copilot completion overlay.")
+
+(defun copilot--posn-advice (&rest args)
+  "Remap posn if in copilot-mode."
+  (when copilot-mode
+    (let ((pos (or (car-safe args) (point))))
+      (when (and copilot--real-posn
+                 (eq pos (car copilot--real-posn)))
+        (cdr copilot--real-posn)))))
 
 (defun copilot--get-or-create-keymap-overlay ()
   "Make or return the local copilot--keymap-overlay."
@@ -847,63 +946,6 @@ Copilot will show completions only if all predicates return t."
   "Return t if all display predicates are satisfied."
   (copilot--satisfy-predicates copilot-enable-display-predicates copilot-disable-display-predicates))
 
-(defvar copilot-mode-map (make-sparse-keymap)
-  "Keymap for Copilot minor mode.
-Use this for custom bindings in `copilot-mode'.")
-
-(defun copilot--mode-enter ()
-  "Set up copilot mode when entering."
-  (add-hook 'post-command-hook #'copilot--post-command nil 'local)
-  (add-hook 'before-change-functions #'copilot--on-doc-change nil 'local)
-  (add-hook 'after-change-functions #'copilot--on-doc-change nil 'local)
-  ;; Hook onto both window-selection-change-functions and window-buffer-change-functions
-  ;; since both are separate ways of 'focussing' a buffer.
-  (add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
-  (add-hook 'window-buffer-change-functions #'copilot--on-doc-focus nil 'local)
-  (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local)
-  ;; The mode may be activated manually while focus remains on the current window/buffer.
-  (copilot--on-doc-focus (selected-window)))
-
-(defun copilot--mode-exit ()
-  "Clean up copilot mode when exiting."
-  (remove-hook 'post-command-hook #'copilot--post-command 'local)
-  (remove-hook 'before-change-functions #'copilot--on-doc-change 'local)
-  (remove-hook 'after-change-functions #'copilot--on-doc-change 'local)
-  (remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
-  (remove-hook 'window-buffer-change-functions #'copilot--on-doc-focus 'local)
-  (remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)
-  ;; Send the close event for the active buffer since activating the mode will open it again.
-  (copilot--on-doc-close))
-
-;;;###autoload
-(define-minor-mode copilot-mode
-  "Minor mode for Copilot."
-  :init-value nil
-  :lighter " Copilot"
-  (copilot-clear-overlay)
-  (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
-  (if copilot-mode
-      (copilot--mode-enter)
-    (copilot--mode-exit)))
-
-(defun copilot--posn-advice (&rest args)
-  "Remap posn if in copilot-mode."
-  (when copilot-mode
-    (let ((pos (or (car-safe args) (point))))
-      (when (and copilot--real-posn
-                 (eq pos (car copilot--real-posn)))
-        (cdr copilot--real-posn)))))
-
-
-;;;###autoload
-(define-global-minor-mode global-copilot-mode
-  copilot-mode copilot-turn-on-unless-buffer-read-only)
-
-(defun copilot-turn-on-unless-buffer-read-only ()
-  "Turn on `copilot-mode' if the buffer is writable."
-  (unless buffer-read-only
-    (copilot-mode 1)))
-
 (defun copilot--post-command ()
   "Complete in `post-command-hook' hook."
   (when (and this-command
@@ -970,31 +1012,29 @@ command that triggered `post-command-hook'."
 ;; function for more information.
 (defun copilot-async-start-process (callback error-callback &rest command)
   "Start async process COMMAND with CALLBACK and ERROR-CALLBACK."
-  (let ((name (cl-first command)))
-    (with-current-buffer
-        (compilation-start
-         (mapconcat
-          #'shell-quote-argument
-          (-filter
-           (lambda (cmd)
-             (not (null cmd)))
-           command) " ")
-         t
-         (lambda (&rest _)
-           (generate-new-buffer-name "*copilot-install-server*")))
-      (view-mode +1)
-      (add-hook
-       'compilation-finish-functions
-       (lambda (_buf status)
-         (if (string= "finished\n" status)
-             (when callback
-               (condition-case err
-                   (funcall callback)
-                 (error
-                  (funcall error-callback (error-message-string err)))))
-           (when error-callback
-             (funcall error-callback (s-trim-right status)))))
-       nil t))))
+  (with-current-buffer
+      (compilation-start
+       (mapconcat
+        #'shell-quote-argument
+        (-filter (lambda (cmd) (not (null cmd)))
+                 command)
+        " ")
+       t
+       (lambda (&rest _)
+         (generate-new-buffer-name "*copilot-install-server*")))
+    (view-mode +1)
+    (add-hook
+     'compilation-finish-functions
+     (lambda (_buf status)
+       (if (string= "finished\n" status)
+           (when callback
+             (condition-case err
+                 (funcall callback)
+               (error
+                (funcall error-callback (error-message-string err)))))
+         (when error-callback
+           (funcall error-callback (s-trim-right status)))))
+     nil t)))
 
 ;;;###autoload
 (defun copilot-install-server ()

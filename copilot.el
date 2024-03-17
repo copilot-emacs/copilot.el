@@ -177,8 +177,8 @@ You may adjust this variable at your own risk."
 
 (declare-function vterm-delete-region "ext:vterm.el")
 (declare-function vterm-insert "ext:vterm.el")
-(declare-function org-sort-entries "ext:vterm.el")
-(declare-function org-entry-get "ext:vterm.el")
+(declare-function org-sort-entries "ext:org.el")
+(declare-function org-entry-get "ext:org.el")
 (declare-function org-map-entries "ext:org.el")
 
 ;;

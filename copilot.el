@@ -179,7 +179,7 @@ You may adjust this variable at your own risk."
 (declare-function vterm-insert "ext:vterm.el")
 (declare-function org-sort-entries "ext:vterm.el")
 (declare-function org-entry-get "ext:vterm.el")
-(declare-function org-map-entries "ext:vterm.el")
+(declare-function org-map-entries "ext:org.el")
 
 ;;
 ;; Entry

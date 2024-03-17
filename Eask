@@ -3,7 +3,7 @@
          "An unofficial Copilot plugin for Emacs")
 
 (website-url "https://github.com/copilot-emacs/copilot.el")
-(keywords "")
+(keywords "convenience" "copilot")
 
 (package-file "copilot.el")
 

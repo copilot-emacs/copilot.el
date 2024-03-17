@@ -69,7 +69,11 @@
   "Buffer for debugging copilot-balancer.")
 
 (defmacro copilot-balancer-to-plist (&rest vars)
-  `(list ,@(mapcan (lambda (var) (list (intern (concat ":" (symbol-name var))) var)) vars)))
+  "Convert VARS to plist."
+  `(list ,@(mapcan
+            (lambda (var)
+              (list (intern (concat ":" (symbol-name var))) var))
+            vars)))
 
 (defun copilot-balancer--debug (args)
   (let* ((start (plist-get args :start))

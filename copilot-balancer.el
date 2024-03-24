@@ -39,7 +39,7 @@
                                        lisp-interaction-mode
                                        scheme-mode
                                        clojure-mode)
-  "List of lisp modes to balance.")
+  "List of Lisp modes to balance.")
 
 (defvar copilot-balancer-lisp-pairs
   (let ((h (make-hash-table :test 'equal :size 7)))
@@ -54,7 +54,7 @@
     (puthash ?\N{QUOTATION MARK} ?\N{QUOTATION MARK} h)
 
     h)
-  "Hash table of lisp pairs to balance.")
+  "Hash table of Lisp pairs to balance.")
 
 (defvar copilot-balancer-closing-lisp-pairs
   (let ((h (make-hash-table :test 'equal :size 4)))
@@ -63,7 +63,7 @@
     (puthash ?\] t h)
     (puthash ?\N{QUOTATION MARK} t h)
     h)
-  "Hash table of closing lisp pairs, such as right parenthese, etc.")
+  "Hash table of closing Lisp pairs, such as right parenthese, etc.")
 
 (defvar copilot-balancer-debug-buffer (get-buffer-create " *copilot-balancer*")
   "Buffer for debugging copilot-balancer.")
@@ -76,6 +76,7 @@
             vars)))
 
 (defun copilot-balancer--debug (args)
+  "Debug ARGS."
   (let* ((start (plist-get args :start))
          (end (plist-get args :end))
          (deleted-text (plist-get args :deleted-text))
@@ -127,13 +128,14 @@
       nil)))
 
 (defun copilot-balancer-remove-last (lst)
+  "Remove last item from LST."
   (if (not (cdr lst))
       nil
     (cons (car lst) (copilot-balancer-remove-last (cdr lst)))))
 
 (defun copilot-balancer-extract-pairs (s)
-  "Extract a list of pair characters from string s
-like parentheses, braces, brackets, or double quotes.
+  "Extract a list of pair characters from string S.
+Like parentheses, braces, brackets, or double quotes.
 
 Note that pairs in the middle of strings are included, so take care."
   (let* ((pairs '())
@@ -151,7 +153,7 @@ Note that pairs in the middle of strings are included, so take care."
     (nreverse pairs)))
 
 (defun copilot-balancer-trim-closing-pairs-at-end (s)
-  "Trim closing pairs from string s starting from the end.
+  "Trim closing pairs from string S starting from the end.
 Stops when a non-close-pair character is found."
   (let* ((n (length s))
          (i (1- n))
@@ -168,9 +170,10 @@ Stops when a non-close-pair character is found."
     (substring s 0 (1+ i))))
 
 (defun copilot-balancer-collapse-matching-pairs (pairs in-string)
-  "Collapse matching pairs in list pairs.
+  "Collapse matching PAIRS in list pairs.
 
-Special care has to be taken to ignore pairs in the middle of strings."
+Special care has to be taken to ignore pairs in the middle
+of strings (IN-STRING)."
   (let ((filtered-pairs '()))
     ;; delete pairs in strings
     (dolist (x pairs)
@@ -185,7 +188,7 @@ Special care has to be taken to ignore pairs in the middle of strings."
       (dolist (x filtered-pairs)
         (let ((y (gethash x copilot-balancer-lisp-pairs)))
           (cond
-           ((and (not (null collapsed-pairs))
+           ((and collapsed-pairs
                  (eq (car collapsed-pairs) y))
             (setq collapsed-pairs (cdr collapsed-pairs)))
            (t
@@ -193,24 +196,28 @@ Special care has to be taken to ignore pairs in the middle of strings."
       (cons (nreverse collapsed-pairs) in-string))))
 
 (defun copilot-balancer-get-other-pair (c)
+  "Get other pair by key C."
   (gethash c copilot-balancer-lisp-pairs))
 
 (defun copilot-balancer-trim-common-prefix (list1 list2)
+  "Trim common prefix from LIST1 and LIST2."
   (if (and list1 list2 (equal (car list1) (car list2)))
       (copilot-balancer-trim-common-prefix (cdr list1) (cdr list2))
     (cons list1 list2)))
 
 (defvar copilot-balancer-top-level-form-start-regexp
   (rx line-start (or (literal "(") (literal "[") (literal "{")))
-  "Regexp for the start of a top level form. Assumes cursor is at the start
-of a line.")
+  "Regexp for the start of a top level form.
+Assumes cursor is at the start of a line.")
 
 (defvar copilot-balancer-form-end-regexp
   (rx (or (literal "}") (literal "]") (literal ")")) line-end)
-  "Regexp for the end of a form. Assumes cursor is at the last character of
-the line (not the actual newline character).")
+  "Regexp for the end of a form.
+Assumes cursor is at the last character of the line (not the actual newline
+character).")
 
 (defun copilot-balancer-get-top-level-form-beginning-to-point (x)
+  "Get top level beginning point by X."
   (save-excursion
     (save-restriction
       (widen)
@@ -223,6 +230,7 @@ the line (not the actual newline character).")
       (buffer-substring-no-properties (point) x))))
 
 (defun copilot-balancer-get-point-to-top-level-form-end (x)
+  "Get point to top level by X."
   (save-excursion
     (save-restriction
       (widen)
@@ -234,7 +242,7 @@ the line (not the actual newline character).")
         (forward-line 1)
         (beginning-of-line)
         (while (and (not (funcall on-last-line?))
-                    (< (point) (point-max))
+                    (not (eobp))
                     (not (looking-at-p copilot-balancer-top-level-form-start-regexp)))
           (forward-line 1)
           (beginning-of-line))
@@ -246,7 +254,7 @@ the line (not the actual newline character).")
           (unless (bolp) (backward-char))
           (while (and (< 1 (line-number-at-pos (point)))
                       (< 1 (point))
-                      (< (point) (point-max))
+                      (not (eobp))
                       (not (looking-at-p copilot-balancer-form-end-regexp)))
             (forward-line -1)
             (end-of-line)
@@ -256,6 +264,7 @@ the line (not the actual newline character).")
         (buffer-substring-no-properties x (point))))))
 
 (defun copilot-balancer-see-string-end-p (p point-upper-bound)
+  "Look for the string at the end between P and POINT-UPPER-BOUND."
   (save-excursion
     (save-restriction
       (widen)
@@ -263,7 +272,7 @@ the line (not the actual newline character).")
       (let ((flag t)
             (ret nil))
         (while (and flag
-                    (< (point) (point-max))
+                    (not (eobp))
                     (<= (point) point-upper-bound)) ; is it with or without equals?
           (let ((c (char-after)))
             (cond
@@ -278,6 +287,7 @@ the line (not the actual newline character).")
         ret))))
 
 (defun copilot-balancer-odd-dquote-count-p (s)
+  "Odd dquote count from S."
   (let ((n (length s))
         (i 0)
         (count 0))
@@ -292,6 +302,7 @@ the line (not the actual newline character).")
     (cl-oddp count)))
 
 (defun copilot-balancer--fix-lisp (start end completion)
+  "Fix Lisp from START to END with COMPLETION."
   (pcase-let*
       ((prefix (copilot-balancer-get-top-level-form-beginning-to-point start))
        (prefix-pairs (copilot-balancer-extract-pairs prefix))
@@ -356,6 +367,7 @@ the line (not the actual newline character).")
     (list start end new-completion)))
 
 (defun copilot-balancer-fix-completion (start end completion)
+  "Fix COMPLETION from START to END."
   (let* ()
     (cond
      ((apply #'derived-mode-p copilot-balancer-lisp-modes)

@@ -105,8 +105,10 @@ performance."
   :type '(repeat function))
 
 (defcustom copilot-indent-offset-warning-disable nil
-  "Disable warning when copilot--infer-indentation-offset cannot find
-indentation offset."
+  "Disable indentation warnings.
+
+Warning occurs when the function `copilot--infer-indentation-offset' cannot
+find indentation offset."
   :group 'copilot
   :type 'boolean)
 
@@ -162,7 +164,8 @@ You may adjust this variable at your own risk."
 (defvar-local copilot--last-doc-version 0
   "The document version of the last completion.")
 (defvar-local copilot--doc-version 0
-  "The document version of the current buffer. Incremented after each change.")
+  "The document version of the current buffer.
+Incremented after each change.")
 
 (defun copilot--buffer-changed ()
   "Return non-nil if the buffer has changed since last completion."
@@ -261,7 +264,11 @@ Use this for custom bindings in `copilot-mode'.")
      (jsonrpc-notify copilot--connection ,@args)))
 
 (cl-defmacro copilot--async-request (method params &rest args &key (success-fn #'copilot--ignore-response) &allow-other-keys)
-  "Send an asynchronous request to the copilot agent."
+  "Send an asynchronous request to the copilot agent.
+
+Arguments METHOD, PARAMS and ARGS are used in function `jsonrpc-async-request'.
+
+SUCCESS-FN is the CALLBACK."
   `(progn
      (unless (copilot--connection-alivep)
        (copilot--start-agent))
@@ -679,7 +686,7 @@ To work around posn problems with after-string property.")
   "Keymap for Copilot completion overlay.")
 
 (defun copilot--posn-advice (&rest args)
-  "Remap posn if in copilot-mode."
+  "Remap posn if in copilot-mode with ARGS."
   (when copilot-mode
     (let ((pos (or (car-safe args) (point))))
       (when (and copilot--real-posn
@@ -737,8 +744,8 @@ To work around posn problems with after-string property.")
 (defun copilot--display-overlay-completion (completion uuid start end)
   "Show COMPLETION with UUID between START and END.
 
-(save-excursion) is not necessary since there is only one caller, and they are
-already saving an excursion. This is also a private function."
+`save-excursion' is not necessary since there is only one caller, and they are
+already saving an excursion.  This is also a private function."
   (copilot-clear-overlay)
   (when (and (s-present-p completion)
              (or (= start (point))      ; up-to-date completion
@@ -752,7 +759,8 @@ already saving an excursion. This is also a private function."
       (copilot--async-request 'notifyShown (list :uuid uuid)))))
 
 (defun copilot-clear-overlay (&optional is-accepted)
-  "Clear Copilot overlay. If IS-ACCEPTED is nil, notify rejected."
+  "Clear Copilot overlay.
+If IS-ACCEPTED is nil, notify rejected."
   (interactive)
   (when (copilot--overlay-visible)
     (unless is-accepted
@@ -763,8 +771,9 @@ already saving an excursion. This is also a private function."
     (setq copilot--real-posn nil)))
 
 (defun copilot-accept-completion (&optional transform-fn)
-  "Accept completion. Return t if there is a completion.
-Use TRANSFORM-FN to transform completion if provided."
+  "Accept completion.
+Return t if there is a completion.  Use TRANSFORM-FN to transform completion if
+provided."
   (interactive)
   (when (copilot--overlay-visible)
     (let* ((completion (overlay-get copilot--overlay 'completion))
@@ -836,7 +845,7 @@ Use TRANSFORM-FN to transform completion if provided."
                 (copilot--display-overlay-completion balanced-text uuid start end)))))))))
 
 (defun copilot--on-doc-focus (window)
-  "Notify that the document has been focussed or opened."
+  "Notify that the document WINDOW has been focussed or opened."
   ;; When switching windows, this function is called twice, once for the
   ;; window losing focus and once for the window gaining focus. We only want to
   ;; send a notification for the window gaining focus and only if the buffer has
@@ -853,8 +862,10 @@ Use TRANSFORM-FN to transform completion if provided."
                                                  :text (copilot--get-source)))))))
 
 (defun copilot--on-doc-change (&optional beg end chars-replaced)
-  "Notify that the document has changed."
-  (let* ((is-before-change (eq chars-replaced nil))
+  "Notify that the document has changed.
+
+Arguments BEG, END, and CHARS-REPLACED are metadata for region changed."
+  (let* ((is-before-change (null chars-replaced))
          (is-after-change (not is-before-change))
          ;; for a deletion, the post-change beginning and end are at the same place.
          (is-insertion (and is-after-change (not (equal beg end))))
@@ -966,8 +977,8 @@ Copilot will show completions only if all predicates return t."
 
 (defun copilot--self-insert (command)
   "Handle the case where the char just inserted is the start of the completion.
-If so, update the overlays and continue. COMMAND is the
-command that triggered `post-command-hook'."
+If so, update the overlays and continue.  COMMAND is the command that triggered
+in `post-command-hook'."
   (when (and (eq command 'self-insert-command)
              (copilot--overlay-visible)
              (copilot--satisfy-display-predicates))
@@ -1016,8 +1027,7 @@ command that triggered `post-command-hook'."
       (compilation-start
        (mapconcat
         #'shell-quote-argument
-        (-filter (lambda (cmd) (not (null cmd)))
-                 command)
+        (-filter (lambda (cmd) cmd) command)
         " ")
        t
        (lambda (&rest _)

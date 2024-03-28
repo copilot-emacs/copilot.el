@@ -34,7 +34,7 @@ Add package definition to `~/.doom.d/packages.el`:
 
 ```elisp
 (package! copilot
-  :recipe (:host github :repo "copilot-emacs/copilot.el" :files ("*.el" "dist")))
+  :recipe (:host github :repo "copilot-emacs/copilot.el" :files ("*.el")))
 ```
 
 Configure copilot in `~/.doom.d/config.el`:
@@ -95,7 +95,7 @@ dotspacemacs-additional-packages
  '((copilot :location (recipe
                        :fetcher github
                        :repo "copilot-emacs/copilot.el"
-                       :files ("*.el" "dist"))))
+                       :files ("*.el"))))
 
 ;; ========================
 ;; dotspacemacs/user-config
@@ -130,7 +130,7 @@ dotspacemacs-additional-packages
   
 ```elisp
 (use-package copilot
-  :straight (:host github :repo "copilot-emacs/copilot.el" :files ("dist" "*.el"))
+  :straight (:host github :repo "copilot-emacs/copilot.el" :files ("*.el"))
   :ensure t)
 ;; you can utilize :map :hook and :config to customize copilot
 ```
@@ -142,7 +142,7 @@ dotspacemacs-additional-packages
   :quelpa (copilot :fetcher github
                    :repo "copilot-emacs/copilot.el"
                    :branch "main"
-                   :files ("dist" "*.el")))
+                   :files ("*.el")))
 ;; you can utilize :map :hook and :config to customize copilot
 ```
 

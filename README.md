@@ -20,9 +20,11 @@ Retired maintainer: [@zerolfx][].
 
 2. Setup `copilot.el` as described in the next section.
 
-3. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose` (`NotAuthorized` means you don't have a valid subscription).
+3. Install the copilot server by `M-x copilot-install-server`.
 
-4. Enjoy!
+4. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose` (`NotAuthorized` means you don't have a valid subscription).
+
+5. Enjoy!
 
 ## Configurations
 

@@ -126,18 +126,19 @@ dotspacemacs-additional-packages
 
 #### 1. Load `copilot.el`
 
-##### Option 1: Load via `straight.el` or `quelpa` (recommended)
+##### Option 1: Load via use-package (recommended)
 
-###### `straight.el`:
+###### Emacs 27-29:
+
+####### `straight.el`:
   
 ```elisp
 (use-package copilot
   :straight (:host github :repo "copilot-emacs/copilot.el" :files ("*.el"))
   :ensure t)
-;; you can utilize :map :hook and :config to customize copilot
 ```
   
-###### `quelpa` + `quelpa-use-package`:
+####### `quelpa` + `quelpa-use-package`:
   
 ```elisp
 (use-package copilot
@@ -145,10 +146,20 @@ dotspacemacs-additional-packages
                    :repo "copilot-emacs/copilot.el"
                    :branch "main"
                    :files ("*.el")))
-;; you can utilize :map :hook and :config to customize copilot
 ```
 
-##### Option 2: Load manually
+###### On Emacs version 30+:
+
+```elisp
+(use-package copilot
+  :vc (:url "https://github.com/copilot-emacs/copilot.el"
+            :rev :newest
+            :branch "main"))
+```
+
+Use `:map` `:hook` and `:config` to customize copilot via `use-package`
+
+##### Option 3: Load manually
 
 Please make sure you have these dependencies installed (available in ELPA/MELPA):
 

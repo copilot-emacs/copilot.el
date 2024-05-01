@@ -92,6 +92,10 @@ performance."
   :group 'copilot
   :type 'string)
 
+(defcustom copilot-server-args nil
+  "Additional arguments to pass to the Copilot server."
+  :group 'copilot
+  :type '(repeat string))
 
 (defcustom copilot-max-char 100000
   "Maximum number of characters to send to Copilot, -1 means no limit."
@@ -289,8 +293,10 @@ SUCCESS-FN is the CALLBACK."
                   :name "copilot"
                   :notification-dispatcher #'copilot--handle-notification
                   :process (make-process :name "copilot agent"
-                                         :command (list copilot-node-executable
-                                                        copilot--server-executable)
+                                         :command (append
+                                                   (list copilot-node-executable
+                                                         copilot--server-executable)
+                                                   copilot-server-args)
                                          :coding 'utf-8-emacs-unix
                                          :connection-type 'pipe
                                          :stderr (get-buffer-create "*copilot stderr*")

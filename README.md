@@ -130,7 +130,7 @@ dotspacemacs-additional-packages
 
 ###### Emacs 27-29:
 
-####### `straight.el`:
+`straight.el`:
   
 ```elisp
 (use-package copilot
@@ -138,7 +138,7 @@ dotspacemacs-additional-packages
   :ensure t)
 ```
   
-####### `quelpa` + `quelpa-use-package`:
+`quelpa` + `quelpa-use-package`:
   
 ```elisp
 (use-package copilot
@@ -157,7 +157,7 @@ dotspacemacs-additional-packages
             :branch "main"))
 ```
 
-Use `:map` `:hook` and `:config` to customize copilot via `use-package`
+Use `:map` `:hook` and `:config` to customize `copilot.el` via `use-package`.
 
 ##### Option 3: Load manually
 

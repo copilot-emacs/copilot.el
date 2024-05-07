@@ -102,7 +102,6 @@ performance."
   :group 'copilot
   :type 'integer)
 
-
 (defcustom copilot-clear-overlay-ignore-commands nil
   "List of commands that should not clear the overlay when called."
   :group 'copilot
@@ -140,7 +139,7 @@ find indentation offset."
 (defconst copilot--server-executable
   (if (eq system-type 'windows-nt)
       (f-join copilot-install-dir "node_modules" "copilot-node-server"
-              "bin" "copilot-node-server")
+              "copilot" "dist" "agent.js")
     (f-join copilot-install-dir "lib" "node_modules" "copilot-node-server"
             "copilot" "dist" "agent.js"))
   "The dist directory containing agent.js file.")

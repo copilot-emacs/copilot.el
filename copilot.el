@@ -116,6 +116,11 @@ find indentation offset."
   :group 'copilot
   :type 'boolean)
 
+(defcustom copilot-max-char-warning-disable nil
+  "Disable maximum characters warning."
+  :group 'copilot
+  :type 'boolean)
+
 (defcustom copilot-indentation-alist
   (append '((latex-mode tex-indent-basic)
             (nxml-mode nxml-child-indent)
@@ -510,7 +515,7 @@ automatically, browse to %s." user-code verification-uri))
          (pmax (point-max))
          (pmin (point-min))
          (half-window (/ copilot-max-char 2)))
-    (when (and (>= copilot-max-char 0) (> pmax copilot-max-char))
+    (when (and (>= copilot-max-char 0) (> pmax copilot-max-char) (not copilot-max-char-warning-disable))
       (display-warning '(copilot copilot-exceeds-max-char)
                        (format "%s size exceeds 'copilot-max-char' (%s), copilot completions may not work" (current-buffer) copilot-max-char)))
     (cond

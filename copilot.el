@@ -92,7 +92,7 @@ performance."
   :group 'copilot
   :type 'string)
 
-(defcustom copilot-server-args nil
+(defcustom copilot-server-args '("--stdio")
   "Additional arguments to pass to the Copilot server."
   :group 'copilot
   :type '(repeat string))
@@ -140,11 +140,12 @@ find indentation offset."
 (defconst copilot--server-executable
   (if (eq system-type 'windows-nt)
       (f-join copilot-install-dir "node_modules" "copilot-node-server"
-              "bin" "copilot-node-server")
-    (f-join copilot-install-dir "bin" "copilot-node-server"))
+              "copilot" "dist" "agent.js")
+    (f-join copilot-install-dir "lib" "node_modules" "copilot-node-server"
+			"copilot" "dist" "agent.js"))
   "The dist directory containing agent.js file.")
 
-(defcustom copilot-version "1.14.0"
+(defcustom copilot-version "1.27.0"
   "Copilot version.
 
 The default value is the preferred version and ensures functionality.

@@ -467,11 +467,19 @@ automatically, browse to %s." user-code verification-uri))
         (while (and (not (assq mode copilot-indentation-alist))
                     (setq mode (get mode 'derived-mode-parent))))
         (when mode
-          (cl-some (lambda (s)
-                     ;; s can be a symbol or a number.
-                     (cond ((numberp s) s)
-                           ((and (boundp s) (numberp (symbol-value s))) (symbol-value s))))
-                   (alist-get mode copilot-indentation-alist))))
+          (let ((indent-spec (alist-get mode copilot-indentation-alist)))
+            (cond
+             ((listp indent-spec)
+              (cl-some (lambda (s)
+                         (cond ((numberp s) s)
+                               ((and (boundp s) (numberp (symbol-value s)))
+                                (symbol-value s))))
+                       indent-spec))
+             ((functionp indent-spec) ; editorconfig 0.11.0+
+              (cl-some (lambda (pair)
+                         (when (numberp (cdr pair))
+                           (cdr pair)))
+                       (funcall indent-spec tab-width)))))))
       (progn
         (when (and
                (not copilot-indent-offset-warning-disable)

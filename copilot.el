@@ -468,11 +468,19 @@ automatically, browse to %s." user-code verification-uri))
         (while (and (not (assq mode copilot-indentation-alist))
                     (setq mode (get mode 'derived-mode-parent))))
         (when mode
-          (cl-some (lambda (s)
-                     ;; s can be a symbol or a number.
-                     (cond ((numberp s) s)
-                           ((and (boundp s) (numberp (symbol-value s))) (symbol-value s))))
-                   (alist-get mode copilot-indentation-alist))))
+          (let ((indent-spec (alist-get mode copilot-indentation-alist)))
+            (cond
+             ((listp indent-spec)
+              (cl-some (lambda (s)
+                         (cond ((numberp s) s)
+                               ((and (boundp s) (numberp (symbol-value s)))
+                                (symbol-value s))))
+                       indent-spec))
+             ((functionp indent-spec) ; editorconfig 0.11.0+
+              (cl-some (lambda (pair)
+                         (when (numberp (cdr pair))
+                           (cdr pair)))
+                       (funcall indent-spec tab-width)))))))
       (progn
         (when (and
                (not copilot-indent-offset-warning-disable)
@@ -879,19 +887,20 @@ Arguments BEG, END, and CHARS-REPLACED are metadata for region changed."
          (is-deletion (and is-before-change (not (equal beg end)))))
     (when (or is-insertion is-deletion)
       (save-restriction
-        (widen)
-        (let* ((range-start (list :line (- (line-number-at-pos beg) copilot--line-bias)
-                                  :character (- beg (save-excursion (goto-char beg) (line-beginning-position)))))
-               (range-end (if is-insertion range-start
-                            (list :line (- (line-number-at-pos end) copilot--line-bias)
-                                  :character (- end (save-excursion (goto-char end) (line-beginning-position))))))
-               (text (if is-insertion (buffer-substring-no-properties beg end) ""))
-               (content-changes (vector (list :range (list :start range-start :end range-end)
-                                              :text text))))
-          (cl-incf copilot--doc-version)
-          (copilot--notify 'textDocument/didChange
-                           (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
-                                 :contentChanges content-changes)))))))
+        (save-match-data
+          (widen)
+          (let* ((range-start (list :line (- (line-number-at-pos beg) copilot--line-bias)
+                                    :character (- beg (save-excursion (goto-char beg) (line-beginning-position)))))
+                 (range-end (if is-insertion range-start
+                              (list :line (- (line-number-at-pos end) copilot--line-bias)
+                                    :character (- end (save-excursion (goto-char end) (line-beginning-position))))))
+                 (text (if is-insertion (buffer-substring-no-properties beg end) ""))
+                 (content-changes (vector (list :range (list :start range-start :end range-end)
+                                                :text text))))
+            (cl-incf copilot--doc-version)
+            (copilot--notify 'textDocument/didChange
+                             (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
+                                   :contentChanges content-changes))))))))
 
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."

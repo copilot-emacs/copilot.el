@@ -281,8 +281,9 @@ SUCCESS-FN is the CALLBACK."
        (jsonrpc-async-request copilot--connection
                               ,method ,params
                               :success-fn (lambda (result)
-                                            (with-current-buffer buf
-                                              (funcall ,success-fn result)))
+                                            (if (buffer-live-p buf)
+                                                (with-current-buffer buf
+                                                  (funcall ,success-fn result))))
                               ,@args))))
 
 (defun copilot--make-connection ()

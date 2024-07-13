@@ -609,7 +609,7 @@ automatically, browse to %s." user-code verification-uri))
                    (copilot--show-completion completion))))))))
 
 (defsubst copilot--overlay-visible ()
-  "Return whether the `copilot--overlay' is avaiable."
+  "Return whether the `copilot--overlay' is available."
   (and (overlayp copilot--overlay)
        (overlay-buffer copilot--overlay)))
 

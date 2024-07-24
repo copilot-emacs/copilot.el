@@ -117,7 +117,9 @@ find indentation offset."
   :type 'boolean)
 
 (defcustom copilot-indentation-alist
-  (append '((latex-mode tex-indent-basic)
+  (append '((emacs-lisp-mode lisp-indent-offset)
+            (latex-mode tex-indent-basic)
+            (lisp-mode lisp-indent-offset)
             (nxml-mode nxml-child-indent)
             (python-mode python-indent py-indent-offset python-indent-offset)
             (python-ts-mode python-indent py-indent-offset python-indent-offset)
@@ -477,10 +479,8 @@ automatically, browse to %s." user-code verification-uri))
                                 (symbol-value s))))
                        indent-spec))
              ((functionp indent-spec) ; editorconfig 0.11.0+
-              (cl-some (lambda (pair)
-                         (when (numberp (cdr pair))
-                           (cdr pair)))
-                       (funcall indent-spec tab-width)))))))
+              ;; This points to a setter, which do not call
+              nil)))))
       (progn
         (when (and
                (not copilot-indent-offset-warning-disable)

@@ -139,12 +139,7 @@ find indentation offset."
   :type 'directory
   :group 'copilot)
 
-(defconst copilot--server-executable
-  (if (eq system-type 'windows-nt)
-      (f-join copilot-install-dir "node_modules" "copilot-node-server"
-              "copilot" "dist" "agent.js")
-    (f-join copilot-install-dir "lib" "node_modules" "copilot-node-server"
-			"copilot" "dist" "agent.js"))
+(defvar copilot--server-executable nil
   "The dist directory containing agent.js file.")
 
 (defcustom copilot-version "1.27.0"
@@ -299,7 +294,7 @@ SUCCESS-FN is the CALLBACK."
                   :process (make-process :name "copilot agent"
                                          :command (append
                                                    (list copilot-node-executable
-                                                         copilot--server-executable)
+                                                         (copilot-server-executable))
                                                    copilot-server-args)
                                          :coding 'utf-8-emacs-unix
                                          :connection-type 'pipe
@@ -1035,6 +1030,26 @@ in `post-command-hook'."
              (when (re-search-forward "\"version\": \"\\([0-9]+\\.[0-9]+\\.[0-9]+\\)\"" nil t)
                (match-string 1))))))
      possible-paths)))
+
+(defun copilot-server-executable ()
+  "Return the location of the agent.js file."
+  (if copilot--server-executable
+      copilot--server-executable
+    (setq copilot--server-executable
+          (let ((possible-paths
+                 (list
+                  (when (eq system-type 'windows-nt)
+                    (f-join copilot-install-dir "node_modules"
+                            "copilot-node-server" "copilot" "dist" "agent.js"))
+                  (f-join copilot-install-dir "lib" "node_modules"
+                          "copilot-node-server" "copilot" "dist" "agent.js")
+                  (f-join copilot-install-dir "lib64" "node_modules"
+                          "copilot-node-server" "copilot" "dist" "agent.js"))))
+            (seq-some
+             (lambda (path)
+               (when (and path (file-exists-p path))
+                 path))
+             possible-paths)))))
 
 ;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
 ;; function for more information.

@@ -31,6 +31,9 @@ jobs:
         - os: macos-latest
           emacs-version: snapshot
           experimental: true
+        exclude:
+          - os: macos-latest
+            emacs-version: 27.2
 
     steps:
     - uses: actions/checkout@v4

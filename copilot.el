@@ -484,7 +484,7 @@ automatically, browse to %s." user-code verification-uri))
           (display-warning '(copilot copilot-no-mode-indent)
                            "copilot--infer-indentation-offset found no mode-specific indentation offset.")
           (setq-local copilot--indent-warning-printed-p t))
-        tab-width)))
+        standard-indent)))
 
 (defun copilot--get-relative-path ()
   "Get relative path to current buffer."
@@ -562,7 +562,7 @@ automatically, browse to %s." user-code verification-uri))
   (save-restriction
     (widen)
     (list :version copilot--doc-version
-          :tabSize (copilot--infer-indentation-offset)
+          :tabSize tab-width
           :indentSize (copilot--infer-indentation-offset)
           :insertSpaces (if indent-tabs-mode :json-false t)
           :path (buffer-file-name)

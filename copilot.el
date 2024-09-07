@@ -142,7 +142,7 @@ find indentation offset."
 (defvar copilot--server-executable nil
   "The dist directory containing agent.js file.")
 
-(defcustom copilot-version "1.27.0"
+(defcustom copilot-version "1.40.0"
   "Copilot version.
 
 The default value is the preferred version and ensures functionality.
@@ -329,6 +329,7 @@ Please upgrade the server via `M-x copilot-reinstall-server`"))
              (setq copilot--connection (copilot--make-connection))
              (message "Copilot agent started.")
              (copilot--request 'initialize '(:capabilities (:workspace (:workspaceFolders t))))
+             (copilot--notify 'initialized '())
              (copilot--async-request 'setEditorInfo
                                      `(:editorInfo (:name "Emacs" :version ,emacs-version)
                                                    :editorPluginInfo (:name "copilot.el" :version ,copilot-version)

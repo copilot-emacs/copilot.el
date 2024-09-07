@@ -290,6 +290,7 @@ SUCCESS-FN is the CALLBACK."
                   #'make-instance
                   'jsonrpc-process-connection
                   :name "copilot"
+                  :request-dispatcher #'copilot--handle-request
                   :notification-dispatcher #'copilot--handle-notification
                   :process (make-process :name "copilot agent"
                                          :command (append
@@ -624,31 +625,76 @@ automatically, browse to %s." user-code verification-uri))
 (defvar copilot--panel-lang nil
   "Language of current panel solutions.")
 
+(defvar copilot--request-handlers (make-hash-table :test 'equal)
+  "Hash table storing request handlers.")
+
+(defun copilot-on-request (method handler)
+  "Register HANDLER to be called when a request of type METHOD is received.
+Each METHOD can have only one HANDLER."
+  (puthash method handler copilot--request-handlers))
+
+(defun copilot--handle-request (_ method msg)
+  "Handle MSG of type METHOD by calling the appropriate registered handler."
+  (let ((handler (gethash method copilot--request-handlers)))
+    (when handler
+      (funcall handler msg))))
+
+(defvar copilot--notification-handlers (make-hash-table :test 'equal)
+  "Hash table storing lists of notification handlers.")
+
+(defun copilot-on-notification (method handler)
+  "Register HANDLER to be called when a notification of type METHOD is received."
+  (let ((handlers (gethash method copilot--notification-handlers '())))
+    (puthash method (cons handler handlers) copilot--notification-handlers)))
+
 (defun copilot--handle-notification (_ method msg)
-  "Handle MSG of type METHOD."
-  (when (eql method 'PanelSolution)
-    (copilot--dbind (:completionText completion-text :score completion-score) msg
-      (with-current-buffer "*copilot-panel*"
-        (unless (member (secure-hash 'sha256 completion-text)
-                        (org-map-entries (lambda () (org-entry-get nil "SHA"))))
-          (save-excursion
-            (goto-char (point-max))
-            (insert "* Solution\n"
-                    "  :PROPERTIES:\n"
-                    "  :SCORE: " (number-to-string completion-score) "\n"
-                    "  :SHA: " (secure-hash 'sha256 completion-text) "\n"
-                    "  :END:\n"
-                    "#+BEGIN_SRC " copilot--panel-lang "\n"
-                    completion-text "\n#+END_SRC\n\n")
-            (call-interactively #'mark-whole-buffer)
-            (org-sort-entries nil ?R nil nil "SCORE"))))))
-  (when (eql method 'PanelSolutionsDone)
-    (message "Copilot: Finish synthesizing solutions.")
-    (display-buffer "*copilot-panel*")
-    (with-current-buffer "*copilot-panel*"
-      (save-excursion
-        (goto-char (point-max))
-        (insert "End of solutions.\n")))))
+  "Handle MSG of type METHOD by calling all appropriate registered handlers."
+  (let ((handlers (gethash method copilot--notification-handlers '())))
+    (dolist (handler handlers)
+      (funcall handler msg))))
+
+(copilot-on-notification
+ 'window/logMessage
+ (lambda (msg)
+   (copilot--dbind (:type log-level :message log-msg) msg
+     (with-current-buffer (get-buffer-create "*copilot agent log*")
+       (save-excursion
+         (goto-char (point-max))
+         (insert (propertize (concat log-msg "\n")
+                             'face (pcase log-level
+                                     (4 '(:foreground "gray"))
+                                     (3 '(:foreground "green"))
+                                     (2 '(:foreground "yellow"))
+                                     (1 '(:foreground "red"))))))))))
+
+(copilot-on-notification
+ 'PanelSolution
+ (lambda (msg)
+   (copilot--dbind (:completionText completion-text :score completion-score) msg
+     (with-current-buffer "*copilot-panel*"
+       (unless (member (secure-hash 'sha256 completion-text)
+                       (org-map-entries (lambda () (org-entry-get nil "SHA"))))
+         (save-excursion
+           (goto-char (point-max))
+           (insert "* Solution\n"
+                   "  :PROPERTIES:\n"
+                   "  :SCORE: " (number-to-string completion-score) "\n"
+                   "  :SHA: " (secure-hash 'sha256 completion-text) "\n"
+                   "  :END:\n"
+                   "#+BEGIN_SRC " copilot--panel-lang "\n"
+                   completion-text "\n#+END_SRC\n\n")
+           (call-interactively #'mark-whole-buffer)
+           (org-sort-entries nil ?R nil nil "SCORE")))))))
+
+(copilot-on-notification
+ 'PanelSolutionsDone
+ (lambda (_msg)
+   (message "Copilot: Finish synthesizing solutions.")
+   (display-buffer "*copilot-panel*")
+   (with-current-buffer "*copilot-panel*"
+     (save-excursion
+       (goto-char (point-max))
+       (insert "End of solutions.\n")))))
 
 (defun copilot--get-panel-completions (callback)
   "Get panel completions with CALLBACK."

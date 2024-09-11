@@ -84,11 +84,11 @@ If you would love to configure indentation here, this is an example config that 
               ("C-p" . 'copilot-previous-completion))
 
   :config
-  (add-to-list 'copilot-indentation-alist '(prog-mode . 2))
-  (add-to-list 'copilot-indentation-alist '(org-mode . 2))
-  (add-to-list 'copilot-indentation-alist '(text-mode . 2))
-  (add-to-list 'copilot-indentation-alist '(closure-mode . 2))
-  (add-to-list 'copilot-indentation-alist '(emacs-lisp-mode . 2)))
+  (add-to-list 'copilot-indentation-alist '(prog-mode 2))
+  (add-to-list 'copilot-indentation-alist '(org-mode 2))
+  (add-to-list 'copilot-indentation-alist '(text-mode 2))
+  (add-to-list 'copilot-indentation-alist '(closure-mode 2))
+  (add-to-list 'copilot-indentation-alist '(emacs-lisp-mode 2)))
 ```
 
 </details>

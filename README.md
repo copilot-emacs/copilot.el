@@ -1,3 +1,5 @@
+[![JCS-ELPA](https://raw.githubusercontent.com/jcs-emacs/badges/master/elpa/v/copilot.svg)](https://jcs-emacs.github.io/jcs-elpa/#/copilot)
+
 # Copilot.el
 
 Copilot.el is an Emacs plugin for GitHub Copilot.

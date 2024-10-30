@@ -1032,24 +1032,23 @@ in `post-command-hook'."
      possible-paths)))
 
 (defun copilot-server-executable ()
-  "Return the location of the agent.js file."
+  "Return the location of the agent.js or language-server.js file."
   (if copilot--server-executable
-      copilot--server-executable
-    (setq copilot--server-executable
-          (let ((possible-paths
-                 (list
-                  (when (eq system-type 'windows-nt)
-                    (f-join copilot-install-dir "node_modules"
-                            "copilot-node-server" "copilot" "dist" "agent.js"))
-                  (f-join copilot-install-dir "lib" "node_modules"
-                          "copilot-node-server" "copilot" "dist" "agent.js")
-                  (f-join copilot-install-dir "lib64" "node_modules"
-                          "copilot-node-server" "copilot" "dist" "agent.js"))))
-            (seq-some
-             (lambda (path)
-               (when (and path (file-exists-p path))
-                 path))
-             possible-paths)))))
+	copilot--server-executable
+	(setq copilot--server-executable
+	  (let* ((base-paths '("" "lib" "lib64"))
+			  (file-names '("language-server.js" "agent.js"))
+			  (node-modules-path (lambda (base)
+								   (f-join copilot-install-dir base "node_modules" "copilot-node-server" "copilot" "dist")))
+			  (possible-paths
+				(mapcan (lambda (base)
+						  (mapcar (lambda (file) (f-join (funcall node-modules-path base) file))
+							file-names))
+				  base-paths)))
+		(seq-some (lambda (path)
+					(when (and path (file-exists-p path))
+					  path))
+		  possible-paths)))))
 
 ;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
 ;; function for more information.

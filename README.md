@@ -337,6 +337,11 @@ These projects helped me a lot:
 + https://github.com/cryptobadger/flight-attendant.el
 + https://github.com/github/copilot.vim
 
+## If you want chat with github copilot?
+
+Just like copilot plugin for intellij or vscode?
+
+Please take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el) 
 
 <!-- Links -->
 

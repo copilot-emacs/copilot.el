@@ -116,6 +116,11 @@ find indentation offset."
   :group 'copilot
   :type 'boolean)
 
+(defcustom copilot-max-char-warning-disable nil
+  "When non-nil, disable warning about buffer size exceeding `copilot-max-char'."
+  :group 'copilot 
+  :type 'boolean)
+
 (defcustom copilot-indentation-alist
   (append '((emacs-lisp-mode lisp-indent-offset)
             (latex-mode tex-indent-basic)
@@ -515,9 +520,13 @@ automatically, browse to %s." user-code verification-uri))
          (pmax (point-max))
          (pmin (point-min))
          (half-window (/ copilot-max-char 2)))
-    (when (and (>= copilot-max-char 0) (> pmax copilot-max-char))
-      (display-warning '(copilot copilot-exceeds-max-char)
-                       (format "%s size exceeds 'copilot-max-char' (%s), copilot completions may not work" (current-buffer) copilot-max-char)))
+    (when (and (>= copilot-max-char 0) 
+               (> pmax copilot-max-char))
+      (let ((msg (format "%s size exceeds 'copilot-max-char' (%s), copilot completions may not work" 
+                         (current-buffer) copilot-max-char)))
+        (if copilot-max-char-warning-disable
+            (message msg)
+          (display-warning '(copilot copilot-exceeds-max-char) msg))))
     (cond
      ;; using whole buffer
      ((or (< copilot-max-char 0) (< pmax copilot-max-char))

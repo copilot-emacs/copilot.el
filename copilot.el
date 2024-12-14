@@ -1,4 +1,4 @@
-;;; copilot.el --- An unofficial Copilot plugin for Emacs  -*- lexical-binding: t; -*-
+;;; copilot.el --- An unofficial Copilot plugin -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2022-2024  copilot-emacs maintainers
 
@@ -794,7 +794,7 @@ provided."
            (t-completion (funcall (or transform-fn #'identity) completion)))
       (copilot--async-request 'notifyAccepted (list :uuid uuid))
       (copilot-clear-overlay t)
-      (if (eq major-mode 'vterm-mode)
+      (if (derived-mode-p 'vterm-mode)
           (progn
             (vterm-delete-region start end)
             (vterm-insert t-completion))

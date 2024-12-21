@@ -759,14 +759,12 @@ To work around posn problems with after-string property.")
 already saving an excursion.  This is also a private function."
   (copilot-clear-overlay)
   (when (and (s-present-p completion)
-             (or (= start (point))      ; up-to-date completion
-                 (and (< start (point)) ; special case for removing indentation
-                      (s-blank-p (s-trim (buffer-substring-no-properties start (point)))))))
-    (goto-char start)                   ; indentation
-    (let* ((ov (copilot--get-overlay)))
+             (or (<= start (point))))
+  (let* ((ov (copilot--get-overlay)))
       (overlay-put ov 'tail-length (- (line-end-position) end))
       (copilot--set-overlay-text ov completion)
       (overlay-put ov 'uuid uuid)
+      (overlay-put ov 'indent-start start) ; save "start" as it is corrected for any leading indentation
       (copilot--async-request 'notifyShown (list :uuid uuid)))))
 
 (defun copilot-clear-overlay (&optional is-accepted)
@@ -791,7 +789,9 @@ provided."
            (start (overlay-get copilot--overlay 'start))
            (end (copilot--overlay-end copilot--overlay))
            (uuid (overlay-get copilot--overlay 'uuid))
-           (t-completion (funcall (or transform-fn #'identity) completion)))
+           (t-completion (funcall (or transform-fn #'identity) completion))
+           (indent-start (overlay-get copilot--overlay 'indent-start)))
+    (goto-char indent-start) ; move to the start of the completion if there is an indent
       (copilot--async-request 'notifyAccepted (list :uuid uuid))
       (copilot-clear-overlay t)
       (if (derived-mode-p 'vterm-mode)

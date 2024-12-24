@@ -760,11 +760,11 @@ already saving an excursion.  This is also a private function."
   (copilot-clear-overlay)
   (when (and (s-present-p completion)
              (or (<= start (point))))
-  (let* ((ov (copilot--get-overlay)))
+    (let* ((ov (copilot--get-overlay)))
       (overlay-put ov 'tail-length (- (line-end-position) end))
       (copilot--set-overlay-text ov completion)
       (overlay-put ov 'uuid uuid)
-      (overlay-put ov 'indent-start start) ; save "start" as it is corrected for any leading indentation
+      (overlay-put ov 'completion-start start)
       (copilot--async-request 'notifyShown (list :uuid uuid)))))
 
 (defun copilot-clear-overlay (&optional is-accepted)
@@ -790,8 +790,18 @@ provided."
            (end (copilot--overlay-end copilot--overlay))
            (uuid (overlay-get copilot--overlay 'uuid))
            (t-completion (funcall (or transform-fn #'identity) completion))
-           (indent-start (overlay-get copilot--overlay 'indent-start)))
-    (goto-char indent-start) ; move to the start of the completion if there is an indent
+           (completion-start (overlay-get copilot--overlay 'completion-start)))
+      ;; If there is extra indentation before the point, delete it and shift the completion
+      (when (and (< completion-start (point))
+                 (s-blank-p (s-trim (buffer-substring-no-properties completion-start (point))))
+                 ;; Only remove indentation is completion-start is not at the beginning of the line
+                 (save-excursion
+                   (goto-char completion-start)
+                   (beginning-of-line)
+                   (not (= (point) completion-start))))
+        (setq start completion-start)
+        (setq end (- end (- (point) completion-start)))
+        (delete-region completion-start (point)))
       (copilot--async-request 'notifyAccepted (list :uuid uuid))
       (copilot-clear-overlay t)
       (if (derived-mode-p 'vterm-mode)

@@ -314,9 +314,10 @@ SUCCESS-FN is the CALLBACK."
    ((not (file-exists-p copilot-install-dir))
     (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
    (t
-    (unless (equal (copilot-installed-version) copilot-version)
-      (warn "Newer versions of the Copilot server are available for installation.
-Please upgrade the server via `M-x copilot-reinstall-server`"))
+    (let ((installed-version (copilot-installed-version)))
+      (unless (equal installed-version  copilot-version)
+        (warn "This package has been tested for Copilot server version %s but version %s has been detected.
+You can change the installed version with `M-x copilot-reinstall-server` or remove this warning by changing the value of `copilot-version'." copilot-version installed-version)))
     (let ((node-version (->> (with-output-to-string
                                (call-process copilot-node-executable nil standard-output nil "--version"))
                              (s-trim)

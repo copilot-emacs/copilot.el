@@ -296,6 +296,27 @@ For example:
 (setq copilot-network-proxy '(:host "127.0.0.1" :port 7890))
 ```
 
+### copilot-on-request
+Register a handler to be called when a request of type method is received. Return JSON serializable as result or calling `jsonrpc-error` for errors. [readmore](https://www.gnu.org/software/emacs/manual/html_node/elisp/JSONRPC-Overview.html)
+
+For example:
+```elisp
+; Display desktop notification if emacs is built with d-bus
+(copilot-on-request
+ 'window/showMessageRequest
+ (lambda (msg) (notifications-notify :title "Emacs Copilot" :body (plist-get msg :message))))
+```
+
+### copilot-on-notification
+Register a listener for copilot notifications.
+
+For example:
+```elisp
+(copilot-on-notification
+  'window/logMessage
+  (lambda (msg) (message (plist-get msg :message))
+```
+
 ## Known Issues
 
 ### Wrong Position of Other Completion Popups
@@ -319,7 +340,7 @@ But I decided to allow them to coexist, allowing you to choose a better one at a
 ## Reporting Bugs
 
 + Make sure you have restarted your Emacs (and rebuild the plugin if necessary) after updating the plugin.
-+ Please enable event logging by customize `copilot-log-max` (to e.g. 1000), then paste related logs in the `*copilot events*` and `*copilot stderr*` buffer.
++ Please enable event logging by customize `copilot-log-max` (to e.g. 1000) and enable debug log `(setq copilot-server-args '("--stdio" "--debug"))`, then paste related logs in the `*copilot events*`, `*copilot stderr*` and `*copilot agent log*` buffer.
 + If an exception is thrown, please also paste the stack trace (use `M-x toggle-debug-on-error` to enable stack trace).
 
 ## Roadmap

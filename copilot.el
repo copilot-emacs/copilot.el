@@ -157,12 +157,13 @@ find indentation offset."
 (defvar copilot--server-executable nil
   "The dist directory containing agent.js file.")
 
-(defcustom copilot-version "1.27.0"
+(defcustom copilot-version nil
   "Copilot version.
 
 The default value is the preferred version and ensures functionality.
 You may adjust this variable at your own risk."
-  :type 'string
+  :type '(choice (const :tag "Latest" nil)
+                 (string :tag "Specific Version"))
   :group 'copilot)
 
 (defvar-local copilot--overlay nil
@@ -378,7 +379,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
              (copilot--notify 'initialized '())
              (copilot--async-request 'setEditorInfo
                                      `( :editorInfo (:name "Emacs" :version ,emacs-version)
-                                        :editorPluginInfo (:name "copilot.el" :version ,copilot-version)
+                                        :editorPluginInfo (:name "copilot.el" :version ,(copilot-installed-version))
                                         ,@(when copilot-network-proxy
                                             `(:networkProxy ,copilot-network-proxy))))))))))
 
@@ -1128,14 +1129,15 @@ in `post-command-hook'."
 (defun copilot-install-server ()
   "Interactively install server."
   (interactive)
-  (if-let ((npm-binary (executable-find "npm")))
+  (if-let* ((npm-binary (executable-find "npm")))
       (progn
         (make-directory copilot-install-dir 'parents)
         (copilot-async-start-process
          nil nil
          npm-binary
          "-g" "--prefix" copilot-install-dir
-         "install" (format "%s@%s" copilot-server-package-name copilot-version)))
+         "install" (concat copilot-server-package-name
+                           (when copilot-version (format "@%s" copilot-version)))))
     (copilot--log 'warning "Unable to install %s via `npm' because it is not present" copilot-server-package-name)
     nil))
 

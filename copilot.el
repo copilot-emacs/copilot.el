@@ -97,11 +97,6 @@ performance."
   :group 'copilot
   :type 'integer)
 
-(defcustom copilot-node-executable (executable-find "node")
-  "Node executable path."
-  :group 'copilot
-  :type 'string)
-
 (defcustom copilot-server-args '("--stdio")
   "Additional arguments to pass to the Copilot server."
   :group 'copilot
@@ -144,7 +139,7 @@ find indentation offset."
   :type '(alist :key-type symbol :value-type (choice integer symbol))
   :group 'copilot)
 
-(defconst copilot-server-package-name "copilot-node-server"
+(defconst copilot-server-package-name "@github/copilot-language-server"
   "The name of the package to install copilot server.")
 
 (defcustom copilot-install-dir (expand-file-name
@@ -154,8 +149,10 @@ find indentation offset."
   :type 'directory
   :group 'copilot)
 
-(defvar copilot--server-executable nil
-  "The dist directory containing agent.js file.")
+(defcustom copilot-server-executable "copilot-language-server"
+  "The executable of copilot server."
+  :type 'string
+  :group 'copilot)
 
 (defcustom copilot-version nil
   "Copilot version.
@@ -329,8 +326,7 @@ SUCCESS-FN is the CALLBACK."
 (defun copilot--command ()
   "Return the command-line to start copilot agent."
   (append
-   (list copilot-node-executable
-         (copilot-server-executable))
+   (list (copilot-server-executable))
    copilot-server-args))
 
 (defun copilot--make-connection ()
@@ -355,33 +351,24 @@ SUCCESS-FN is the CALLBACK."
 (defun copilot--start-agent ()
   "Start the copilot agent process in local."
   (cond
-   ((null copilot-node-executable)
-    (user-error "Could not find node executable"))
    ((not (file-exists-p copilot-install-dir))
     (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
    (t
     (let ((installed-version (copilot-installed-version)))
-      (unless (equal installed-version  copilot-version)
+      (unless (equal installed-version copilot-version)
         (warn "This package has been tested for Copilot server version %s but version %s has been detected.
-You can change the installed version with `M-x copilot-reinstall-server` or remove this warning by changing the value of `copilot-version'." copilot-version installed-version)))
-    (let ((node-version (->> (with-output-to-string
-                               (call-process copilot-node-executable nil standard-output nil "--version"))
-                             (s-trim)
-                             (s-chop-prefix "v")
-                             (string-to-number))))
-      (cond ((< node-version 18)
-             (user-error "Node 18+ is required but found %s" node-version))
-            (t
-             (setq copilot--connection (copilot--make-connection))
-             (copilot--log 'info "Copilot agent started.")
-             (copilot--request 'initialize `( :capabilities (:workspace (:workspaceFolders t))
-                                              :processId ,(emacs-pid)))
-             (copilot--notify 'initialized '())
-             (copilot--async-request 'setEditorInfo
-                                     `( :editorInfo (:name "Emacs" :version ,emacs-version)
-                                        :editorPluginInfo (:name "copilot.el" :version ,(copilot-installed-version))
-                                        ,@(when copilot-network-proxy
-                                            `(:networkProxy ,copilot-network-proxy))))))))))
+You can change the installed version with `M-x copilot-reinstall-server` or remove this warning by changing the value of `copilot-version'."
+              copilot-version installed-version)))
+    (setq copilot--connection (copilot--make-connection))
+    (copilot--log 'info "Copilot agent started.")
+    (copilot--request 'initialize `( :capabilities (:workspace (:workspaceFolders t))
+                                     :processId ,(emacs-pid)))
+    (copilot--notify 'initialized '())
+    (copilot--async-request 'setEditorInfo
+                            `( :editorInfo (:name "Emacs" :version ,emacs-version)
+                               :editorPluginInfo (:name "copilot.el" :version ,(copilot-installed-version))
+                               ,@(when copilot-network-proxy
+                                   `(:networkProxy ,copilot-network-proxy)))))))
 
 ;;
 ;; login / logout
@@ -535,7 +522,7 @@ automatically, browse to %s." user-code verification-uri))
   "Get URI of current buffer."
   (cond
    ((not buffer-file-name)
-    (concat "buffer://" (url-encode-url (buffer-name (current-buffer)))))
+    (concat "file:///buffer/" (url-encode-url (buffer-name (current-buffer)))))
    ((and (eq system-type 'windows-nt)
          (not (s-starts-with-p "/" buffer-file-name)))
     (concat "file:///" (url-encode-url buffer-file-name)))
@@ -1062,12 +1049,12 @@ in `post-command-hook'."
 ;;; Installation
 
 (defun copilot-installed-version ()
-  "Return the version number of currently installed `copilot-node-server'."
+  "Return the version number of currently installed `copilot-server-package-name'."
   (let ((possible-paths (list
                          (when (eq system-type 'windows-nt)
-                           (f-join copilot-install-dir "node_modules" "copilot-node-server" "package.json"))
-                         (f-join copilot-install-dir "lib" "node_modules" "copilot-node-server" "package.json")
-                         (f-join copilot-install-dir "lib64" "node_modules" "copilot-node-server" "package.json"))))
+                           (f-join copilot-install-dir "node_modules" copilot-server-package-name "package.json"))
+                         (f-join copilot-install-dir "lib" "node_modules" copilot-server-package-name "package.json")
+                         (f-join copilot-install-dir "lib64" "node_modules" copilot-server-package-name "package.json"))))
     (seq-some
      (lambda (path)
        (when (and path (file-exists-p path))
@@ -1079,24 +1066,24 @@ in `post-command-hook'."
      possible-paths)))
 
 (defun copilot-server-executable ()
-  "Return the location of the agent.js file."
-  (if copilot--server-executable
-      copilot--server-executable
-    (setq copilot--server-executable
-          (let ((possible-paths
-                 (list
-                  (when (eq system-type 'windows-nt)
-                    (f-join copilot-install-dir "node_modules"
-                            "copilot-node-server" "copilot" "dist" "agent.js"))
-                  (f-join copilot-install-dir "lib" "node_modules"
-                          "copilot-node-server" "copilot" "dist" "agent.js")
-                  (f-join copilot-install-dir "lib64" "node_modules"
-                          "copilot-node-server" "copilot" "dist" "agent.js"))))
-            (seq-some
-             (lambda (path)
-               (when (and path (file-exists-p path))
-                 path))
-             possible-paths)))))
+  "Return the location of the `copilot-server-executable' file."
+  (cond
+   ((and (f-absolute? copilot-server-executable)
+         (f-exists? copilot-server-executable))
+    copilot-server-executable)
+   ((executable-find copilot-server-executable t)
+    copilot-server-executable)
+   (t
+    (let ((path (executable-find
+                 (f-join copilot-install-dir
+                       (cond ((eq system-type 'windows-nt) "")
+                             (t "bin"))
+                       copilot-server-executable)
+                 t)))
+      (unless (and path (f-exists? path))
+        (error "The package %s is not installed.  Unable to find %s"
+               copilot-server-package-name path))
+      path))))
 
 ;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
 ;; function for more information.

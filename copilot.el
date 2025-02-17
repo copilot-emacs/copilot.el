@@ -87,10 +87,15 @@ performance."
   :group 'copilot
   :type 'integer)
 
-(defcustom copilot-node-executable (executable-find "node")
-  "Node executable path."
+(defcustom copilot-server-log-level 0
+  "Log level of the Copilot server.
+0 - no log
+1 - error
+2 - warning
+3 - info
+4 - debug"
   :group 'copilot
-  :type 'string)
+  :type 'integer)
 
 (defcustom copilot-server-args '("--stdio")
   "Additional arguments to pass to the Copilot server."
@@ -134,7 +139,7 @@ find indentation offset."
   :type '(alist :key-type symbol :value-type (choice integer symbol))
   :group 'copilot)
 
-(defconst copilot-server-package-name "copilot-node-server"
+(defconst copilot-server-package-name "@github/copilot-language-server"
   "The name of the package to install copilot server.")
 
 (defcustom copilot-install-dir (expand-file-name
@@ -144,15 +149,18 @@ find indentation offset."
   :type 'directory
   :group 'copilot)
 
-(defvar copilot--server-executable nil
-  "The dist directory containing agent.js file.")
+(defcustom copilot-server-executable "copilot-language-server"
+  "The executable of copilot server."
+  :type 'string
+  :group 'copilot)
 
-(defcustom copilot-version "1.27.0"
+(defcustom copilot-version nil
   "Copilot version.
 
 The default value is the preferred version and ensures functionality.
 You may adjust this variable at your own risk."
-  :type 'string
+  :type '(choice (const :tag "Latest" nil)
+                 (string :tag "Specific Version"))
   :group 'copilot)
 
 (defvar-local copilot--overlay nil
@@ -180,6 +188,32 @@ Incremented after each change.")
 
 (defvar copilot--opened-buffers nil
   "List of buffers that have been opened in Copilot.")
+
+(eval-and-compile
+  (defun copilot--transform-pattern (pattern)
+    "Transform PATTERN to (&plist PATTERN) recursively."
+    (cons '&plist
+          (mapcar (lambda (p)
+                    (if (listp p)
+                        (copilot--transform-pattern p)
+                      p))
+                  pattern))))
+
+(defmacro copilot--dbind (pattern source &rest body)
+  "Destructure SOURCE against plist PATTERN and eval BODY."
+  (declare (indent 2))
+  `(-let ((,(copilot--transform-pattern pattern) ,source))
+     ,@body))
+
+(defsubst copilot--log (level format &rest args)
+  "Log message with LEVEL, FORMAT and ARGS."
+  (message "%s: %s" (propertize "Copilot" 'face
+                                (pcase level
+                                  ('error 'error)
+                                  ('warning 'warning)
+                                  ('info 'success)
+                                  (_ 'warning)))
+           (apply #'format format args)))
 
 ;;
 ;; Externals
@@ -289,6 +323,12 @@ SUCCESS-FN is the CALLBACK."
                                                   (funcall ,success-fn result))))
                               ,@args))))
 
+(defun copilot--command ()
+  "Return the command-line to start copilot agent."
+  (append
+   (list (copilot-server-executable))
+   copilot-server-args))
+
 (defun copilot--make-connection ()
   "Establish copilot jsonrpc connection."
   (let ((make-fn (apply-partially
@@ -297,10 +337,7 @@ SUCCESS-FN is the CALLBACK."
                   :name "copilot"
                   :notification-dispatcher #'copilot--handle-notification
                   :process (make-process :name "copilot agent"
-                                         :command (append
-                                                   (list copilot-node-executable
-                                                         (copilot-server-executable))
-                                                   copilot-server-args)
+                                         :command (copilot--command)
                                          :coding 'utf-8-emacs-unix
                                          :connection-type 'pipe
                                          :stderr (get-buffer-create "*copilot stderr*")
@@ -314,51 +351,28 @@ SUCCESS-FN is the CALLBACK."
 (defun copilot--start-agent ()
   "Start the copilot agent process in local."
   (cond
-   ((null copilot-node-executable)
-    (user-error "Could not find node executable"))
    ((not (file-exists-p copilot-install-dir))
     (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
    (t
     (let ((installed-version (copilot-installed-version)))
-      (unless (equal installed-version  copilot-version)
+      (unless (equal installed-version copilot-version)
         (warn "This package has been tested for Copilot server version %s but version %s has been detected.
-You can change the installed version with `M-x copilot-reinstall-server` or remove this warning by changing the value of `copilot-version'." copilot-version installed-version)))
-    (let ((node-version (->> (with-output-to-string
-                               (call-process copilot-node-executable nil standard-output nil "--version"))
-                             (s-trim)
-                             (s-chop-prefix "v")
-                             (string-to-number))))
-      (cond ((< node-version 18)
-             (user-error "Node 18+ is required but found %s" node-version))
-            (t
-             (setq copilot--connection (copilot--make-connection))
-             (message "Copilot agent started.")
-             (copilot--request 'initialize '(:capabilities (:workspace (:workspaceFolders t))))
-             (copilot--async-request 'setEditorInfo
-                                     `(:editorInfo (:name "Emacs" :version ,emacs-version)
-                                                   :editorPluginInfo (:name "copilot.el" :version ,copilot-version)
-                                                   ,@(when copilot-network-proxy
-                                                       `(:networkProxy ,copilot-network-proxy))))))))))
+You can change the installed version with `M-x copilot-reinstall-server` or remove this warning by changing the value of `copilot-version'."
+              copilot-version installed-version)))
+    (setq copilot--connection (copilot--make-connection))
+    (copilot--log 'info "Copilot agent started.")
+    (copilot--request 'initialize `( :capabilities (:workspace (:workspaceFolders t))
+                                     :processId ,(emacs-pid)))
+    (copilot--notify 'initialized '())
+    (copilot--async-request 'setEditorInfo
+                            `( :editorInfo (:name "Emacs" :version ,emacs-version)
+                               :editorPluginInfo (:name "copilot.el" :version ,(copilot-installed-version))
+                               ,@(when copilot-network-proxy
+                                   `(:networkProxy ,copilot-network-proxy)))))))
 
 ;;
 ;; login / logout
 ;;
-
-(eval-and-compile
-  (defun copilot--transform-pattern (pattern)
-    "Transform PATTERN to (&plist PATTERN) recursively."
-    (cons '&plist
-          (mapcar (lambda (p)
-                    (if (listp p)
-                        (copilot--transform-pattern p)
-                      p))
-                  pattern))))
-
-(defmacro copilot--dbind (pattern source &rest body)
-  "Destructure SOURCE against plist PATTERN and eval BODY."
-  (declare (indent 2))
-  `(-let ((,(copilot--transform-pattern pattern) ,source))
-     ,@body))
 
 (defun copilot-login ()
   "Login to Copilot."
@@ -378,19 +392,19 @@ automatically, browse to %s." user-code verification-uri))
           (read-from-minibuffer "Press ENTER if you finish authorizing."))
       (read-from-minibuffer (format "First copy your one-time code: %s. Press ENTER to continue." user-code))
       (read-from-minibuffer (format "Please open %s in your browser. Press ENTER if you finish authorizing." verification-uri)))
-    (message "Verifying...")
+    (copilot--log 'info "Verifying...")
     (condition-case err
         (copilot--request 'signInConfirm (list :userCode user-code))
       (jsonrpc-error
        (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
     (copilot--dbind (:user) (copilot--request 'checkStatus '(:dummy "checkStatus"))
-      (message "Authenticated as GitHub user %s." user))))
+      (copilot--log 'info "Authenticated as GitHub user %s." user))))
 
 (defun copilot-logout ()
   "Logout from Copilot."
   (interactive)
   (copilot--request 'signOut '(:dummy "signOut"))
-  (message "Logged out."))
+  (copilot--log 'warning "Logged out."))
 
 ;;
 ;; diagnose
@@ -400,7 +414,7 @@ automatically, browse to %s." user-code verification-uri))
   "Restart and diagnose copilot."
   (interactive)
   (when copilot--connection
-    (jsonrpc-shutdown copilot--connection)
+    (jsonrpc-shutdown copilot--connection 'kill)
     (setq copilot--connection nil))
   (setq copilot--opened-buffers nil)
   ;; We are going to send a test request for the current buffer so we have to activate the mode
@@ -419,11 +433,11 @@ automatically, browse to %s." user-code verification-uri))
                                            :languageId "text"
                                            :position (:line 0 :character 0)))
                           :success-fn (lambda (_)
-                                        (message "Copilot OK."))
+                                        (copilot--log 'info "Copilot OK."))
                           :error-fn (lambda (err)
-                                      (message "Copilot error: %S" err))
+                                      (copilot--log 'error "%S" err))
                           :timeout-fn (lambda ()
-                                        (message "Copilot agent timeout."))))
+                                        (copilot--log 'warning "Copilot agent timeout."))))
 
 ;;
 ;; Auto completion
@@ -508,7 +522,7 @@ automatically, browse to %s." user-code verification-uri))
   "Get URI of current buffer."
   (cond
    ((not buffer-file-name)
-    (concat "buffer://" (url-encode-url (buffer-name (current-buffer)))))
+    (concat "file:///buffer/" (url-encode-url (buffer-name (current-buffer)))))
    ((and (eq system-type 'windows-nt)
          (not (s-starts-with-p "/" buffer-file-name)))
     (concat "file:///" (url-encode-url buffer-file-name)))
@@ -605,9 +619,9 @@ automatically, browse to %s." user-code verification-uri))
                                              :key (lambda (x) (plist-get x :text))
                                              :test #'s-equals-p)))
       (cond ((seq-empty-p completions)
-             (message "No completion is available."))
+             (copilot--log 'warning "No completion is available."))
             ((= (length completions) 1)
-             (message "Only one completion is available."))
+             (copilot--log 'warning "Only one completion is available."))
             (t (let ((idx (mod (+ copilot--completion-idx direction)
                                (length completions))))
                  (setq copilot--completion-idx idx)
@@ -667,9 +681,9 @@ automatically, browse to %s." user-code verification-uri))
                                 :panelId (generate-new-buffer-name "copilot-panel"))
                           :success-fn callback
                           :error-fn (lambda (err)
-                                      (message "Copilot error: %S" err))
+                                      (copilot--log 'error "%S" err))
                           :timeout-fn (lambda ()
-                                        (message "Copilot agent timeout."))))
+                                        (copilot--log 'warning "Copilot agent timeout."))))
 
 
 (defun copilot-panel-complete ()
@@ -681,7 +695,7 @@ automatically, browse to %s." user-code verification-uri))
 
   (copilot--get-panel-completions
    (jsonrpc-lambda (&key solutionCountTarget)
-     (message "Copilot: Synthesizing %d solutions..." solutionCountTarget)))
+     (copilot--log 'info "Synthesizing %d solutions..." solutionCountTarget)))
   (with-current-buffer (get-buffer-create "*copilot-panel*")
     (org-mode)
     (erase-buffer)))
@@ -942,7 +956,7 @@ Arguments BEG, END, and CHARS-REPLACED are metadata for region changed."
          (if completion
              (copilot--show-completion completion)
            (when called-interactively
-             (message "No completion is available."))))))))
+             (copilot--log 'warning "No completion is available."))))))))
 
 ;;
 ;; minor mode
@@ -1035,12 +1049,12 @@ in `post-command-hook'."
 ;;; Installation
 
 (defun copilot-installed-version ()
-  "Return the version number of currently installed `copilot-node-server'."
+  "Return the version number of currently installed `copilot-server-package-name'."
   (let ((possible-paths (list
                          (when (eq system-type 'windows-nt)
-                           (f-join copilot-install-dir "node_modules" "copilot-node-server" "package.json"))
-                         (f-join copilot-install-dir "lib" "node_modules" "copilot-node-server" "package.json")
-                         (f-join copilot-install-dir "lib64" "node_modules" "copilot-node-server" "package.json"))))
+                           (f-join copilot-install-dir "node_modules" copilot-server-package-name "package.json"))
+                         (f-join copilot-install-dir "lib" "node_modules" copilot-server-package-name "package.json")
+                         (f-join copilot-install-dir "lib64" "node_modules" copilot-server-package-name "package.json"))))
     (seq-some
      (lambda (path)
        (when (and path (file-exists-p path))
@@ -1052,24 +1066,24 @@ in `post-command-hook'."
      possible-paths)))
 
 (defun copilot-server-executable ()
-  "Return the location of the agent.js file."
-  (if copilot--server-executable
-      copilot--server-executable
-    (setq copilot--server-executable
-          (let ((possible-paths
-                 (list
-                  (when (eq system-type 'windows-nt)
-                    (f-join copilot-install-dir "node_modules"
-                            "copilot-node-server" "copilot" "dist" "agent.js"))
-                  (f-join copilot-install-dir "lib" "node_modules"
-                          "copilot-node-server" "copilot" "dist" "agent.js")
-                  (f-join copilot-install-dir "lib64" "node_modules"
-                          "copilot-node-server" "copilot" "dist" "agent.js"))))
-            (seq-some
-             (lambda (path)
-               (when (and path (file-exists-p path))
-                 path))
-             possible-paths)))))
+  "Return the location of the `copilot-server-executable' file."
+  (cond
+   ((and (f-absolute? copilot-server-executable)
+         (f-exists? copilot-server-executable))
+    copilot-server-executable)
+   ((executable-find copilot-server-executable t)
+    copilot-server-executable)
+   (t
+    (let ((path (executable-find
+                 (f-join copilot-install-dir
+                       (cond ((eq system-type 'windows-nt) "")
+                             (t "bin"))
+                       copilot-server-executable)
+                 t)))
+      (unless (and path (f-exists? path))
+        (error "The package %s is not installed.  Unable to find %s"
+               copilot-server-package-name path))
+      path))))
 
 ;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
 ;; function for more information.
@@ -1102,15 +1116,16 @@ in `post-command-hook'."
 (defun copilot-install-server ()
   "Interactively install server."
   (interactive)
-  (if-let ((npm-binary (executable-find "npm")))
+  (if-let* ((npm-binary (executable-find "npm")))
       (progn
         (make-directory copilot-install-dir 'parents)
         (copilot-async-start-process
          nil nil
          npm-binary
          "-g" "--prefix" copilot-install-dir
-         "install" (format "%s@%s" copilot-server-package-name copilot-version)))
-    (message "Unable to install %s via `npm' because it is not present" copilot-server-package-name)
+         "install" (concat copilot-server-package-name
+                           (when copilot-version (format "@%s" copilot-version)))))
+    (copilot--log 'warning "Unable to install %s via `npm' because it is not present" copilot-server-package-name)
     nil))
 
 ;;;###autoload
@@ -1127,7 +1142,7 @@ in `post-command-hook'."
   (unless (file-directory-p copilot-install-dir)
     (user-error "Couldn't find %s directory" copilot-install-dir))
   (delete-directory copilot-install-dir 'recursive)
-  (message "Server `%s' uninstalled." (file-name-nondirectory (directory-file-name copilot-install-dir))))
+  (copilot--log 'warning "Server `%s' uninstalled." (file-name-nondirectory (directory-file-name copilot-install-dir))))
 
 (provide 'copilot)
 ;;; copilot.el ends here

@@ -351,7 +351,7 @@ SUCCESS-FN is the CALLBACK."
 (defun copilot--start-agent ()
   "Start the copilot agent process in local."
   (cond
-   ((not (file-exists-p copilot-install-dir))
+   ((not (file-exists-p (copilot-server-executable)))
     (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
    (t
     (let ((installed-version (copilot-installed-version)))
@@ -366,7 +366,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
     (copilot--notify 'initialized '())
     (copilot--async-request 'setEditorInfo
                             `( :editorInfo (:name "Emacs" :version ,emacs-version)
-                               :editorPluginInfo (:name "copilot.el" :version ,(copilot-installed-version))
+                               :editorPluginInfo (:name "copilot.el" :version ,(or (copilot-installed-version) "unknown"))
                                ,@(when copilot-network-proxy
                                    `(:networkProxy ,copilot-network-proxy)))))))
 

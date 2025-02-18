@@ -6,7 +6,7 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 ![](assets/demo.gif)
 
-**Warning:** This plugin is unofficial and based on binaries provided by [copilot.vim](https://github.com/github/copilot.vim).
+**Warning:** This plugin is unofficial and based on binaries provided by [@github/copilot-language-server](https://www.npmjs.com/package/@github/copilot-language-server).
 
 **Note:** You need access to [GitHub Copilot][] to use this plugin.
 
@@ -338,6 +338,7 @@ These projects helped me a lot:
 + https://github.com/TommyX12/company-tabnine/
 + https://github.com/cryptobadger/flight-attendant.el
 + https://github.com/github/copilot.vim
++ @github/copilot-language-server
 
 ## If you want chat with github copilot?
 

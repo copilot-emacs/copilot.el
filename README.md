@@ -339,6 +339,7 @@ These projects helped me a lot:
 + https://github.com/TommyX12/company-tabnine/
 + https://github.com/cryptobadger/flight-attendant.el
 + https://github.com/github/copilot.vim
++ @github/copilot-language-server
 
 ## Do you want chat with Github Copilot?
 

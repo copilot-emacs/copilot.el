@@ -6,11 +6,11 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 ![](assets/demo.gif)
 
-**Warning:** This plugin is unofficial and based on binaries provided by [@github/copilot-language-server](https://www.npmjs.com/package/@github/copilot-language-server).
+**Note:** This plugin is unofficial, however it makes use of the official [@github/copilot-language-server][] provided by Microsoft.
 
 **Note:** You need access to [GitHub Copilot][] to use this plugin.
 
-Current maintainer: [@emil-vdw][], [@jcs090218][], [@rakotomandimby][].
+Current maintainer(s): [@emil-vdw][], [@jcs090218][], [@rakotomandimby][].
 
 Retired maintainer: [@zerolfx][].
 
@@ -18,19 +18,17 @@ Retired maintainer: [@zerolfx][].
 
 0. Ensure your Emacs version is at least 27, the dependency package `editorconfig` ([melpa](https://melpa.org/#/editorconfig)) and `jsonrpc` ([elpa](https://elpa.gnu.org/packages/jsonrpc.html), >= 1.0.14) are both installed.
 
-1. Install [Node.js][] v18+. (You can specify the path to `node` executable by setting `copilot-node-executable`.)
+1. Setup `copilot.el` as described in the next section.
 
-2. Setup `copilot.el` as described in the next section.
+2. Install the copilot server by `M-x copilot-install-server`.
 
-3. Install the copilot server by `M-x copilot-install-server`.
+3. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose` (`NotAuthorized` means you don't have a valid subscription).
 
-4. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose` (`NotAuthorized` means you don't have a valid subscription).
-
-5. Enjoy!
+4. Enjoy!
 
 ## Configurations
 
-### Example for Doom Emacs 
+### Example for Doom Emacs
 
 <details>
 
@@ -130,7 +128,7 @@ dotspacemacs-additional-packages
 (with-eval-after-load 'company
   ;; disable inline previews
   (delq 'company-preview-if-just-one-frontend company-frontends))
-  
+
 (with-eval-after-load 'copilot
   (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
   (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
@@ -153,15 +151,15 @@ dotspacemacs-additional-packages
 ###### Emacs 27-29:
 
 `straight.el`:
-  
+
 ```elisp
 (use-package copilot
   :straight (:host github :repo "copilot-emacs/copilot.el" :files ("*.el"))
   :ensure t)
 ```
-  
+
 `quelpa` + `quelpa-use-package`:
-  
+
 ```elisp
 (use-package copilot
   :quelpa (copilot :fetcher github
@@ -179,7 +177,7 @@ dotspacemacs-additional-packages
             :branch "main"))
 ```
 
-Use `:map` `:hook` and `:config` to customize `copilot.el` via `use-package`.
+Use `:map`, `:hook`, and `:config` to customize `copilot.el` via `use-package`.
 
 ##### Option 3: Load manually
 
@@ -272,21 +270,24 @@ Log out from GitHub.
 
 ## Customization
 
-#### copilot-node-executable
+#### copilot-version
 
-The executable path of [Node.js][].
+The version of the [@github/copilot-language-server][] to use. If set to `nil`, the latest version will be installed.
 
 #### copilot-idle-delay
 
 Time in seconds to wait before starting completion (default to 0). Note Copilot itself has a ~100ms delay because of network communication.
 
 #### copilot-enable-predicates / copilot-disable-predicates
+
 A list of predicate functions with no argument to enable/disable triggering Copilot in `copilot-mode`.
 
 #### copilot-enable-display-predicates / copilot-disable-display-predicates
+
 A list of predicate functions with no argument to enable/disable showing Copilot's completions in `copilot-mode`.
 
 #### copilot-clear-overlay-ignore-commands
+
 A list of commands that won't cause the overlay to be cleared.
 
 #### copilot-network-proxy
@@ -340,11 +341,11 @@ These projects helped me a lot:
 + https://github.com/github/copilot.vim
 + @github/copilot-language-server
 
-## If you want chat with github copilot?
+## Do you want chat with Github Copilot?
 
 Just like copilot plugin for intellij or vscode?
 
-Please take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el) 
+Please take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el)
 
 <!-- Links -->
 
@@ -354,4 +355,4 @@ Please take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el)
 [@zerolfx]: https://github.com/zerolfx
 
 [GitHub Copilot]: https://github.com/features/copilot
-[Node.js]: https://nodejs.org/en/download/
+[@github/copilot-language-server]: https://www.npmjs.com/package/@github/copilot-language-server

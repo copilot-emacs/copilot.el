@@ -355,7 +355,7 @@ SUCCESS-FN is the CALLBACK."
     (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
    (t
     (let ((installed-version (copilot-installed-version)))
-      (unless (equal installed-version copilot-version)
+      (when (and copilot-version (not (equal installed-version copilot-version)))
         (warn "This package has been tested for Copilot server version %s but version %s has been detected.
 You can change the installed version with `M-x copilot-reinstall-server` or remove this warning by changing the value of `copilot-version'."
               copilot-version installed-version)))

@@ -1072,7 +1072,7 @@ in `post-command-hook'."
          (f-exists? copilot-server-executable))
     copilot-server-executable)
    ((executable-find copilot-server-executable t)
-    copilot-server-executable)
+    (executable-find copilot-server-executable t))
    (t
     (let ((path (executable-find
                  (f-join copilot-install-dir

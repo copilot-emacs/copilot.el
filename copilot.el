@@ -177,6 +177,29 @@ You may adjust this variable at your own risk."
   :group 'copilot
   :package-version '(copilot . "0.1"))
 
+(defun copilot--lsp-configuration-changed (symbol value)
+  "Notify the Copilot LSP configuration has changed and set SYMBOL to VALUE."
+  (let ((was-bound (boundp symbol)))
+    (set-default symbol value)
+    (when was-bound
+      (copilot--notify-configuration))))
+
+(defcustom copilot-lsp-settings nil
+  "Settings for the Copilot LSP server.
+
+This value will always be sent to the server when the server starts or the value
+changes.  See
+https://github.com/github/copilot-language-server-release?tab=readme-ov-file#configuration-management
+for complete documentation.
+
+For example to use GitHub Enterprise use the following configuration:
+ '(:github-enterprise (:uri \"https://example.ghe.com\"))
+
+Exchange the URI with the correct URI of your organization."
+  :set #'copilot--lsp-configuration-changed
+  :type 'sexp
+  :group 'copilot)
+
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
 
@@ -420,6 +443,13 @@ SUCCESS-FN is the CALLBACK."
        ;; handle older jsonrpc versions
        (funcall make-fn :events-buffer-scrollback-size copilot-log-max)))))
 
+(defun copilot--notify-configuration ()
+  "Notify LSP that the configuration has changed.
+
+This should also be called when the connection is established."
+  (when copilot--connection
+    (copilot--notify 'workspace/didChangeConfiguration `(:settings ,copilot-lsp-settings))))
+
 (defun copilot--start-server ()
   "Start the copilot server process in local."
   (cond
@@ -436,6 +466,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
     (copilot--request 'initialize `( :capabilities (:workspace (:workspaceFolders t))
                                      :processId ,(emacs-pid)))
     (copilot--notify 'initialized '())
+    (copilot--notify-configuration)
     (copilot--async-request 'setEditorInfo
                             `( :editorInfo (:name "Emacs" :version ,emacs-version)
                                :editorPluginInfo (:name "copilot.el" :version ,(or (copilot-installed-version) "unknown"))

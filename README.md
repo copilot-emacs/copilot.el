@@ -219,6 +219,18 @@ Use tab to accept completions (you may also want to bind `copilot-accept-complet
 (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
 ```
 
+#### 4. Configure LSP Settings
+
+You can configure the underlying LSP settings by changing `copilot-lsp-settings`. The complete list of available options can be found [here](https://github.com/github/copilot-language-server-release?tab=readme-ov-file#configuration-management).
+
+Here we set the GitHub Enterprise server to `https://example2.ghe.com`, exchange the URL with your own server.
+
+```elisp
+(setq copilot-lsp-settings '(:github-enterprise (:uri "https://example2.ghe.com")))
+```
+
+You might have to restart the LSP (`M-x copilot-diagnose`) when changing the value, depending on the method of setting the variable. When logging in, the URL for the authentication flow should be the same as the one set in `copilot-lsp-settings`.
+
 </details>
 
 ### Programming language detection

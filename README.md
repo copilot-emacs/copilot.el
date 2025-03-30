@@ -14,9 +14,13 @@ Current maintainer(s): [@emil-vdw][], [@jcs090218][], [@rakotomandimby][].
 
 Retired maintainer: [@zerolfx][].
 
-## Installation
+## Requirements
 
-0. Ensure your Emacs version is at least 27, the dependency package `editorconfig` ([melpa](https://melpa.org/#/editorconfig)) and `jsonrpc` ([elpa](https://elpa.gnu.org/packages/jsonrpc.html), >= 1.0.14) are both installed.
+`copilot.el` requires Emacs 27+.
+
+[@github/copilot-language-server][] requires Node.js 22+.
+
+## Installation
 
 1. Setup `copilot.el` as described in the next section.
 
@@ -72,6 +76,7 @@ If pressing tab to complete sometimes doesn't work you might want to bind comple
 ```
 
 If you would love to configure indentation here, this is an example config that may work for you:
+
 ```
 (use-package! copilot
   :hook (prog-mode . copilot-mode)
@@ -209,7 +214,6 @@ To customize the behavior of `copilot-mode`, please check `copilot-enable-predic
 
 You need to bind `copilot-complete` to some key and call `copilot-clear-overlay` inside `post-command-hook`.
 
-
 #### 3. Configure completion acceptation
 
 Use tab to accept completions (you may also want to bind `copilot-accept-completion-by-word` to some key):
@@ -270,13 +274,22 @@ Log out from GitHub.
 
 ## Customization
 
+> [!TIP]
+>
+> Use <kbd>M-x</kbd> `customize-group` <kbd>RET</kbd> `copilot` to see all available
+> configuration options.
+
 #### copilot-version
 
 The version of the [@github/copilot-language-server][] to use. If set to `nil`, the latest version will be installed.
 
 #### copilot-idle-delay
 
-Time in seconds to wait before starting completion (default to 0). Note Copilot itself has a ~100ms delay because of network communication.
+Time in seconds to wait before starting completion (default to 0). Note Copilot itself has a ~100ms delay because of network communication. You can disable it completely by setting it to `nil`:
+
+``` elisp
+(setq copilot-idle-delay nil)
+```
 
 #### copilot-enable-predicates / copilot-disable-predicates
 
@@ -295,6 +308,7 @@ A list of commands that won't cause the overlay to be cleared.
 Format: `'(:host "127.0.0.1" :port 7890 :username: "user" :password: "password")`, where `:username` and `:password` are optional.
 
 For example:
+
 ```elisp
 (setq copilot-network-proxy '(:host "127.0.0.1" :port 7890))
 ```
@@ -339,7 +353,7 @@ These projects helped me a lot:
 + https://github.com/TommyX12/company-tabnine/
 + https://github.com/cryptobadger/flight-attendant.el
 + https://github.com/github/copilot.vim
-+ @github/copilot-language-server
++ [@github/copilot-language-server][]
 
 ## Do you want chat with Github Copilot?
 

@@ -14,9 +14,13 @@ Current maintainer(s): [@emil-vdw][], [@jcs090218][], [@rakotomandimby][].
 
 Retired maintainer: [@zerolfx][].
 
-## Installation
+## Requirements
 
-0. Ensure your Emacs version is at least 27, the dependency package `editorconfig` ([melpa](https://melpa.org/#/editorconfig)) and `jsonrpc` ([elpa](https://elpa.gnu.org/packages/jsonrpc.html), >= 1.0.14) are both installed.
+`copilot.el` requires Emacs 27+.
+
+[@github/copilot-language-server][] requires Node.js 22+.
+
+## Installation
 
 1. Setup `copilot.el` as described in the next section.
 
@@ -209,7 +213,6 @@ To customize the behavior of `copilot-mode`, please check `copilot-enable-predic
 
 You need to bind `copilot-complete` to some key and call `copilot-clear-overlay` inside `post-command-hook`.
 
-
 #### 3. Configure completion acceptation
 
 Use tab to accept completions (you may also want to bind `copilot-accept-completion-by-word` to some key):
@@ -339,7 +342,7 @@ These projects helped me a lot:
 + https://github.com/TommyX12/company-tabnine/
 + https://github.com/cryptobadger/flight-attendant.el
 + https://github.com/github/copilot.vim
-+ @github/copilot-language-server
++ [@github/copilot-language-server][]
 
 ## Do you want chat with Github Copilot?
 

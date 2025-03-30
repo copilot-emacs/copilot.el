@@ -7,7 +7,7 @@
 ;;             Shen, Jen-Chieh <jcs090218@gmail.com>
 ;;             Rakotomandimby Mihamina <mihamina.rakotomandimby@rktmb.org>
 ;; URL: https://github.com/copilot-emacs/copilot.el
-;; Package-Requires: ((emacs "27.2") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0"))
+;; Package-Requires: ((emacs "27.2") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0"))
 ;; Version: 0.0.1
 ;; Keywords: convenience copilot
 
@@ -44,7 +44,6 @@
 (require 'subr-x.el)
 
 (require 'f)
-(require 'dash)
 (require 'editorconfig)
 (require 'copilot-balancer)
 
@@ -189,20 +188,10 @@ Incremented after each change.")
 (defvar copilot--opened-buffers nil
   "List of buffers that have been opened in Copilot.")
 
-(eval-and-compile
-  (defun copilot--transform-pattern (pattern)
-    "Transform PATTERN to (&plist PATTERN) recursively."
-    (cons '&plist
-          (mapcar (lambda (p)
-                    (if (listp p)
-                        (copilot--transform-pattern p)
-                      p))
-                  pattern))))
-
 (defmacro copilot--dbind (pattern source &rest body)
   "Destructure SOURCE against plist PATTERN and eval BODY."
   (declare (indent 2))
-  `(-let ((,(copilot--transform-pattern pattern) ,source))
+  `(cl-destructuring-bind (&key ,@pattern &allow-other-keys) ,source
      ,@body))
 
 (defsubst copilot--log (level format &rest args)
@@ -915,7 +904,7 @@ provided."
   ;; send a notification for the window gaining focus and only if the buffer has
   ;; copilot-mode enabled.
   (when (and copilot-mode (eq window (selected-window)))
-    (if (-contains-p copilot--opened-buffers (current-buffer))
+    (if (seq-contains-p copilot--opened-buffers (current-buffer))
         (copilot--notify ':textDocument/didFocus
                          (list :textDocument (list :uri (copilot--get-uri))))
       (add-to-list 'copilot--opened-buffers (current-buffer))
@@ -953,7 +942,7 @@ Arguments BEG, END, and CHARS-REPLACED are metadata for region changed."
 
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."
-  (when (-contains-p copilot--opened-buffers (current-buffer))
+  (when (seq-contains-p copilot--opened-buffers (current-buffer))
     (copilot--notify 'textDocument/didClose
                      (list :textDocument (list :uri (copilot--get-uri))))
     (setq copilot--opened-buffers (delete (current-buffer) copilot--opened-buffers))))
@@ -1111,7 +1100,7 @@ in `post-command-hook'."
       (compilation-start
        (mapconcat
         #'shell-quote-argument
-        (-filter (lambda (cmd) cmd) command)
+        (seq-filter (lambda (cmd) cmd) command)
         " ")
        t
        (lambda (&rest _)

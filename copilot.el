@@ -1076,8 +1076,8 @@ in `post-command-hook'."
 (defun copilot-server-executable ()
   "Return the location of the `copilot-server-executable' file."
   (cond
-   ((and (f-absolute? copilot-server-executable)
-         (f-exists? copilot-server-executable))
+   ((and (file-name-absolute-p copilot-server-executable)
+         (file-exists-p copilot-server-executable))
     copilot-server-executable)
    ((executable-find copilot-server-executable t))
    (t
@@ -1087,7 +1087,7 @@ in `post-command-hook'."
                              (t "bin"))
                        copilot-server-executable)
                  t)))
-      (unless (and path (f-exists? path))
+      (unless (and path (file-exists-p path))
         (error "The package %s is not installed.  Unable to find %s"
                copilot-server-package-name path))
       path))))

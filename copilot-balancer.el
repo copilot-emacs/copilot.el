@@ -1,4 +1,4 @@
-;;; copilot-balancer.el --- Balancer module  -*- lexical-binding:t -*-
+;;; copilot-balancer.el --- Parentheses balancer for Lisps  -*- lexical-binding:t -*-
 
 ;; Copyright (C) 2022-2024  copilot-emacs maintainers
 
@@ -24,7 +24,10 @@
 
 ;;; Commentary:
 
-;; Balancer module
+;; The `copilot-balancer.el` module helps balance pairs of characters
+;; in Lisp-like languages.  This includes parentheses, brackets, braces, and quotation
+;; marks.  The module is particularly useful for maintaining the syntactical integrity
+;; of code written in Emacs Lisp, Common Lisp, Scheme, and Clojure.
 
 ;;; Code:
 

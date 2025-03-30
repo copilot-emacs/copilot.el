@@ -123,7 +123,7 @@ find indentation offset."
 
 (defcustom copilot-max-char-warning-disable nil
   "When non-nil, disable warning about buffer size exceeding `copilot-max-char'."
-  :group 'copilot 
+  :group 'copilot
   :type 'boolean)
 
 (defcustom copilot-indentation-alist
@@ -232,6 +232,24 @@ Incremented after each change.")
 (defvar copilot-mode-map (make-sparse-keymap)
   "Keymap for Copilot minor mode.
 Use this for custom bindings in `copilot-mode'.")
+
+(easy-menu-define copilot-mode-menu copilot-mode-map "Copilot Menu"
+  '("Copilot"
+    ["Accept Completion" copilot-accept-completion]
+    ["Accept Completion by Word" copilot-accept-completion-by-word]
+    ["Accept Completion by Line" copilot-accept-completion-by-line]
+    ["Accept Completion by Paragraph" copilot-accept-completion-by-paragraph]
+    "--"
+    ["Complete" copilot-complete]
+    ["Next Completion" copilot-next-completion]
+    ["Previous Completion" copilot-previous-completion]
+    "--"
+    ["Install Server" copilot-install-server]
+    ["Uninstall Server" copilot-uninstall-server]
+    ["Diagnose" copilot-diagnose]
+    "--"
+    ["Login" copilot-login]
+    ["Logout" copilot-logout]))
 
 (defun copilot--mode-enter ()
   "Set up copilot mode when entering."
@@ -535,9 +553,9 @@ automatically, browse to %s." user-code verification-uri))
          (pmax (point-max))
          (pmin (point-min))
          (half-window (/ copilot-max-char 2)))
-    (when (and (>= copilot-max-char 0) 
+    (when (and (>= copilot-max-char 0)
                (> pmax copilot-max-char))
-      (let ((msg (format "%s size exceeds 'copilot-max-char' (%s), copilot completions may not work" 
+      (let ((msg (format "%s size exceeds 'copilot-max-char' (%s), copilot completions may not work"
                          (current-buffer) copilot-max-char)))
         (if copilot-max-char-warning-disable
             (message msg)

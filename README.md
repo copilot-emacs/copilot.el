@@ -273,13 +273,22 @@ Log out from GitHub.
 
 ## Customization
 
+> [!TIP]
+>
+> Use <kbd>M-x</kbd> `customize-group` <kbd>RET</kbd> `copilot` to see all available
+> configuration options.
+
 #### copilot-version
 
 The version of the [@github/copilot-language-server][] to use. If set to `nil`, the latest version will be installed.
 
 #### copilot-idle-delay
 
-Time in seconds to wait before starting completion (default to 0). Note Copilot itself has a ~100ms delay because of network communication.
+Time in seconds to wait before starting completion (default to 0). Note Copilot itself has a ~100ms delay because of network communication. You can disable it completely by setting it to `nil`:
+
+``` elisp
+(setq copilot-idle-delay nil)
+```
 
 #### copilot-enable-predicates / copilot-disable-predicates
 

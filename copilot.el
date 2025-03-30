@@ -41,7 +41,7 @@
 (require 'compile)
 (require 'json)
 (require 'jsonrpc)
-(require 'subr-x.el)
+(require 'subr-x)
 
 (require 'f)
 (require 'editorconfig)

@@ -76,6 +76,7 @@ If pressing tab to complete sometimes doesn't work you might want to bind comple
 ```
 
 If you would love to configure indentation here, this is an example config that may work for you:
+
 ```
 (use-package! copilot
   :hook (prog-mode . copilot-mode)
@@ -307,6 +308,7 @@ A list of commands that won't cause the overlay to be cleared.
 Format: `'(:host "127.0.0.1" :port 7890 :username: "user" :password: "password")`, where `:username` and `:password` are optional.
 
 For example:
+
 ```elisp
 (setq copilot-network-proxy '(:host "127.0.0.1" :port 7890))
 ```

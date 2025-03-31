@@ -169,7 +169,7 @@ You may adjust this variable at your own risk."
   "Overlay used to surround point and make copilot-completion-keymap activate.")
 
 (defvar copilot--connection nil
-  "Copilot agent jsonrpc connection instance.")
+  "Copilot server jsonrpc connection instance.")
 
 (defvar-local copilot--line-bias 1
   "Line bias for Copilot completion.")
@@ -234,77 +234,106 @@ Incremented after each change.")
 (declare-function org-map-entries "ext:org.el")
 
 ;;
-;; Entry
+;;; Copilot Server Installation
 ;;
 
-(defvar copilot-mode-map (make-sparse-keymap)
-  "Keymap for Copilot minor mode.
-Use this for custom bindings in `copilot-mode'.")
+(defun copilot-installed-version ()
+  "Return the version number of currently installed `copilot-server-package-name'."
+  (let ((possible-paths (list
+                         (when (eq system-type 'windows-nt)
+                           (f-join copilot-install-dir "node_modules" copilot-server-package-name "package.json"))
+                         (f-join copilot-install-dir "lib" "node_modules" copilot-server-package-name "package.json")
+                         (f-join copilot-install-dir "lib64" "node_modules" copilot-server-package-name "package.json"))))
+    (seq-some
+     (lambda (path)
+       (when (and path (file-exists-p path))
+         (with-temp-buffer
+           (insert-file-contents path)
+           (save-match-data
+             (when (re-search-forward "\"version\": \"\\([0-9]+\\.[0-9]+\\.[0-9]+\\)\"" nil t)
+               (match-string 1))))))
+     possible-paths)))
 
-(easy-menu-define copilot-mode-menu copilot-mode-map "Copilot Menu"
-  '("Copilot"
-    ["Accept Completion" copilot-accept-completion]
-    ["Accept Completion by Word" copilot-accept-completion-by-word]
-    ["Accept Completion by Line" copilot-accept-completion-by-line]
-    ["Accept Completion by Paragraph" copilot-accept-completion-by-paragraph]
-    "--"
-    ["Complete" copilot-complete]
-    ["Next Completion" copilot-next-completion]
-    ["Previous Completion" copilot-previous-completion]
-    "--"
-    ["Install Server" copilot-install-server]
-    ["Uninstall Server" copilot-uninstall-server]
-    ["Diagnose" copilot-diagnose]
-    "--"
-    ["Login" copilot-login]
-    ["Logout" copilot-logout]))
+(defun copilot-server-executable ()
+  "Return the location of the `copilot-server-executable' file."
+  (cond
+   ((and (file-name-absolute-p copilot-server-executable)
+         (file-exists-p copilot-server-executable))
+    copilot-server-executable)
+   ((executable-find copilot-server-executable t))
+   (t
+    (let ((path (executable-find
+                 (f-join copilot-install-dir
+                       (cond ((eq system-type 'windows-nt) "")
+                             (t "bin"))
+                       copilot-server-executable)
+                 t)))
+      (unless (and path (file-exists-p path))
+        (error "The package %s is not installed.  Unable to find %s"
+               copilot-server-package-name path))
+      path))))
 
-(defun copilot--mode-enter ()
-  "Set up copilot mode when entering."
-  (add-hook 'post-command-hook #'copilot--post-command nil 'local)
-  (add-hook 'before-change-functions #'copilot--on-doc-change nil 'local)
-  (add-hook 'after-change-functions #'copilot--on-doc-change nil 'local)
-  ;; Hook onto both window-selection-change-functions and window-buffer-change-functions
-  ;; since both are separate ways of 'focussing' a buffer.
-  (add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
-  (add-hook 'window-buffer-change-functions #'copilot--on-doc-focus nil 'local)
-  (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local)
-  ;; The mode may be activated manually while focus remains on the current window/buffer.
-  (copilot--on-doc-focus (selected-window)))
-
-(defun copilot--mode-exit ()
-  "Clean up copilot mode when exiting."
-  (remove-hook 'post-command-hook #'copilot--post-command 'local)
-  (remove-hook 'before-change-functions #'copilot--on-doc-change 'local)
-  (remove-hook 'after-change-functions #'copilot--on-doc-change 'local)
-  (remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
-  (remove-hook 'window-buffer-change-functions #'copilot--on-doc-focus 'local)
-  (remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)
-  ;; Send the close event for the active buffer since activating the mode will open it again.
-  (copilot--on-doc-close))
+;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
+;; function for more information.
+(defun copilot-async-start-process (callback error-callback &rest command)
+  "Start async process COMMAND with CALLBACK and ERROR-CALLBACK."
+  (with-current-buffer
+      (compilation-start
+       (mapconcat
+        #'shell-quote-argument
+        (seq-filter (lambda (cmd) cmd) command)
+        " ")
+       t
+       (lambda (&rest _)
+         (generate-new-buffer-name "*copilot-install-server*")))
+    (view-mode +1)
+    (add-hook
+     'compilation-finish-functions
+     (lambda (_buf status)
+       (if (string= "finished\n" status)
+           (when callback
+             (condition-case err
+                 (funcall callback)
+               (error
+                (funcall error-callback (error-message-string err)))))
+         (when error-callback
+           (funcall error-callback (string-trim-right status)))))
+     nil t)))
 
 ;;;###autoload
-(define-minor-mode copilot-mode
-  "Minor mode for Copilot."
-  :init-value nil
-  :lighter " Copilot"
-  (copilot-clear-overlay)
-  (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
-  (if copilot-mode
-      (copilot--mode-enter)
-    (copilot--mode-exit)))
-
-(defun copilot-turn-on-unless-buffer-read-only ()
-  "Turn on `copilot-mode' if the buffer is writable."
-  (unless buffer-read-only
-    (copilot-mode 1)))
+(defun copilot-install-server ()
+  "Interactively install server."
+  (interactive)
+  (if-let* ((npm-binary (executable-find "npm")))
+      (progn
+        (make-directory copilot-install-dir 'parents)
+        (copilot-async-start-process
+         nil nil
+         npm-binary
+         "-g" "--prefix" copilot-install-dir
+         "install" (concat copilot-server-package-name
+                           (when copilot-version (format "@%s" copilot-version)))))
+    (copilot--log 'warning "Unable to install %s via `npm' because it is not present" copilot-server-package-name)
+    nil))
 
 ;;;###autoload
-(define-global-minor-mode global-copilot-mode
-  copilot-mode copilot-turn-on-unless-buffer-read-only)
+(defun copilot-uninstall-server ()
+  "Delete a Copilot server from `copilot-install-dir'."
+  (interactive)
+  (unless (file-directory-p copilot-install-dir)
+    (user-error "Couldn't find %s directory" copilot-install-dir))
+  (delete-directory copilot-install-dir 'recursive)
+  (copilot--log 'warning "Server `%s' uninstalled." (file-name-nondirectory (directory-file-name copilot-install-dir))))
+
+;;;###autoload
+(defun copilot-reinstall-server ()
+  "Interactively re-install server."
+  (interactive)
+  (copilot-uninstall-server)
+  (copilot-install-server))
 
 ;;
-;; agent
+;; Interaction with Copilot Server
 ;;
 
 (defconst copilot--ignore-response
@@ -317,28 +346,28 @@ Use this for custom bindings in `copilot-mode'.")
        (zerop (process-exit-status (jsonrpc--process copilot--connection)))))
 
 (defmacro copilot--request (&rest args)
-  "Send a request to the copilot agent with ARGS."
+  "Send a request to the copilot server with ARGS."
   `(progn
      (unless (copilot--connection-alivep)
-       (copilot--start-agent))
+       (copilot--start-server))
      (jsonrpc-request copilot--connection ,@args)))
 
 (defmacro copilot--notify (&rest args)
-  "Send a notification to the copilot agent with ARGS."
+  "Send a notification to the copilot server with ARGS."
   `(progn
      (unless (copilot--connection-alivep)
-       (copilot--start-agent))
+       (copilot--start-server))
      (jsonrpc-notify copilot--connection ,@args)))
 
 (cl-defmacro copilot--async-request (method params &rest args &key (success-fn #'copilot--ignore-response) &allow-other-keys)
-  "Send an asynchronous request to the copilot agent.
+  "Send an asynchronous request to the copilot server.
 
 Arguments METHOD, PARAMS and ARGS are used in function `jsonrpc-async-request'.
 
 SUCCESS-FN is the CALLBACK."
   `(progn
      (unless (copilot--connection-alivep)
-       (copilot--start-agent))
+       (copilot--start-server))
      ;; jsonrpc will use temp buffer for callbacks, so we need to save the current buffer and restore it inside callback
      (let ((buf (current-buffer)))
        (jsonrpc-async-request copilot--connection
@@ -350,7 +379,7 @@ SUCCESS-FN is the CALLBACK."
                               ,@args))))
 
 (defun copilot--command ()
-  "Return the command-line to start copilot agent."
+  "Return the command-line to start copilot server."
   (append
    (list (copilot-server-executable))
    copilot-server-args))
@@ -362,7 +391,7 @@ SUCCESS-FN is the CALLBACK."
                   'jsonrpc-process-connection
                   :name "copilot"
                   :notification-dispatcher #'copilot--handle-notification
-                  :process (make-process :name "copilot agent"
+                  :process (make-process :name "copilot server"
                                          :command (copilot--command)
                                          :coding 'utf-8-emacs-unix
                                          :connection-type 'pipe
@@ -374,8 +403,8 @@ SUCCESS-FN is the CALLBACK."
        ;; handle older jsonrpc versions
        (funcall make-fn :events-buffer-scrollback-size copilot-log-max)))))
 
-(defun copilot--start-agent ()
-  "Start the copilot agent process in local."
+(defun copilot--start-server ()
+  "Start the copilot server process in local."
   (cond
    ((not (file-exists-p (copilot-server-executable)))
     (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
@@ -386,7 +415,7 @@ SUCCESS-FN is the CALLBACK."
 You can change the installed version with `M-x copilot-reinstall-server` or remove this warning by changing the value of `copilot-version'."
               copilot-version installed-version)))
     (setq copilot--connection (copilot--make-connection))
-    (copilot--log 'info "Copilot agent started.")
+    (copilot--log 'info "Copilot server started.")
     (copilot--request 'initialize `( :capabilities (:workspace (:workspaceFolders t))
                                      :processId ,(emacs-pid)))
     (copilot--notify 'initialized '())
@@ -446,7 +475,7 @@ automatically, browse to %s." user-code verification-uri))
   ;; We are going to send a test request for the current buffer so we have to activate the mode
   ;; if it is not already activated.
   ;; If it the mode is already active, we have to make sure the current buffer is loaded in the
-  ;; agent.
+  ;; server.
   (if copilot-mode
       (copilot--on-doc-focus (selected-window))
     (copilot-mode))
@@ -463,7 +492,7 @@ automatically, browse to %s." user-code verification-uri))
                           :error-fn (lambda (err)
                                       (copilot--log 'error "%S" err))
                           :timeout-fn (lambda ()
-                                        (copilot--log 'warning "Copilot agent timeout."))))
+                                        (copilot--log 'warning "Copilot server timeout."))))
 
 ;;
 ;; Auto completion
@@ -709,7 +738,7 @@ automatically, browse to %s." user-code verification-uri))
                           :error-fn (lambda (err)
                                       (copilot--log 'error "%S" err))
                           :timeout-fn (lambda ()
-                                        (copilot--log 'warning "Copilot agent timeout."))))
+                                        (copilot--log 'warning "Copilot server timeout."))))
 
 
 (defun copilot-panel-complete ()
@@ -1072,102 +1101,74 @@ in `post-command-hook'."
     (copilot-complete)))
 
 ;;
-;;; Installation
+;; Minor mode definition
+;;
 
-(defun copilot-installed-version ()
-  "Return the version number of currently installed `copilot-server-package-name'."
-  (let ((possible-paths (list
-                         (when (eq system-type 'windows-nt)
-                           (f-join copilot-install-dir "node_modules" copilot-server-package-name "package.json"))
-                         (f-join copilot-install-dir "lib" "node_modules" copilot-server-package-name "package.json")
-                         (f-join copilot-install-dir "lib64" "node_modules" copilot-server-package-name "package.json"))))
-    (seq-some
-     (lambda (path)
-       (when (and path (file-exists-p path))
-         (with-temp-buffer
-           (insert-file-contents path)
-           (save-match-data
-             (when (re-search-forward "\"version\": \"\\([0-9]+\\.[0-9]+\\.[0-9]+\\)\"" nil t)
-               (match-string 1))))))
-     possible-paths)))
+(defvar copilot-mode-map (make-sparse-keymap)
+  "Keymap for Copilot minor mode.
+Use this for custom bindings in `copilot-mode'.")
 
-(defun copilot-server-executable ()
-  "Return the location of the `copilot-server-executable' file."
-  (cond
-   ((and (file-name-absolute-p copilot-server-executable)
-         (file-exists-p copilot-server-executable))
-    copilot-server-executable)
-   ((executable-find copilot-server-executable t))
-   (t
-    (let ((path (executable-find
-                 (f-join copilot-install-dir
-                       (cond ((eq system-type 'windows-nt) "")
-                             (t "bin"))
-                       copilot-server-executable)
-                 t)))
-      (unless (and path (file-exists-p path))
-        (error "The package %s is not installed.  Unable to find %s"
-               copilot-server-package-name path))
-      path))))
+(easy-menu-define copilot-mode-menu copilot-mode-map "Copilot Menu"
+  '("Copilot"
+    ["Accept Completion" copilot-accept-completion]
+    ["Accept Completion by Word" copilot-accept-completion-by-word]
+    ["Accept Completion by Line" copilot-accept-completion-by-line]
+    ["Accept Completion by Paragraph" copilot-accept-completion-by-paragraph]
+    "--"
+    ["Complete" copilot-complete]
+    ["Next Completion" copilot-next-completion]
+    ["Previous Completion" copilot-previous-completion]
+    "--"
+    ["Install Server" copilot-install-server]
+    ["Uninstall Server" copilot-uninstall-server]
+    ["Diagnose" copilot-diagnose]
+    "--"
+    ["Login" copilot-login]
+    ["Logout" copilot-logout]))
 
-;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
-;; function for more information.
-(defun copilot-async-start-process (callback error-callback &rest command)
-  "Start async process COMMAND with CALLBACK and ERROR-CALLBACK."
-  (with-current-buffer
-      (compilation-start
-       (mapconcat
-        #'shell-quote-argument
-        (seq-filter (lambda (cmd) cmd) command)
-        " ")
-       t
-       (lambda (&rest _)
-         (generate-new-buffer-name "*copilot-install-server*")))
-    (view-mode +1)
-    (add-hook
-     'compilation-finish-functions
-     (lambda (_buf status)
-       (if (string= "finished\n" status)
-           (when callback
-             (condition-case err
-                 (funcall callback)
-               (error
-                (funcall error-callback (error-message-string err)))))
-         (when error-callback
-           (funcall error-callback (string-trim-right status)))))
-     nil t)))
+(defun copilot--mode-setup ()
+  "Set up copilot mode."
+  (add-hook 'post-command-hook #'copilot--post-command nil 'local)
+  (add-hook 'before-change-functions #'copilot--on-doc-change nil 'local)
+  (add-hook 'after-change-functions #'copilot--on-doc-change nil 'local)
+  ;; Hook onto both window-selection-change-functions and window-buffer-change-functions
+  ;; since both are separate ways of 'focussing' a buffer.
+  (add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
+  (add-hook 'window-buffer-change-functions #'copilot--on-doc-focus nil 'local)
+  (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local)
+  ;; The mode may be activated manually while focus remains on the current window/buffer.
+  (copilot--on-doc-focus (selected-window)))
+
+(defun copilot--mode-teardown ()
+  "Tear down copilot mode."
+  (remove-hook 'post-command-hook #'copilot--post-command 'local)
+  (remove-hook 'before-change-functions #'copilot--on-doc-change 'local)
+  (remove-hook 'after-change-functions #'copilot--on-doc-change 'local)
+  (remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
+  (remove-hook 'window-buffer-change-functions #'copilot--on-doc-focus 'local)
+  (remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)
+  ;; Send the close event for the active buffer since activating the mode will open it again.
+  (copilot--on-doc-close))
 
 ;;;###autoload
-(defun copilot-install-server ()
-  "Interactively install server."
-  (interactive)
-  (if-let* ((npm-binary (executable-find "npm")))
-      (progn
-        (make-directory copilot-install-dir 'parents)
-        (copilot-async-start-process
-         nil nil
-         npm-binary
-         "-g" "--prefix" copilot-install-dir
-         "install" (concat copilot-server-package-name
-                           (when copilot-version (format "@%s" copilot-version)))))
-    (copilot--log 'warning "Unable to install %s via `npm' because it is not present" copilot-server-package-name)
-    nil))
+(define-minor-mode copilot-mode
+  "Minor mode for Copilot."
+  :init-value nil
+  :lighter " Copilot"
+  (copilot-clear-overlay)
+  (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
+  (if copilot-mode
+      (copilot--mode-setup)
+    (copilot--mode-teardown)))
+
+(defun copilot-turn-on-unless-buffer-read-only ()
+  "Turn on `copilot-mode' if the buffer is writable."
+  (unless buffer-read-only
+    (copilot-mode 1)))
 
 ;;;###autoload
-(defun copilot-reinstall-server ()
-  "Interactively re-install server."
-  (interactive)
-  (copilot-uninstall-server)
-  (copilot-install-server))
-
-;;;###autoload
-(defun copilot-uninstall-server ()
-  "Delete a Copilot server from `copilot-install-dir'."
-  (interactive)
-  (unless (file-directory-p copilot-install-dir)
-    (user-error "Couldn't find %s directory" copilot-install-dir))
-  (delete-directory copilot-install-dir 'recursive)
-  (copilot--log 'warning "Server `%s' uninstalled." (file-name-nondirectory (directory-file-name copilot-install-dir))))
+(define-global-minor-mode global-copilot-mode
+  copilot-mode copilot-turn-on-unless-buffer-read-only)
 
 (provide 'copilot)
 ;;; copilot.el ends here

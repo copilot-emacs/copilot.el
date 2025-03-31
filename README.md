@@ -188,8 +188,6 @@ Use `:map`, `:hook`, and `:config` to customize `copilot.el` via `use-package`.
 
 Please make sure you have these dependencies installed (available in ELPA/MELPA):
 
-+ `dash`
-+ `s`
 + `editorconfig`
 + `f`
 

@@ -7,7 +7,7 @@
 ;;             Shen, Jen-Chieh <jcs090218@gmail.com>
 ;;             Rakotomandimby Mihamina <mihamina.rakotomandimby@rktmb.org>
 ;; URL: https://github.com/copilot-emacs/copilot.el
-;; Package-Requires: ((emacs "27.2") (s "1.12.0") (dash "2.19.1") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0"))
+;; Package-Requires: ((emacs "27.2") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0"))
 ;; Version: 0.0.1
 ;; Keywords: convenience copilot
 
@@ -41,10 +41,9 @@
 (require 'compile)
 (require 'json)
 (require 'jsonrpc)
+(require 'subr-x)
 
 (require 'f)
-(require 's)
-(require 'dash)
 (require 'editorconfig)
 (require 'copilot-balancer)
 
@@ -189,20 +188,10 @@ Incremented after each change.")
 (defvar copilot--opened-buffers nil
   "List of buffers that have been opened in Copilot.")
 
-(eval-and-compile
-  (defun copilot--transform-pattern (pattern)
-    "Transform PATTERN to (&plist PATTERN) recursively."
-    (cons '&plist
-          (mapcar (lambda (p)
-                    (if (listp p)
-                        (copilot--transform-pattern p)
-                      p))
-                  pattern))))
-
 (defmacro copilot--dbind (pattern source &rest body)
   "Destructure SOURCE against plist PATTERN and eval BODY."
   (declare (indent 2))
-  `(-let ((,(copilot--transform-pattern pattern) ,source))
+  `(cl-destructuring-bind (&key ,@pattern &allow-other-keys) ,source
      ,@body))
 
 (defsubst copilot--log (level format &rest args)
@@ -214,6 +203,25 @@ Incremented after each change.")
                                   ('info 'success)
                                   (_ 'warning)))
            (apply #'format format args)))
+;;
+;; Utility functions
+;;
+
+(defun copilot--mode-symbol (mode-name)
+  "Infer the language for MODE-NAME."
+  (thread-last
+    mode-name
+    (string-remove-suffix "-ts-mode")
+    (string-remove-suffix "-mode")))
+
+(defun copilot--string-common-prefix (str1 str2)
+  "Find the common prefix of STR1 and STR2 directly."
+  (let ((min-len (min (length str1) (length str2)))
+        (i 0))
+    (while (and (< i min-len)
+                (= (aref str1 i) (aref str2 i)))
+      (setq i (1+ i)))
+    (substring str1 0 i)))
 
 ;;
 ;; Externals
@@ -398,7 +406,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
   (copilot--dbind
       (:status :user :userCode user-code :verificationUri verification-uri)
       (copilot--request 'signInInitiate '(:dummy "signInInitiate"))
-    (when (s-equals-p status "AlreadySignedIn")
+    (when (string-equal status "AlreadySignedIn")
       (user-error "Already signed in as %s" user))
     (if (display-graphic-p)
         (progn
@@ -542,7 +550,7 @@ automatically, browse to %s." user-code verification-uri))
    ((not buffer-file-name)
     (concat "file:///buffer/" (url-encode-url (buffer-name (current-buffer)))))
    ((and (eq system-type 'windows-nt)
-         (not (s-starts-with-p "/" buffer-file-name)))
+         (not (string-prefix-p "/" buffer-file-name)))
     (concat "file:///" (url-encode-url buffer-file-name)))
    (t
     (concat "file://" (url-encode-url buffer-file-name)))))
@@ -591,7 +599,7 @@ automatically, browse to %s." user-code verification-uri))
 
 (defun copilot--get-major-mode-language-id ()
   "Get language ID from major mode."
-  (let ((major-mode-symbol (s-chop-suffixes '("-ts-mode" "-mode") (symbol-name major-mode))))
+  (let ((major-mode-symbol (copilot--mode-symbol (symbol-name major-mode))))
     (alist-get major-mode copilot-major-mode-alist major-mode-symbol nil 'equal)))
 
 (defun copilot--get-language-id ()
@@ -800,7 +808,7 @@ To work around posn problems with after-string property.")
 `save-excursion' is not necessary since there is only one caller, and they are
 already saving an excursion.  This is also a private function."
   (copilot-clear-overlay)
-  (when (and (s-present-p completion)
+  (when (and (not (string-blank-p completion))
              (or (<= start (point))))
     (let* ((ov (copilot--get-overlay)))
       (overlay-put ov 'tail-length (- (line-end-position) end))
@@ -835,7 +843,7 @@ provided."
            (completion-start (overlay-get copilot--overlay 'completion-start)))
       ;; If there is extra indentation before the point, delete it and shift the completion
       (when (and (< completion-start (point))
-                 (s-blank-p (s-trim (buffer-substring-no-properties completion-start (point))))
+                 (string-blank-p (s-trim (buffer-substring-no-properties completion-start (point))))
                  ;; Only remove indentation is completion-start is not at the beginning of the line
                  (save-excursion
                    (goto-char completion-start)
@@ -853,9 +861,9 @@ provided."
         (delete-region start end)
         (insert t-completion))
       ;; if it is a partial completion
-      (when (and (s-prefix-p t-completion completion)
-                 (not (s-equals-p t-completion completion)))
-        (copilot--set-overlay-text (copilot--get-overlay) (s-chop-prefix t-completion completion)))
+      (when (and (string-prefix-p t-completion completion)
+                 (not (string-equal t-completion completion)))
+        (copilot--set-overlay-text (copilot--get-overlay) (string-remove-prefix t-completion completion)))
       t)))
 
 (defmacro copilot--define-accept-completion-by-action (func-name action)
@@ -894,7 +902,7 @@ provided."
                             (funcall goto-line!)
                             (forward-char start-char)
                             (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
-                                   (common-prefix-len (length (s-shared-start text cur-line))))
+                                   (common-prefix-len (length (copilot--string-common-prefix text cur-line))))
                               (setq text (substring text common-prefix-len))
                               (forward-char common-prefix-len)
                               (point))))
@@ -914,7 +922,7 @@ provided."
   ;; send a notification for the window gaining focus and only if the buffer has
   ;; copilot-mode enabled.
   (when (and copilot-mode (eq window (selected-window)))
-    (if (-contains-p copilot--opened-buffers (current-buffer))
+    (if (seq-contains-p copilot--opened-buffers (current-buffer))
         (copilot--notify ':textDocument/didFocus
                          (list :textDocument (list :uri (copilot--get-uri))))
       (add-to-list 'copilot--opened-buffers (current-buffer))
@@ -952,7 +960,7 @@ Arguments BEG, END, and CHARS-REPLACED are metadata for region changed."
 
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."
-  (when (-contains-p copilot--opened-buffers (current-buffer))
+  (when (seq-contains-p copilot--opened-buffers (current-buffer))
     (copilot--notify 'textDocument/didClose
                      (list :textDocument (list :uri (copilot--get-uri))))
     (setq copilot--opened-buffers (delete (current-buffer) copilot--opened-buffers))))
@@ -1026,7 +1034,7 @@ Copilot will show completions only if all predicates return t."
   (when (and this-command
              (not (and (symbolp this-command)
                        (or
-                        (s-starts-with-p "copilot-" (symbol-name this-command))
+                        (string-prefix-p "copilot-" (symbol-name this-command))
                         (member this-command copilot-clear-overlay-ignore-commands)
                         (copilot--self-insert this-command)))))
     (copilot-clear-overlay)
@@ -1086,8 +1094,8 @@ in `post-command-hook'."
 (defun copilot-server-executable ()
   "Return the location of the `copilot-server-executable' file."
   (cond
-   ((and (f-absolute? copilot-server-executable)
-         (f-exists? copilot-server-executable))
+   ((and (file-name-absolute-p copilot-server-executable)
+         (file-exists-p copilot-server-executable))
     copilot-server-executable)
    ((executable-find copilot-server-executable t))
    (t
@@ -1097,7 +1105,7 @@ in `post-command-hook'."
                              (t "bin"))
                        copilot-server-executable)
                  t)))
-      (unless (and path (f-exists? path))
+      (unless (and path (file-exists-p path))
         (error "The package %s is not installed.  Unable to find %s"
                copilot-server-package-name path))
       path))))
@@ -1110,7 +1118,7 @@ in `post-command-hook'."
       (compilation-start
        (mapconcat
         #'shell-quote-argument
-        (-filter (lambda (cmd) cmd) command)
+        (seq-filter (lambda (cmd) cmd) command)
         " ")
        t
        (lambda (&rest _)
@@ -1126,7 +1134,7 @@ in `post-command-hook'."
                (error
                 (funcall error-callback (error-message-string err)))))
          (when error-callback
-           (funcall error-callback (s-trim-right status)))))
+           (funcall error-callback (string-trim-right status)))))
      nil t)))
 
 ;;;###autoload

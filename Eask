@@ -13,8 +13,6 @@
 (source 'melpa)
 
 (depends-on "emacs" "27.2")
-(depends-on "s")
-(depends-on "dash")
 (depends-on "editorconfig")
 (depends-on "jsonrpc")
 (depends-on "f")

@@ -309,13 +309,6 @@ Incremented after each change.")
     nil))
 
 ;;;###autoload
-(defun copilot-reinstall-server ()
-  "Interactively re-install server."
-  (interactive)
-  (copilot-uninstall-server)
-  (copilot-install-server))
-
-;;;###autoload
 (defun copilot-uninstall-server ()
   "Delete a Copilot server from `copilot-install-dir'."
   (interactive)
@@ -323,6 +316,13 @@ Incremented after each change.")
     (user-error "Couldn't find %s directory" copilot-install-dir))
   (delete-directory copilot-install-dir 'recursive)
   (copilot--log 'warning "Server `%s' uninstalled." (file-name-nondirectory (directory-file-name copilot-install-dir))))
+
+;;;###autoload
+(defun copilot-reinstall-server ()
+  "Interactively re-install server."
+  (interactive)
+  (copilot-uninstall-server)
+  (copilot-install-server))
 
 ;;
 ;; Interaction with the Copilot LSP Server

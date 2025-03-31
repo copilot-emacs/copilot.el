@@ -226,6 +226,105 @@ Incremented after each change.")
 (declare-function org-map-entries "ext:org.el")
 
 ;;
+;;; Copilot Server Installation
+;;
+
+(defun copilot-installed-version ()
+  "Return the version number of currently installed `copilot-server-package-name'."
+  (let ((possible-paths (list
+                         (when (eq system-type 'windows-nt)
+                           (f-join copilot-install-dir "node_modules" copilot-server-package-name "package.json"))
+                         (f-join copilot-install-dir "lib" "node_modules" copilot-server-package-name "package.json")
+                         (f-join copilot-install-dir "lib64" "node_modules" copilot-server-package-name "package.json"))))
+    (seq-some
+     (lambda (path)
+       (when (and path (file-exists-p path))
+         (with-temp-buffer
+           (insert-file-contents path)
+           (save-match-data
+             (when (re-search-forward "\"version\": \"\\([0-9]+\\.[0-9]+\\.[0-9]+\\)\"" nil t)
+               (match-string 1))))))
+     possible-paths)))
+
+(defun copilot-server-executable ()
+  "Return the location of the `copilot-server-executable' file."
+  (cond
+   ((and (f-absolute? copilot-server-executable)
+         (f-exists? copilot-server-executable))
+    copilot-server-executable)
+   ((executable-find copilot-server-executable t))
+   (t
+    (let ((path (executable-find
+                 (f-join copilot-install-dir
+                       (cond ((eq system-type 'windows-nt) "")
+                             (t "bin"))
+                       copilot-server-executable)
+                 t)))
+      (unless (and path (f-exists? path))
+        (error "The package %s is not installed.  Unable to find %s"
+               copilot-server-package-name path))
+      path))))
+
+;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
+;; function for more information.
+(defun copilot-async-start-process (callback error-callback &rest command)
+  "Start async process COMMAND with CALLBACK and ERROR-CALLBACK."
+  (with-current-buffer
+      (compilation-start
+       (mapconcat
+        #'shell-quote-argument
+        (-filter (lambda (cmd) cmd) command)
+        " ")
+       t
+       (lambda (&rest _)
+         (generate-new-buffer-name "*copilot-install-server*")))
+    (view-mode +1)
+    (add-hook
+     'compilation-finish-functions
+     (lambda (_buf status)
+       (if (string= "finished\n" status)
+           (when callback
+             (condition-case err
+                 (funcall callback)
+               (error
+                (funcall error-callback (error-message-string err)))))
+         (when error-callback
+           (funcall error-callback (s-trim-right status)))))
+     nil t)))
+
+;;;###autoload
+(defun copilot-install-server ()
+  "Interactively install server."
+  (interactive)
+  (if-let* ((npm-binary (executable-find "npm")))
+      (progn
+        (make-directory copilot-install-dir 'parents)
+        (copilot-async-start-process
+         nil nil
+         npm-binary
+         "-g" "--prefix" copilot-install-dir
+         "install" (concat copilot-server-package-name
+                           (when copilot-version (format "@%s" copilot-version)))))
+    (copilot--log 'warning "Unable to install %s via `npm' because it is not present" copilot-server-package-name)
+    nil))
+
+;;;###autoload
+(defun copilot-reinstall-server ()
+  "Interactively re-install server."
+  (interactive)
+  (copilot-uninstall-server)
+  (copilot-install-server))
+
+;;;###autoload
+(defun copilot-uninstall-server ()
+  "Delete a Copilot server from `copilot-install-dir'."
+  (interactive)
+  (unless (file-directory-p copilot-install-dir)
+    (user-error "Couldn't find %s directory" copilot-install-dir))
+  (delete-directory copilot-install-dir 'recursive)
+  (copilot--log 'warning "Server `%s' uninstalled." (file-name-nondirectory (directory-file-name copilot-install-dir))))
+
+;;
 ;; Interaction with the Copilot LSP Server
 ;;
 
@@ -1058,105 +1157,6 @@ Use this for custom bindings in `copilot-mode'.")
 ;;;###autoload
 (define-global-minor-mode global-copilot-mode
   copilot-mode copilot-turn-on-unless-buffer-read-only)
-
-
-;;
-;;; Installation
-
-(defun copilot-installed-version ()
-  "Return the version number of currently installed `copilot-server-package-name'."
-  (let ((possible-paths (list
-                         (when (eq system-type 'windows-nt)
-                           (f-join copilot-install-dir "node_modules" copilot-server-package-name "package.json"))
-                         (f-join copilot-install-dir "lib" "node_modules" copilot-server-package-name "package.json")
-                         (f-join copilot-install-dir "lib64" "node_modules" copilot-server-package-name "package.json"))))
-    (seq-some
-     (lambda (path)
-       (when (and path (file-exists-p path))
-         (with-temp-buffer
-           (insert-file-contents path)
-           (save-match-data
-             (when (re-search-forward "\"version\": \"\\([0-9]+\\.[0-9]+\\.[0-9]+\\)\"" nil t)
-               (match-string 1))))))
-     possible-paths)))
-
-(defun copilot-server-executable ()
-  "Return the location of the `copilot-server-executable' file."
-  (cond
-   ((and (f-absolute? copilot-server-executable)
-         (f-exists? copilot-server-executable))
-    copilot-server-executable)
-   ((executable-find copilot-server-executable t))
-   (t
-    (let ((path (executable-find
-                 (f-join copilot-install-dir
-                       (cond ((eq system-type 'windows-nt) "")
-                             (t "bin"))
-                       copilot-server-executable)
-                 t)))
-      (unless (and path (f-exists? path))
-        (error "The package %s is not installed.  Unable to find %s"
-               copilot-server-package-name path))
-      path))))
-
-;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
-;; function for more information.
-(defun copilot-async-start-process (callback error-callback &rest command)
-  "Start async process COMMAND with CALLBACK and ERROR-CALLBACK."
-  (with-current-buffer
-      (compilation-start
-       (mapconcat
-        #'shell-quote-argument
-        (-filter (lambda (cmd) cmd) command)
-        " ")
-       t
-       (lambda (&rest _)
-         (generate-new-buffer-name "*copilot-install-server*")))
-    (view-mode +1)
-    (add-hook
-     'compilation-finish-functions
-     (lambda (_buf status)
-       (if (string= "finished\n" status)
-           (when callback
-             (condition-case err
-                 (funcall callback)
-               (error
-                (funcall error-callback (error-message-string err)))))
-         (when error-callback
-           (funcall error-callback (s-trim-right status)))))
-     nil t)))
-
-;;;###autoload
-(defun copilot-install-server ()
-  "Interactively install server."
-  (interactive)
-  (if-let* ((npm-binary (executable-find "npm")))
-      (progn
-        (make-directory copilot-install-dir 'parents)
-        (copilot-async-start-process
-         nil nil
-         npm-binary
-         "-g" "--prefix" copilot-install-dir
-         "install" (concat copilot-server-package-name
-                           (when copilot-version (format "@%s" copilot-version)))))
-    (copilot--log 'warning "Unable to install %s via `npm' because it is not present" copilot-server-package-name)
-    nil))
-
-;;;###autoload
-(defun copilot-reinstall-server ()
-  "Interactively re-install server."
-  (interactive)
-  (copilot-uninstall-server)
-  (copilot-install-server))
-
-;;;###autoload
-(defun copilot-uninstall-server ()
-  "Delete a Copilot server from `copilot-install-dir'."
-  (interactive)
-  (unless (file-directory-p copilot-install-dir)
-    (user-error "Couldn't find %s directory" copilot-install-dir))
-  (delete-directory copilot-install-dir 'recursive)
-  (copilot--log 'warning "Server `%s' uninstalled." (file-name-nondirectory (directory-file-name copilot-install-dir))))
 
 (provide 'copilot)
 ;;; copilot.el ends here

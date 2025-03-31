@@ -170,7 +170,7 @@ You may adjust this variable at your own risk."
   "Overlay used to surround point and make copilot-completion-keymap activate.")
 
 (defvar copilot--connection nil
-  "Copilot agent jsonrpc connection instance.")
+  "Copilot server jsonrpc connection instance.")
 
 (defvar-local copilot--line-bias 1
   "Line bias for Copilot completion.")
@@ -226,12 +226,7 @@ Incremented after each change.")
 (declare-function org-map-entries "ext:org.el")
 
 ;;
-;; Entry
-;;
-
-
-;;
-;; agent
+;; Interaction with the Copilot LSP Server
 ;;
 
 (defconst copilot--ignore-response
@@ -244,28 +239,28 @@ Incremented after each change.")
        (zerop (process-exit-status (jsonrpc--process copilot--connection)))))
 
 (defmacro copilot--request (&rest args)
-  "Send a request to the copilot agent with ARGS."
+  "Send a request to the copilot server with ARGS."
   `(progn
      (unless (copilot--connection-alivep)
-       (copilot--start-agent))
+       (copilot--start-server))
      (jsonrpc-request copilot--connection ,@args)))
 
 (defmacro copilot--notify (&rest args)
-  "Send a notification to the copilot agent with ARGS."
+  "Send a notification to the copilot server with ARGS."
   `(progn
      (unless (copilot--connection-alivep)
-       (copilot--start-agent))
+       (copilot--start-server))
      (jsonrpc-notify copilot--connection ,@args)))
 
 (cl-defmacro copilot--async-request (method params &rest args &key (success-fn #'copilot--ignore-response) &allow-other-keys)
-  "Send an asynchronous request to the copilot agent.
+  "Send an asynchronous request to the copilot server.
 
 Arguments METHOD, PARAMS and ARGS are used in function `jsonrpc-async-request'.
 
 SUCCESS-FN is the CALLBACK."
   `(progn
      (unless (copilot--connection-alivep)
-       (copilot--start-agent))
+       (copilot--start-server))
      ;; jsonrpc will use temp buffer for callbacks, so we need to save the current buffer and restore it inside callback
      (let ((buf (current-buffer)))
        (jsonrpc-async-request copilot--connection
@@ -277,7 +272,7 @@ SUCCESS-FN is the CALLBACK."
                               ,@args))))
 
 (defun copilot--command ()
-  "Return the command-line to start copilot agent."
+  "Return the command-line to start copilot server."
   (append
    (list (copilot-server-executable))
    copilot-server-args))
@@ -289,7 +284,7 @@ SUCCESS-FN is the CALLBACK."
                   'jsonrpc-process-connection
                   :name "copilot"
                   :notification-dispatcher #'copilot--handle-notification
-                  :process (make-process :name "copilot agent"
+                  :process (make-process :name "copilot server"
                                          :command (copilot--command)
                                          :coding 'utf-8-emacs-unix
                                          :connection-type 'pipe
@@ -301,8 +296,8 @@ SUCCESS-FN is the CALLBACK."
        ;; handle older jsonrpc versions
        (funcall make-fn :events-buffer-scrollback-size copilot-log-max)))))
 
-(defun copilot--start-agent ()
-  "Start the copilot agent process in local."
+(defun copilot--start-server ()
+  "Start the copilot server process in local."
   (cond
    ((not (file-exists-p (copilot-server-executable)))
     (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
@@ -313,7 +308,7 @@ SUCCESS-FN is the CALLBACK."
 You can change the installed version with `M-x copilot-reinstall-server` or remove this warning by changing the value of `copilot-version'."
               copilot-version installed-version)))
     (setq copilot--connection (copilot--make-connection))
-    (copilot--log 'info "Copilot agent started.")
+    (copilot--log 'info "Copilot server started.")
     (copilot--request 'initialize `( :capabilities (:workspace (:workspaceFolders t))
                                      :processId ,(emacs-pid)))
     (copilot--notify 'initialized '())
@@ -373,7 +368,7 @@ automatically, browse to %s." user-code verification-uri))
   ;; We are going to send a test request for the current buffer so we have to activate the mode
   ;; if it is not already activated.
   ;; If it the mode is already active, we have to make sure the current buffer is loaded in the
-  ;; agent.
+  ;; server.
   (if copilot-mode
       (copilot--on-doc-focus (selected-window))
     (copilot-mode))
@@ -390,7 +385,7 @@ automatically, browse to %s." user-code verification-uri))
                           :error-fn (lambda (err)
                                       (copilot--log 'error "%S" err))
                           :timeout-fn (lambda ()
-                                        (copilot--log 'warning "Copilot agent timeout."))))
+                                        (copilot--log 'warning "Copilot server timeout."))))
 
 ;;
 ;; Auto completion
@@ -636,7 +631,7 @@ automatically, browse to %s." user-code verification-uri))
                           :error-fn (lambda (err)
                                       (copilot--log 'error "%S" err))
                           :timeout-fn (lambda ()
-                                        (copilot--log 'warning "Copilot agent timeout."))))
+                                        (copilot--log 'warning "Copilot server timeout."))))
 
 
 (defun copilot-panel-complete ()

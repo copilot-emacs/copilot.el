@@ -234,76 +234,6 @@ Incremented after each change.")
 (declare-function org-map-entries "ext:org.el")
 
 ;;
-;; Entry
-;;
-
-(defvar copilot-mode-map (make-sparse-keymap)
-  "Keymap for Copilot minor mode.
-Use this for custom bindings in `copilot-mode'.")
-
-(easy-menu-define copilot-mode-menu copilot-mode-map "Copilot Menu"
-  '("Copilot"
-    ["Accept Completion" copilot-accept-completion]
-    ["Accept Completion by Word" copilot-accept-completion-by-word]
-    ["Accept Completion by Line" copilot-accept-completion-by-line]
-    ["Accept Completion by Paragraph" copilot-accept-completion-by-paragraph]
-    "--"
-    ["Complete" copilot-complete]
-    ["Next Completion" copilot-next-completion]
-    ["Previous Completion" copilot-previous-completion]
-    "--"
-    ["Install Server" copilot-install-server]
-    ["Uninstall Server" copilot-uninstall-server]
-    ["Diagnose" copilot-diagnose]
-    "--"
-    ["Login" copilot-login]
-    ["Logout" copilot-logout]))
-
-(defun copilot--mode-enter ()
-  "Set up copilot mode when entering."
-  (add-hook 'post-command-hook #'copilot--post-command nil 'local)
-  (add-hook 'before-change-functions #'copilot--on-doc-change nil 'local)
-  (add-hook 'after-change-functions #'copilot--on-doc-change nil 'local)
-  ;; Hook onto both window-selection-change-functions and window-buffer-change-functions
-  ;; since both are separate ways of 'focussing' a buffer.
-  (add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
-  (add-hook 'window-buffer-change-functions #'copilot--on-doc-focus nil 'local)
-  (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local)
-  ;; The mode may be activated manually while focus remains on the current window/buffer.
-  (copilot--on-doc-focus (selected-window)))
-
-(defun copilot--mode-exit ()
-  "Clean up copilot mode when exiting."
-  (remove-hook 'post-command-hook #'copilot--post-command 'local)
-  (remove-hook 'before-change-functions #'copilot--on-doc-change 'local)
-  (remove-hook 'after-change-functions #'copilot--on-doc-change 'local)
-  (remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
-  (remove-hook 'window-buffer-change-functions #'copilot--on-doc-focus 'local)
-  (remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)
-  ;; Send the close event for the active buffer since activating the mode will open it again.
-  (copilot--on-doc-close))
-
-;;;###autoload
-(define-minor-mode copilot-mode
-  "Minor mode for Copilot."
-  :init-value nil
-  :lighter " Copilot"
-  (copilot-clear-overlay)
-  (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
-  (if copilot-mode
-      (copilot--mode-enter)
-    (copilot--mode-exit)))
-
-(defun copilot-turn-on-unless-buffer-read-only ()
-  "Turn on `copilot-mode' if the buffer is writable."
-  (unless buffer-read-only
-    (copilot-mode 1)))
-
-;;;###autoload
-(define-global-minor-mode global-copilot-mode
-  copilot-mode copilot-turn-on-unless-buffer-read-only)
-
-;;
 ;; Interaction with Copilot Server
 ;;
 
@@ -1070,6 +1000,76 @@ in `post-command-hook'."
              copilot-mode
              (copilot--satisfy-trigger-predicates))
     (copilot-complete)))
+
+;;
+;; Minor mode definition
+;;
+
+(defvar copilot-mode-map (make-sparse-keymap)
+  "Keymap for Copilot minor mode.
+Use this for custom bindings in `copilot-mode'.")
+
+(easy-menu-define copilot-mode-menu copilot-mode-map "Copilot Menu"
+  '("Copilot"
+    ["Accept Completion" copilot-accept-completion]
+    ["Accept Completion by Word" copilot-accept-completion-by-word]
+    ["Accept Completion by Line" copilot-accept-completion-by-line]
+    ["Accept Completion by Paragraph" copilot-accept-completion-by-paragraph]
+    "--"
+    ["Complete" copilot-complete]
+    ["Next Completion" copilot-next-completion]
+    ["Previous Completion" copilot-previous-completion]
+    "--"
+    ["Install Server" copilot-install-server]
+    ["Uninstall Server" copilot-uninstall-server]
+    ["Diagnose" copilot-diagnose]
+    "--"
+    ["Login" copilot-login]
+    ["Logout" copilot-logout]))
+
+(defun copilot--mode-enter ()
+  "Set up copilot mode when entering."
+  (add-hook 'post-command-hook #'copilot--post-command nil 'local)
+  (add-hook 'before-change-functions #'copilot--on-doc-change nil 'local)
+  (add-hook 'after-change-functions #'copilot--on-doc-change nil 'local)
+  ;; Hook onto both window-selection-change-functions and window-buffer-change-functions
+  ;; since both are separate ways of 'focussing' a buffer.
+  (add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
+  (add-hook 'window-buffer-change-functions #'copilot--on-doc-focus nil 'local)
+  (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local)
+  ;; The mode may be activated manually while focus remains on the current window/buffer.
+  (copilot--on-doc-focus (selected-window)))
+
+(defun copilot--mode-exit ()
+  "Clean up copilot mode when exiting."
+  (remove-hook 'post-command-hook #'copilot--post-command 'local)
+  (remove-hook 'before-change-functions #'copilot--on-doc-change 'local)
+  (remove-hook 'after-change-functions #'copilot--on-doc-change 'local)
+  (remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
+  (remove-hook 'window-buffer-change-functions #'copilot--on-doc-focus 'local)
+  (remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)
+  ;; Send the close event for the active buffer since activating the mode will open it again.
+  (copilot--on-doc-close))
+
+;;;###autoload
+(define-minor-mode copilot-mode
+  "Minor mode for Copilot."
+  :init-value nil
+  :lighter " Copilot"
+  (copilot-clear-overlay)
+  (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
+  (if copilot-mode
+      (copilot--mode-enter)
+    (copilot--mode-exit)))
+
+(defun copilot-turn-on-unless-buffer-read-only ()
+  "Turn on `copilot-mode' if the buffer is writable."
+  (unless buffer-read-only
+    (copilot-mode 1)))
+
+;;;###autoload
+(define-global-minor-mode global-copilot-mode
+  copilot-mode copilot-turn-on-unless-buffer-read-only)
 
 ;;
 ;;; Installation

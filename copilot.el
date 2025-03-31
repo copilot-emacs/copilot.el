@@ -1020,8 +1020,8 @@ Use this for custom bindings in `copilot-mode'.")
     ["Login" copilot-login]
     ["Logout" copilot-logout]))
 
-(defun copilot--mode-enter ()
-  "Set up copilot mode when entering."
+(defun copilot--mode-enable ()
+  "Set up copilot mode."
   (add-hook 'post-command-hook #'copilot--post-command nil 'local)
   (add-hook 'before-change-functions #'copilot--on-doc-change nil 'local)
   (add-hook 'after-change-functions #'copilot--on-doc-change nil 'local)
@@ -1033,8 +1033,8 @@ Use this for custom bindings in `copilot-mode'.")
   ;; The mode may be activated manually while focus remains on the current window/buffer.
   (copilot--on-doc-focus (selected-window)))
 
-(defun copilot--mode-exit ()
-  "Clean up copilot mode when exiting."
+(defun copilot--mode-disable ()
+  "Tear down copilot mode."
   (remove-hook 'post-command-hook #'copilot--post-command 'local)
   (remove-hook 'before-change-functions #'copilot--on-doc-change 'local)
   (remove-hook 'after-change-functions #'copilot--on-doc-change 'local)
@@ -1052,8 +1052,8 @@ Use this for custom bindings in `copilot-mode'.")
   (copilot-clear-overlay)
   (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
   (if copilot-mode
-      (copilot--mode-enter)
-    (copilot--mode-exit)))
+      (copilot--mode-enable)
+    (copilot--mode-disable)))
 
 (defun copilot-turn-on-unless-buffer-read-only ()
   "Turn on `copilot-mode' if the buffer is writable."

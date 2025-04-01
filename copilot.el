@@ -433,7 +433,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
   "Login to Copilot."
   (interactive)
   (copilot--dbind
-      (:status :user :userCode user-code :verificationUri verification-uri)
+      (status user ((:userCode user-code)) ((:verificationUri verification-uri)))
       (copilot--request 'signInInitiate '(:dummy "signInInitiate"))
     (when (string-equal status "AlreadySignedIn")
       (user-error "Already signed in as %s" user))
@@ -452,7 +452,7 @@ automatically, browse to %s." user-code verification-uri))
         (copilot--request 'signInConfirm (list :userCode user-code))
       (jsonrpc-error
        (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
-    (copilot--dbind (:user) (copilot--request 'checkStatus '(:dummy "checkStatus"))
+    (copilot--dbind (user) (copilot--request 'checkStatus '(:dummy "checkStatus"))
       (copilot--log 'info "Authenticated as GitHub user %s." user))))
 
 (defun copilot-logout ()
@@ -706,7 +706,7 @@ automatically, browse to %s." user-code verification-uri))
 (defun copilot--handle-notification (_ method msg)
   "Handle MSG of type METHOD."
   (when (eql method 'PanelSolution)
-    (copilot--dbind (:completionText completion-text :score completion-score) msg
+    (copilot--dbind (((:completionText completion-text)) ((:score completion-score))) msg
       (with-current-buffer "*copilot-panel*"
         (unless (member (secure-hash 'sha256 completion-text)
                         (org-map-entries (lambda () (org-entry-get nil "SHA"))))
@@ -915,15 +915,16 @@ provided."
   "Show COMPLETION-DATA."
   (when (copilot--satisfy-display-predicates)
     (copilot--dbind
-        (:text :uuid :docVersion doc-version
-               :range (:start (:line :character start-char)
-                              :end (:character end-char)))
+        (text uuid ((:docVersion doc-version)) range)
         completion-data
       (when (= doc-version copilot--doc-version)
         (save-excursion
           (save-restriction
             (widen)
             (let* ((p (point))
+                   (line (map-nested-elt range '(:start :line)))
+                   (start-char (map-nested-elt range '(:start :character)))
+                   (end-char (map-nested-elt range '(:end :character)))
                    (goto-line! (lambda ()
                                  (goto-char (point-min))
                                  (forward-line (1- (+ line copilot--line-bias)))))

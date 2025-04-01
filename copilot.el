@@ -1,6 +1,6 @@
 ;;; copilot.el --- An unofficial Copilot plugin -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2022-2024  copilot-emacs maintainers
+;; Copyright (C) 2022-2025  copilot-emacs maintainers
 
 ;; Author: zerol <z@zerol.me>
 ;; Maintainer: Emil van der Westhuizen

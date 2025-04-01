@@ -1,6 +1,6 @@
 ;;; copilot-balancer.el --- Parentheses balancer for Lisps  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2022-2024  copilot-emacs maintainers
+;; Copyright (C) 2022-2025  copilot-emacs maintainers
 
 ;; The MIT License (MIT)
 

@@ -8,7 +8,7 @@
 ;;             Rakotomandimby Mihamina <mihamina.rakotomandimby@rktmb.org>
 ;; URL: https://github.com/copilot-emacs/copilot.el
 ;; Package-Requires: ((emacs "27.2") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0"))
-;; Version: 0.0.1
+;; Version: 0.1.0
 ;; Keywords: convenience copilot
 
 ;; The MIT License (MIT)

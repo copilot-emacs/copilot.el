@@ -45,6 +45,7 @@
 
 (require 'f)
 (require 'editorconfig)
+
 (require 'copilot-balancer)
 
 (defgroup copilot nil
@@ -60,7 +61,8 @@ Disable idle completion if set to nil."
   :type '(choice
           (number :tag "Seconds of delay")
           (const :tag "Idle completion disabled" nil))
-  :group 'copilot)
+  :group 'copilot
+  :package-version '(copilot . "0.1"))
 
 (defcustom copilot-network-proxy nil
   "Network proxy to use for Copilot.
@@ -77,14 +79,16 @@ to disable TLS verification.  This can be done by setting a pair
   (:host \"127.0.0.1\" :port 80 :rejectUnauthorized :json-false)"
   :type '(plist :tag "Uncheck all to disable proxy" :key-type symbol)
   :options '((:host string) (:port integer) (:username string) (:password string))
-  :group 'copilot)
+  :group 'copilot
+  :package-version '(copilot . "0.1"))
 
 (defcustom copilot-log-max 0
   "Max size of events buffer.
 0 disables, nil means infinite.  Enabling event logging may slightly affect
 performance."
   :group 'copilot
-  :type 'integer)
+  :type 'integer
+  :package-version '(copilot . "0.1"))
 
 (defcustom copilot-server-log-level 0
   "Log level of the Copilot server.
@@ -94,23 +98,27 @@ performance."
 3 - info
 4 - debug"
   :group 'copilot
-  :type 'integer)
+  :type 'integer
+  :package-version '(copilot . "0.1"))
 
 (defcustom copilot-server-args '("--stdio")
   "Additional arguments to pass to the Copilot server."
   :group 'copilot
-  :type '(repeat string))
+  :type '(repeat string)
+  :package-version '(copilot . "0.1"))
 
 (defcustom copilot-max-char 100000
   "Maximum number of characters to send to Copilot, -1 means no limit."
   :group 'copilot
-  :type 'integer)
+  :type 'integer
+  :package-version '(copilot . "0.1"))
 
 
 (defcustom copilot-clear-overlay-ignore-commands nil
   "List of commands that should not clear the overlay when called."
   :group 'copilot
-  :type '(repeat function))
+  :type '(repeat function)
+  :package-version '(copilot . "0.1"))
 
 (defcustom copilot-indent-offset-warning-disable nil
   "Disable indentation warnings.
@@ -118,12 +126,14 @@ performance."
 Warning occurs when the function `copilot--infer-indentation-offset' cannot
 find indentation offset."
   :group 'copilot
-  :type 'boolean)
+  :type 'boolean
+  :package-version '(copilot . "0.1"))
 
 (defcustom copilot-max-char-warning-disable nil
   "When non-nil, disable warning about buffer size exceeding `copilot-max-char'."
   :group 'copilot
-  :type 'boolean)
+  :type 'boolean
+  :package-version '(copilot . "0.1"))
 
 (defcustom copilot-indentation-alist
   (append '((emacs-lisp-mode lisp-indent-offset)
@@ -136,7 +146,8 @@ find indentation offset."
           editorconfig-indentation-alist)
   "Alist of `major-mode' to indentation map with optional fallbacks."
   :type '(alist :key-type symbol :value-type (choice integer symbol))
-  :group 'copilot)
+  :group 'copilot
+  :package-version '(copilot . "0.1"))
 
 (defconst copilot-server-package-name "@github/copilot-language-server"
   "The name of the package to install copilot server.")
@@ -146,12 +157,14 @@ find indentation offset."
   "Directory in which the servers will be installed."
   :risky t
   :type 'directory
-  :group 'copilot)
+  :group 'copilot
+  :package-version '(copilot . "0.1"))
 
 (defcustom copilot-server-executable "copilot-language-server"
   "The executable of copilot server."
   :type 'string
-  :group 'copilot)
+  :group 'copilot
+  :package-version '(copilot . "0.1"))
 
 (defcustom copilot-version nil
   "Copilot server version.
@@ -160,7 +173,8 @@ The default value is the preferred version and ensures functionality.
 You may adjust this variable at your own risk."
   :type '(choice (const :tag "Latest" nil)
                  (string :tag "Specific Version"))
-  :group 'copilot)
+  :group 'copilot
+  :package-version '(copilot . "0.1"))
 
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
@@ -1023,25 +1037,29 @@ Arguments BEG, END, and CHARS-REPLACED are metadata for region changed."
   "A list of predicate functions with no argument to disable Copilot.
 Copilot will not be triggered if any predicate returns t."
   :type '(repeat function)
-  :group 'copilot)
+  :group 'copilot
+  :package-version '(copilot . "0.1"))
 
 (defcustom copilot-enable-predicates '(evil-insert-state-p copilot--buffer-changed)
   "A list of predicate functions with no argument to enable Copilot.
 Copilot will be triggered only if all predicates return t."
   :type '(repeat function)
-  :group 'copilot)
+  :group 'copilot
+  :package-version '(copilot . "0.1"))
 
 (defcustom copilot-disable-display-predicates nil
   "A list of predicate functions with no argument to disable Copilot.
 Copilot will not show completions if any predicate returns t."
   :type '(repeat function)
-  :group 'copilot)
+  :group 'copilot
+  :package-version '(copilot . "0.1"))
 
 (defcustom copilot-enable-display-predicates nil
   "A list of predicate functions with no argument to enable Copilot.
 Copilot will show completions only if all predicates return t."
   :type '(repeat function)
-  :group 'copilot)
+  :group 'copilot
+  :package-version '(copilot . "0.1"))
 
 (defmacro copilot--satisfy-predicates (enable disable)
   "Return t if satisfy all predicates in ENABLE and none in DISABLE."

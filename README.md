@@ -361,6 +361,13 @@ Current maintainer(s): [@bbatsov][], [@emil-vdw][], [@jcs090218][], [@rakotomand
 
 Retired maintainer: [@zerolfx][].
 
+## License
+
+copilot.el is distributed under the MIT license.
+
+Copyright © 2022-2025 copilot-emacs maintainers and
+[contributors](https://github.com/copilot-emacs/copilot.el/contributors).
+
 <!-- Links -->
 
 [@bbatsov]: https://github.com/bbatsov

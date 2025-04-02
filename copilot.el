@@ -181,6 +181,10 @@ You may adjust this variable at your own risk."
   "The document version of the current buffer.
 Incremented after each change.")
 
+;;
+;; Utility functions
+;;
+
 (defun copilot--buffer-changed ()
   "Return non-nil if the buffer has changed since last completion."
   (not (= copilot--last-doc-version copilot--doc-version)))
@@ -203,9 +207,6 @@ Incremented after each change.")
                                   ('info 'success)
                                   (_ 'warning)))
            (apply #'format format args)))
-;;
-;; Utility functions
-;;
 
 (defun copilot--mode-symbol (mode-name)
   "Infer the language for MODE-NAME."

@@ -10,7 +10,7 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 **Note:** You need access to [GitHub Copilot][] to use this plugin.
 
-Current maintainer(s): [@emil-vdw][], [@jcs090218][], [@rakotomandimby][].
+Current maintainer(s): [@bbatsov][], [@emil-vdw][], [@jcs090218][], [@rakotomandimby][].
 
 Retired maintainer: [@zerolfx][].
 
@@ -361,6 +361,7 @@ Please take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el)
 
 <!-- Links -->
 
+[@bbatsov]: https://github.com/bbatsov
 [@emil-vdw]: https://github.com/emil-vdw
 [@jcs090218]: https://github.com/jcs090218
 [@rakotomandimby]: https://github.com/rakotomandimby

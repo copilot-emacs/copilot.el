@@ -1,11 +1,12 @@
 ;;; copilot.el --- An unofficial Copilot plugin -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2022-2025  copilot-emacs maintainers
+;; Copyright (C) 2022-2025 copilot-emacs maintainers
 
 ;; Author: zerol <z@zerol.me>
 ;; Maintainer: Emil van der Westhuizen
 ;;             Shen, Jen-Chieh <jcs090218@gmail.com>
 ;;             Rakotomandimby Mihamina <mihamina.rakotomandimby@rktmb.org>
+;;             Bozhidar Batsov <bozhidar@batsov.dev>
 ;; URL: https://github.com/copilot-emacs/copilot.el
 ;; Package-Requires: ((emacs "27.2") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0"))
 ;; Version: 0.2.0-snapshot

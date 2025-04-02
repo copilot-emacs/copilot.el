@@ -154,7 +154,7 @@ find indentation offset."
   :group 'copilot)
 
 (defcustom copilot-version nil
-  "Copilot version.
+  "Copilot server version.
 
 The default value is the preferred version and ensures functionality.
 You may adjust this variable at your own risk."

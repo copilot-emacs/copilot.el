@@ -1,4 +1,6 @@
 [![JCS-ELPA](https://raw.githubusercontent.com/jcs-emacs/badges/master/elpa/v/copilot.svg)](https://jcs-emacs.github.io/jcs-elpa/#/copilot)
+[![MELPA](http://melpa.org/packages/copilot-badge.svg)](http://melpa.org/#/copilot)
+[![MELPA Stable](http://stable.melpa.org/packages/copilot-badge.svg)](http://stable.melpa.org/#/copilot)
 
 # Copilot.el
 
@@ -9,10 +11,6 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 **Note:** This plugin is unofficial, however it makes use of the official [@github/copilot-language-server][] provided by Microsoft.
 
 **Note:** You need access to [GitHub Copilot][] to use this plugin.
-
-Current maintainer(s): [@emil-vdw][], [@jcs090218][], [@rakotomandimby][].
-
-Retired maintainer: [@zerolfx][].
 
 ## Requirements
 
@@ -337,13 +335,6 @@ But I decided to allow them to coexist, allowing you to choose a better one at a
 + Please enable event logging by customize `copilot-log-max` (to e.g. 1000), then paste related logs in the `*copilot events*` and `*copilot stderr*` buffer.
 + If an exception is thrown, please also paste the stack trace (use `M-x toggle-debug-on-error` to enable stack trace).
 
-## Roadmap
-
-+ [x] Setup Copilot without Neovim
-+ [x] Cycle through suggestions
-+ [x] Add Copilot minor-mode
-+ [ ] ~~Add package to MELPA~~
-
 ## Thanks
 
 These projects helped me a lot:
@@ -359,8 +350,22 @@ Just like copilot plugin for intellij or vscode?
 
 Please take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el)
 
+## Team
+
+Current maintainer(s): [@bbatsov][], [@emil-vdw][], [@jcs090218][], [@rakotomandimby][].
+
+Retired maintainer: [@zerolfx][].
+
+## License
+
+copilot.el is distributed under the MIT license.
+
+Copyright © 2022-2025 copilot-emacs maintainers and
+[contributors](https://github.com/copilot-emacs/copilot.el/contributors).
+
 <!-- Links -->
 
+[@bbatsov]: https://github.com/bbatsov
 [@emil-vdw]: https://github.com/emil-vdw
 [@jcs090218]: https://github.com/jcs090218
 [@rakotomandimby]: https://github.com/rakotomandimby

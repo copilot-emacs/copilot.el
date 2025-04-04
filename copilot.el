@@ -177,7 +177,7 @@ You may adjust this variable at your own risk."
   :group 'copilot
   :package-version '(copilot . "0.1"))
 
-(defun copilot--lsp-configuration-changed (symbol value)
+(defun copilot--lsp-settings-changed (symbol value)
   "Restart the Copilot LSP due to SYMBOL changed to VALUE.
 
 This function will be called by the customization framework when the
@@ -212,7 +212,7 @@ For example to use GitHub Enterprise use the following configuration:
  '(:github-enterprise (:uri \"https://example.ghe.com\"))
 
 Exchange the URI with the correct URI of your organization."
-  :set #'copilot--lsp-configuration-changed
+  :set #'copilot--lsp-settings-changed
   :type 'sexp
   :group 'copilot
   :package-version '(copilot . "0.2"))

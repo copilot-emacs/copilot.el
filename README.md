@@ -226,10 +226,11 @@ You can configure the underlying LSP settings by changing `copilot-lsp-settings`
 Here we set the GitHub Enterprise server to `https://example2.ghe.com`, exchange the URL with your own server.
 
 ```elisp
-(setq copilot-lsp-settings '(:github-enterprise (:uri "https://example2.ghe.com")))
+(setopt copilot-lsp-settings '(:github-enterprise (:uri "https://example2.ghe.com"))) ;; allows changing the value without restarting the LSP
+(setq copilot-lsp-settings '(:github-enterprise (:uri "https://example2.ghe.com"))) ;; alternatively
 ```
 
-You might have to restart the LSP (`M-x copilot-diagnose`) when changing the value, depending on the method of setting the variable. When logging in, the URL for the authentication flow should be the same as the one set in `copilot-lsp-settings`.
+You have to restart the LSP (`M-x copilot-diagnose`) when using `setq` to change the value. When logging in, the URL for the authentication flow should be the same as the one set in `copilot-lsp-settings`.
 
 </details>
 

@@ -178,11 +178,21 @@ You may adjust this variable at your own risk."
   :package-version '(copilot . "0.1"))
 
 (defun copilot--lsp-configuration-changed (symbol value)
-  "Notify the Copilot LSP configuration has changed and set SYMBOL to VALUE."
+  "Restart the Copilot LSP due to SYMBOL changed to VALUE.
+
+This function will be called by the customization framework when the
+`copilot-lsp-settings' is changed.  When changed with `setq', then this function
+will not be called."
   (let ((was-bound (boundp symbol)))
     (set-default symbol value)
     (when was-bound
-      (copilot--notify-configuration))))
+      ;; Notifying the agent with the new value does only work if we include the
+      ;; last value (as nil) as well. For example, having the value
+      ;; '(:github-enterprise (:uri "https://example2.ghe.com")) and setting it
+      ;; to nil would require to send the value '(:github-enterprise (:uri nil))
+      ;; to the server. Otherwise, the value is ignored, since sending nil is
+      ;; not enough.
+      (copilot--start-agent))))
 
 (defcustom copilot-lsp-settings nil
   "Settings for the Copilot LSP server.
@@ -192,13 +202,20 @@ changes.  See
 https://github.com/github/copilot-language-server-release?tab=readme-ov-file#configuration-management
 for complete documentation.
 
+To change the value of this variable, the customization framework provided by
+Emacs must be used.  Either use `setopt' or `customize' to change the value.  If
+the value was set without the customization mechanism, then the LSP has to be
+manually restarted with `copilot-diagnose'.  Otherwise, the change will not be
+applied.
+
 For example to use GitHub Enterprise use the following configuration:
  '(:github-enterprise (:uri \"https://example.ghe.com\"))
 
 Exchange the URI with the correct URI of your organization."
   :set #'copilot--lsp-configuration-changed
   :type 'sexp
-  :group 'copilot)
+  :group 'copilot
+  :package-version '(copilot . "0.2"))
 
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
@@ -443,13 +460,6 @@ SUCCESS-FN is the CALLBACK."
        ;; handle older jsonrpc versions
        (funcall make-fn :events-buffer-scrollback-size copilot-log-max)))))
 
-(defun copilot--notify-configuration ()
-  "Notify LSP that the configuration has changed.
-
-This should also be called when the connection is established."
-  (when copilot--connection
-    (copilot--notify 'workspace/didChangeConfiguration `(:settings ,copilot-lsp-settings))))
-
 (defun copilot--start-server ()
   "Start the copilot server process in local."
   (cond
@@ -466,7 +476,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
     (copilot--request 'initialize `( :capabilities (:workspace (:workspaceFolders t))
                                      :processId ,(emacs-pid)))
     (copilot--notify 'initialized '())
-    (copilot--notify-configuration)
+    (copilot--notify 'workspace/didChangeConfiguration `(:settings ,copilot-lsp-settings))
     (copilot--async-request 'setEditorInfo
                             `( :editorInfo (:name "Emacs" :version ,emacs-version)
                                :editorPluginInfo (:name "copilot.el" :version ,(or (copilot-installed-version) "unknown"))

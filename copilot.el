@@ -177,6 +177,46 @@ You may adjust this variable at your own risk."
   :group 'copilot
   :package-version '(copilot . "0.1"))
 
+(defun copilot--lsp-settings-changed (symbol value)
+  "Restart the Copilot LSP due to SYMBOL changed to VALUE.
+
+This function will be called by the customization framework when the
+`copilot-lsp-settings' is changed.  When changed with `setq', then this function
+will not be called."
+  (let ((was-bound (boundp symbol)))
+    (set-default symbol value)
+    (when was-bound
+      ;; Notifying the agent with the new value does only work if we include the
+      ;; last value (as nil) as well. For example, having the value
+      ;; '(:github-enterprise (:uri "https://example2.ghe.com")) and setting it
+      ;; to nil would require to send the value '(:github-enterprise (:uri nil))
+      ;; to the server. Otherwise, the value is ignored, since sending nil is
+      ;; not enough.
+      (copilot--start-agent))))
+
+(defcustom copilot-lsp-settings nil
+  "Settings for the Copilot LSP server.
+
+This value will always be sent to the server when the server starts or the value
+changes.  See
+https://github.com/github/copilot-language-server-release?tab=readme-ov-file#configuration-management
+for complete documentation.
+
+To change the value of this variable, the customization framework provided by
+Emacs must be used.  Either use `setopt' or `customize' to change the value.  If
+the value was set without the customization mechanism, then the LSP has to be
+manually restarted with `copilot-diagnose'.  Otherwise, the change will not be
+applied.
+
+For example to use GitHub Enterprise use the following configuration:
+ '(:github-enterprise (:uri \"https://example.ghe.com\"))
+
+Exchange the URI with the correct URI of your organization."
+  :set #'copilot--lsp-settings-changed
+  :type 'sexp
+  :group 'copilot
+  :package-version '(copilot . "0.2"))
+
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
 
@@ -436,6 +476,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
     (copilot--request 'initialize `( :capabilities (:workspace (:workspaceFolders t))
                                      :processId ,(emacs-pid)))
     (copilot--notify 'initialized '())
+    (copilot--notify 'workspace/didChangeConfiguration `(:settings ,copilot-lsp-settings))
     (copilot--async-request 'setEditorInfo
                             `( :editorInfo (:name "Emacs" :version ,emacs-version)
                                :editorPluginInfo (:name "copilot.el" :version ,(or (copilot-installed-version) "unknown"))

@@ -317,14 +317,13 @@ Incremented after each change.")
    ((and (file-name-absolute-p copilot-server-executable)
          (file-exists-p copilot-server-executable))
     copilot-server-executable)
-   ((executable-find copilot-server-executable nil))
+   ((executable-find copilot-server-executable))
    (t
     (let ((path (executable-find
                  (f-join copilot-install-dir
                        (cond ((eq system-type 'windows-nt) "")
                              (t "bin"))
-                       copilot-server-executable)
-                 nil)))
+                       copilot-server-executable))))
       (unless (and path (file-exists-p path))
         (error "The package %s is not installed.  Unable to find %s"
                copilot-server-package-name path))

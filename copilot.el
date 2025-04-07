@@ -40,6 +40,7 @@
 
 (require 'cl-lib)
 (require 'compile)
+(require 'files)
 (require 'json)
 (require 'jsonrpc)
 (require 'subr-x)
@@ -316,14 +317,14 @@ Incremented after each change.")
    ((and (file-name-absolute-p copilot-server-executable)
          (file-exists-p copilot-server-executable))
     copilot-server-executable)
-   ((executable-find copilot-server-executable t))
+   ((executable-find copilot-server-executable nil))
    (t
     (let ((path (executable-find
                  (f-join copilot-install-dir
                        (cond ((eq system-type 'windows-nt) "")
                              (t "bin"))
                        copilot-server-executable)
-                 t)))
+                 nil)))
       (unless (and path (file-exists-p path))
         (error "The package %s is not installed.  Unable to find %s"
                copilot-server-package-name path))
@@ -462,10 +463,9 @@ SUCCESS-FN is the CALLBACK."
 
 (defun copilot--start-server ()
   "Start the copilot server process in local."
-  (cond
-   ((not (file-exists-p (copilot-server-executable)))
-    (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
-   (t
+  (let ((default-directory (if (file-remote-p default-directory)
+                               "~/"
+                             default-directory)))
     (let ((installed-version (copilot-installed-version)))
       (when (and copilot-version (not (equal installed-version copilot-version)))
         (warn "This package has been tested for Copilot server version %s but version %s has been detected.
@@ -481,7 +481,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
                             `( :editorInfo (:name "Emacs" :version ,emacs-version)
                                :editorPluginInfo (:name "copilot.el" :version ,(or (copilot-installed-version) "unknown"))
                                ,@(when copilot-network-proxy
-                                   `(:networkProxy ,copilot-network-proxy)))))))
+                                   `(:networkProxy ,copilot-network-proxy))))))
 
 ;;
 ;; login / logout

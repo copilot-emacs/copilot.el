@@ -155,7 +155,7 @@ find indentation offset."
   "The name of the package to install copilot server.")
 
 (defcustom copilot-install-dir (expand-file-name
-                                (locate-user-emacs-file (f-join ".cache" "copilot")))
+                                (f-join user-emacs-directory ".cache" "copilot"))
   "Directory in which the servers will be installed."
   :risky t
   :type 'directory
@@ -360,7 +360,10 @@ Incremented after each change.")
 (defun copilot-install-server ()
   "Interactively install server."
   (interactive)
-  (if-let* ((default-directory (if (file-remote-p default-directory)
+  (if-let* ((shell-file-name (if (connection-local-p shell-file-name)
+                                 (default-toplevel-value 'shell-file-name)
+                               shell-file-name))
+            (default-directory (if (file-remote-p default-directory)
                                    "~/"
                                  default-directory))
             (npm-binary (executable-find "npm")))

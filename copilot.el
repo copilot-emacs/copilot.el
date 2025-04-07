@@ -361,7 +361,10 @@ Incremented after each change.")
 (defun copilot-install-server ()
   "Interactively install server."
   (interactive)
-  (if-let* ((npm-binary (executable-find "npm")))
+  (if-let* ((default-directory (if (file-remote-p default-directory)
+                                   "~/"
+                                 default-directory))
+            (npm-binary (executable-find "npm")))
       (progn
         (make-directory copilot-install-dir 'parents)
         (copilot-async-start-process

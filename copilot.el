@@ -192,7 +192,7 @@ will not be called."
       ;; to nil would require to send the value '(:github-enterprise (:uri nil))
       ;; to the server. Otherwise, the value is ignored, since sending nil is
       ;; not enough.
-      (copilot--start-agent))))
+      (copilot--start-server))))
 
 (defcustom copilot-lsp-settings nil
   "Settings for the Copilot LSP server.

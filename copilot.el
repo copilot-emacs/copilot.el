@@ -792,7 +792,7 @@ Each request METHOD can have only one HANDLER."
 (copilot-on-notification
  'window/logMessage
  (lambda (msg)
-   (copilot--dbind (:type log-level :message log-msg) msg
+   (copilot--dbind (((:type log-level)) ((:message log-msg))) msg
      (with-current-buffer (get-buffer-create "*copilot-language-server-log*")
        (save-excursion
          (goto-char (point-max))

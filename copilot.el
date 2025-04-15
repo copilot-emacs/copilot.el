@@ -484,7 +484,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
        (:editorInfo
         (:name "Emacs" :version ,emacs-version)
         :editorPluginInfo
-        (:name "copilot.el" :version ,(or (copilot-installed-version) "unknown"))
+        (:name "copilot.el" :version ,(or (package-get-version) "unknown"))
         ,@(when copilot-network-proxy
             `(:networkProxy ,copilot-network-proxy)))))
     (copilot--notify 'initialized '())

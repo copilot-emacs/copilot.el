@@ -473,15 +473,22 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
               copilot-version installed-version)))
     (setq copilot--connection (copilot--make-connection))
     (copilot--log 'info "Copilot server started.")
-    (copilot--request 'initialize `( :capabilities (:workspace (:workspaceFolders t))
-                                     :processId ,(emacs-pid)))
+    (copilot--request
+     'initialize
+     `(:processId
+       ,(emacs-pid)
+       :capabilities
+       (:workspace
+        (:workspaceFolders t))
+       :initializationOptions
+       (:editorInfo
+        (:name "Emacs" :version ,emacs-version)
+        :editorPluginInfo
+        (:name "copilot.el" :version ,(or (copilot-installed-version) "unknown"))
+        ,@(when copilot-network-proxy
+            `(:networkProxy ,copilot-network-proxy)))))
     (copilot--notify 'initialized '())
-    (copilot--notify 'workspace/didChangeConfiguration `(:settings ,copilot-lsp-settings))
-    (copilot--async-request 'setEditorInfo
-                            `( :editorInfo (:name "Emacs" :version ,emacs-version)
-                               :editorPluginInfo (:name "copilot.el" :version ,(or (copilot-installed-version) "unknown"))
-                               ,@(when copilot-network-proxy
-                                   `(:networkProxy ,copilot-network-proxy)))))))
+    (copilot--notify 'workspace/didChangeConfiguration `(:settings ,copilot-lsp-settings)))))
 
 ;;
 ;; login / logout

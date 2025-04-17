@@ -223,7 +223,9 @@ Use tab to accept completions (you may also want to bind `copilot-accept-complet
 
 #### 4. Configure LSP Settings
 
-You can configure the underlying LSP settings by changing `copilot-lsp-settings`. The complete list of available options can be found [here](https://github.com/github/copilot-language-server-release?tab=readme-ov-file#configuration-management).
+You can configure the underlying LSP settings by changing
+`copilot-lsp-settings`. The complete list of available options can be found
+[here](https://github.com/github/copilot-language-server-release?tab=readme-ov-file#configuration-management).
 
 Here we set the GitHub Enterprise server to `https://example2.ghe.com`, exchange the URL with your own server.
 
@@ -238,8 +240,11 @@ You have to restart the LSP (`M-x copilot-diagnose`) when using `setq` to change
 
 ### Programming language detection
 
-Copilot.el detects the programming language of a buffer based on the major-mode name, stripping the `-mode` part. Resulting languageId should match table [here](https://code.visualstudio.com/docs/languages/identifiers#_known-language-identifiers).
-You can add unusual major-mode mappings to `copilot-major-mode-alist`. Without the proper language set suggestions may be of poorer quality.
+Copilot.el detects the programming language of a buffer based on the major-mode
+name, stripping the `-mode` part. Resulting languageId should match table
+[here](https://code.visualstudio.com/docs/languages/identifiers#_known-language-identifiers).
+You can add unusual major-mode mappings to `copilot-major-mode-alist`. Without
+the proper language set suggestions may be of poorer quality.
 
 ```elisp
 (add-to-list 'copilot-major-mode-alist '("enh-ruby" . "ruby"))
@@ -249,7 +254,8 @@ You can add unusual major-mode mappings to `copilot-major-mode-alist`. Without t
 
 #### copilot-diagnose
 
-Check the current status of the plugin. Also you can check logs in the `*copilot events*` buffer and stderr output in the `*copilot stderr*` buffer.
+Check the current status of the plugin. Also you can check logs in the `*copilot
+events*` buffer and stderr output in the `*copilot stderr*` buffer.
 
 #### copilot-login
 
@@ -273,7 +279,9 @@ Clear copilot overlay in the current buffer.
 
 #### copilot-accept-completion-by-line / copilot-accept-completion-by-word
 
-Similar to `copilot-accept-completion`, but accept the completion by line or word. You can use prefix argument to specify the number of lines or words to accept.
+Similar to `copilot-accept-completion`, but accept the completion by line or
+word. You can use prefix argument to specify the number of lines or words to
+accept.
 
 #### copilot-next-completion / copilot-previous-completion
 
@@ -292,7 +300,8 @@ Log out from GitHub.
 
 #### copilot-version
 
-The version of the [@github/copilot-language-server][] to use. If set to `nil`, the latest version will be installed.
+The version of the [@github/copilot-language-server][] to use. If set to `nil`,
+the latest version will be installed.
 
 #### copilot-idle-delay
 
@@ -306,11 +315,13 @@ disable it completely by setting it to `nil`:
 
 #### copilot-enable-predicates / copilot-disable-predicates
 
-A list of predicate functions with no argument to enable/disable triggering Copilot in `copilot-mode`.
+A list of predicate functions with no argument to enable/disable triggering
+Copilot in `copilot-mode`.
 
 #### copilot-enable-display-predicates / copilot-disable-display-predicates
 
-A list of predicate functions with no argument to enable/disable showing Copilot's completions in `copilot-mode`.
+A list of predicate functions with no argument to enable/disable showing
+Copilot's completions in `copilot-mode`.
 
 #### copilot-clear-overlay-ignore-commands
 
@@ -318,7 +329,8 @@ A list of commands that won't cause the overlay to be cleared.
 
 #### copilot-network-proxy
 
-Format: `'(:host "127.0.0.1" :port 7890 :username: "user" :password: "password")`, where `:username` and `:password` are optional.
+Format: `'(:host "127.0.0.1" :port 7890 :username: "user" :password:
+"password")`, where `:username` and `:password` are optional.
 
 For example:
 
@@ -328,7 +340,9 @@ For example:
 
 ### copilot-on-request
 
-Register a handler to be called when a request of type method is received. Return JSON serializable as result or calling `jsonrpc-error` for errors. [readmore](https://www.gnu.org/software/emacs/manual/html_node/elisp/JSONRPC-Overview.html)
+Register a handler to be called when a request of type method is
+received. Return JSON serializable as result or calling `jsonrpc-error` for
+errors. [readmore](https://www.gnu.org/software/emacs/manual/html_node/elisp/JSONRPC-Overview.html)
 
 For example:
 
@@ -357,8 +371,11 @@ For example:
 
 ![](assets/company-overlay.png)
 
-This is an example of using together with default frontend of `company-mode`. Because both `company-mode` and `copilot.el` use overlay to show completion, so the conflict is inevitable.
-To solve the problem, I recommend you to use `company-box` (only available on GUI), which is based on child frame rather than overlay.
+This is an example of using together with default frontend of
+`company-mode`. Because both `company-mode` and `copilot.el` use overlay to show
+completion, so the conflict is inevitable.  To solve the problem, I recommend
+you to use `company-box` (only available on GUI), which is based on child frame
+rather than overlay.
 
 After using `company-box`, you have:
 

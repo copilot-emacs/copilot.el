@@ -308,12 +308,12 @@ Log out from GitHub.
 > Use <kbd>M-x</kbd> `customize-group` <kbd>RET</kbd> `copilot` to see all available
 > configuration options.
 
-#### copilot-version
+### copilot-version
 
 The version of the [@github/copilot-language-server][] to use. If set to `nil`,
 the latest version will be installed.
 
-#### copilot-idle-delay
+### copilot-idle-delay
 
 Time in seconds to wait before starting completion (default to 0). Note that
 Copilot itself has a ~100ms delay because of network communication. You can
@@ -323,21 +323,21 @@ disable it completely by setting it to `nil`:
 (setq copilot-idle-delay nil)
 ```
 
-#### copilot-enable-predicates / copilot-disable-predicates
+### copilot-enable-predicates / copilot-disable-predicates
 
 A list of predicate functions with no argument to enable/disable triggering
 Copilot in `copilot-mode`.
 
-#### copilot-enable-display-predicates / copilot-disable-display-predicates
+### copilot-enable-display-predicates / copilot-disable-display-predicates
 
 A list of predicate functions with no argument to enable/disable showing
 Copilot's completions in `copilot-mode`.
 
-#### copilot-clear-overlay-ignore-commands
+### copilot-clear-overlay-ignore-commands
 
 A list of commands that won't cause the overlay to be cleared.
 
-#### copilot-network-proxy
+### copilot-network-proxy
 
 Format: `'(:host "127.0.0.1" :port 7890 :username: "user" :password:
 "password")`, where `:username` and `:password` are optional.

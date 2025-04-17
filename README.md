@@ -8,9 +8,11 @@ Copilot.el is an Emacs plugin for GitHub Copilot.
 
 ![](assets/demo.gif)
 
-**Note:** This plugin is unofficial, however it makes use of the official [@github/copilot-language-server][] provided by Microsoft.
+This plugin is unofficial, however it makes use of the official [@github/copilot-language-server][] provided by Microsoft.
 
-**Note:** You need access to [GitHub Copilot][] to use this plugin.
+> [!NOTE]
+>
+> You need access to [GitHub Copilot][] to use this plugin. The service introduced a free layer in early 2025.
 
 ## Requirements
 
@@ -294,7 +296,9 @@ The version of the [@github/copilot-language-server][] to use. If set to `nil`, 
 
 #### copilot-idle-delay
 
-Time in seconds to wait before starting completion (default to 0). Note Copilot itself has a ~100ms delay because of network communication. You can disable it completely by setting it to `nil`:
+Time in seconds to wait before starting completion (default to 0). Note that
+Copilot itself has a ~100ms delay because of network communication. You can
+disable it completely by setting it to `nil`:
 
 ``` elisp
 (setq copilot-idle-delay nil)

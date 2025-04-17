@@ -252,6 +252,16 @@ the proper language set suggestions may be of poorer quality.
 
 ## Commands
 
+In this section you'll find a listing of all the essential interactive
+commands provided by `copilot.el`. It's important to note that by default
+`copilot-mode` doesn't setup any keybindings for its completion commands,
+so you'll have to do this yourself - as shown in the "Configurations" section.
+
+> [!TIP]
+>
+> You don't need to memorize the list as you can always do `M-x copilot-` followed
+> TAB or refer to the mode's menu in Emacs's menubar.
+
 #### copilot-diagnose
 
 Check the current status of the plugin. Also you can check logs in the `*copilot
@@ -263,7 +273,7 @@ Login to GitHub, required for using the plugin.
 
 #### copilot-mode
 
-Enable/disable copilot mode.
+Enable/disable `copilot-mode`.
 
 #### copilot-complete
 

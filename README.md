@@ -26,7 +26,7 @@ This plugin is unofficial, however it makes use of the official [@github/copilot
 
 2. Install the copilot server by `M-x copilot-install-server`.
 
-3. Login to Copilot by `M-x copilot-login`. You can also check the status by `M-x copilot-diagnose` (`NotAuthorized` means you don't have a valid subscription).
+3. Login to Copilot by `M-x copilot-login`. You can also check the status by running `M-x copilot-diagnose` (`NotAuthorized` means you don't have a valid subscription).
 
 4. Enjoy!
 
@@ -188,8 +188,8 @@ Use `:map`, `:hook`, and `:config` to customize `copilot.el` via `use-package`.
 
 Please make sure you have these dependencies installed (available in ELPA/MELPA):
 
-+ `editorconfig`
-+ `f`
+- `editorconfig`
+- `f`
 
 After installing those, clone this repository then insert the below snippet into your config file.
 
@@ -394,30 +394,34 @@ After using `company-box`, you have:
 In other editors (e.g. `VS Code`, `PyCharm`), completions from copilot and other sources can not show at the same time.
 But I decided to allow them to coexist, allowing you to choose a better one at any time.
 
-### Cursor Jump to End of Line When Typing
+### Cursor Jumps to End of Line When Typing
 
-+ If you are using `whitespace-mode`, make sure to remove `newline-mark` from `whitespace-style`.
+If you are using `whitespace-mode`, make sure to remove `newline-mark` from `whitespace-style`.
 
 ## Reporting Bugs
 
-+ Make sure you have restarted your Emacs (and rebuild the plugin if necessary) after updating the plugin.
-+ Please enable event logging by customize `copilot-log-max` (to e.g. 1000) and enable debug log `(setq copilot-server-args '("--stdio" "--debug"))`, then paste related logs in the `*copilot events*`, `*copilot stderr*` and `*copilot-language-server-log*` buffer.
-+ If an exception is thrown, please also paste the stack trace (use `M-x toggle-debug-on-error` to enable stack trace).
+- Make sure you have restarted your Emacs (and rebuild the plugin if necessary) after updating the plugin.
+- Please enable event logging by customize `copilot-log-max` (to e.g. 1000) and enable debug log `(setq copilot-server-args '("--stdio" "--debug"))`, then paste related logs in the `*copilot events*`, `*copilot stderr*` and `*copilot-language-server-log*` buffer.
+- If an exception is thrown, please also paste the stack trace (use `M-x toggle-debug-on-error` to enable stack trace).
 
 ## Thanks
 
 These projects helped me a lot:
 
-+ https://github.com/TommyX12/company-tabnine/
-+ https://github.com/cryptobadger/flight-attendant.el
-+ https://github.com/github/copilot.vim
-+ [@github/copilot-language-server][]
+- <https://github.com/TommyX12/company-tabnine/>
+- <https://github.com/cryptobadger/flight-attendant.el>
+- <https://github.com/github/copilot.vim>
+- [@github/copilot-language-server][]
 
 ## Do you want chat with Github Copilot?
 
-Just like copilot plugin for intellij or vscode?
+Just like the copilot plugin for Intellij or VS Code?
 
 Please take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el)
+
+> [!NOTE]
+>
+> It's possible that chat functionality will be added to `copilot.el` as well down the road. PRs welcome!
 
 ## Team
 

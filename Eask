@@ -1,3 +1,5 @@
+;; -*- mode: eask; lexical-binding: t -*-
+
 (package "copilot"
          "0.0.1"
          "An unofficial Copilot plugin for Emacs")

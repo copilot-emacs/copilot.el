@@ -982,12 +982,11 @@ provided."
            (completion-start (overlay-get copilot--overlay 'completion-start)))
       ;; If there is extra indentation before the point, delete it and shift the completion
       (when (and (< completion-start (point))
-                 (string-blank-p (s-trim (buffer-substring-no-properties completion-start (point))))
-                 ;; Only remove indentation is completion-start is not at the beginning of the line
-                 (save-excursion
-                   (goto-char completion-start)
-                   (beginning-of-line)
-                   (not (= (point) completion-start))))
+                 ;; Region we are about to delete contains only blanks …
+                 (string-blank-p (buffer-substring-no-properties completion-start (point)))
+                 ;; … *and* everything from BOL to completion-start is blank
+                 ;; as well — i.e. we are really inside the leading indentation.
+                 (string-blank-p (buffer-substring-no-properties (line-beginning-position) completion-start)))
         (setq start completion-start)
         (setq end (- end (- (point) completion-start)))
         (delete-region completion-start (point)))

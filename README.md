@@ -77,7 +77,7 @@ If pressing tab to complete sometimes doesn't work you might want to bind comple
 
 If you would love to configure indentation here, this is an example config that may work for you:
 
-```
+```elisp
 (use-package! copilot
   :hook (prog-mode . copilot-mode)
   :bind (:map copilot-completion-map

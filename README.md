@@ -102,7 +102,7 @@ If you would love to configure indentation here, this is an example config that 
 
 <details>
 
-Edit your `~/.spacemacs`:
+Edit your `~/.spacemacs` to include the GitHub Copilot layer this will setup everything for you:
 
 ```elisp
 ;; ===================
@@ -110,38 +110,17 @@ Edit your `~/.spacemacs`:
 ;; ===================
 
 ;; add or uncomment the auto-completion layer
+;; add the GitHub Copilot layer
 dotspacemacs-configuration-layers
 '(
   ...
   auto-completion
+  github-copilot
   ...
  )
-
-;; add copilot.el to additional packages
-dotspacemacs-additional-packages
- '((copilot :location (recipe
-                       :fetcher github
-                       :repo "copilot-emacs/copilot.el"
-                       :files ("*.el"))))
-
-;; ========================
-;; dotspacemacs/user-config
-;; ========================
-
-;; accept completion from copilot and fallback to company
-
-(with-eval-after-load 'company
-  ;; disable inline previews
-  (delq 'company-preview-if-just-one-frontend company-frontends))
-
-(with-eval-after-load 'copilot
-  (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
-  (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
-  (define-key copilot-completion-map (kbd "C-TAB") 'copilot-accept-completion-by-word)
-  (define-key copilot-completion-map (kbd "C-<tab>") 'copilot-accept-completion-by-word))
-
-(add-hook 'prog-mode-hook 'copilot-mode)
 ```
+For details about the default bindings please refer to the Spacemacs documentation for the
+github-copilot layer.
 
 </details>
 

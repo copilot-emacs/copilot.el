@@ -651,35 +651,39 @@ automatically, browse to %s." user-code verification-uri))
 
 (defun copilot--get-source ()
   "Get source code from current buffer."
-  (let* ((p (point))
-         (pmax (point-max))
-         (pmin (point-min))
-         (half-window (/ copilot-max-char 2)))
-    (when (and (>= copilot-max-char 0)
-               (> pmax copilot-max-char))
-      (let ((msg (format "%s size exceeds 'copilot-max-char' (%s), copilot completions may not work"
-                         (current-buffer) copilot-max-char)))
-        (if copilot-max-char-warning-disable
-            (message msg)
-          (display-warning '(copilot copilot-exceeds-max-char) msg))))
-    (cond
-     ;; using whole buffer
-     ((or (< copilot-max-char 0) (< pmax copilot-max-char))
-      (setq-local copilot--line-bias 1)
-      (buffer-substring-no-properties pmin pmax))
-     ;; truncate buffer head
-     ((< (- pmax p) half-window)
-      (setq-local copilot--line-bias (line-number-at-pos (- pmax copilot-max-char)))
-      (buffer-substring-no-properties (- pmax copilot-max-char) pmax))
-     ;; truncate buffer tail
-     ((< (- p pmin) half-window)
-      (setq-local copilot--line-bias 1)
-      (buffer-substring-no-properties pmin (+ pmin copilot-max-char)))
-     ;; truncate head and tail
-     (t
-      (setq-local copilot--line-bias (line-number-at-pos (- p half-window)))
-      (buffer-substring-no-properties (- p half-window)
-                                      (+ p half-window))))))
+  (save-restriction
+    (widen)
+    (let* ((p (point))
+           (pmax (point-max))
+           (pmin (point-min))
+           (half-window (/ copilot-max-char 2)))
+      (when (and (>= copilot-max-char 0)
+                 (> pmax copilot-max-char))
+        (let ((msg (format "%s size exceeds 'copilot-max-char' (%s), copilot completions may not work"
+                           (current-buffer) copilot-max-char)))
+          (if copilot-max-char-warning-disable
+              (message msg)
+            (display-warning '(copilot copilot-exceeds-max-char) msg))))
+      (cond
+       ;; using whole buffer
+       ((or (< copilot-max-char 0) (< pmax copilot-max-char))
+        (setq-local copilot--line-bias 1)
+        (buffer-substring-no-properties pmin pmax))
+       ;; truncate buffer head
+       ((< (- pmax p) half-window)
+        (let ((start (max pmin (- pmax copilot-max-char))))
+          (setq-local copilot--line-bias (line-number-at-pos start))
+          (buffer-substring-no-properties start pmax)))
+       ;; truncate buffer tail
+       ((< (- p pmin) half-window)
+        (setq-local copilot--line-bias 1)
+        (buffer-substring-no-properties pmin (min pmax (+ pmin copilot-max-char))))
+       ;; truncate head and tail
+       (t
+        (let ((start (max pmin (- p half-window)))
+              (end (min pmax (+ p half-window))))
+          (setq-local copilot--line-bias (line-number-at-pos start))
+          (buffer-substring-no-properties start end)))))))
 
 (defun copilot--get-minor-mode-language-id ()
   "Get language ID from minor mode if available."

@@ -710,7 +710,9 @@ automatically, browse to %s." user-code verification-uri))
   (save-restriction
     (widen)
     (list :version copilot--doc-version
-          :tabSize tab-width
+          :tabSize (copilot--infer-indentation-offset)
+          ;; indentSize doesn't not appear to be used, but has been in this code
+          ;; base from the start. For now leave it as is.
           :indentSize (copilot--infer-indentation-offset)
           :insertSpaces (if indent-tabs-mode :json-false t)
           :path (buffer-file-name)

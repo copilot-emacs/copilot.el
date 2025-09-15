@@ -92,7 +92,7 @@ If you would love to configure indentation here, this is an example config that 
   (add-to-list 'copilot-indentation-alist '(prog-mode 2))
   (add-to-list 'copilot-indentation-alist '(org-mode 2))
   (add-to-list 'copilot-indentation-alist '(text-mode 2))
-  (add-to-list 'copilot-indentation-alist '(closure-mode 2))
+  (add-to-list 'copilot-indentation-alist '(clojure-mode 2))
   (add-to-list 'copilot-indentation-alist '(emacs-lisp-mode 2)))
 ```
 

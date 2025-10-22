@@ -8,7 +8,7 @@
 ;;             Rakotomandimby Mihamina <mihamina.rakotomandimby@rktmb.org>
 ;;             Bozhidar Batsov <bozhidar@batsov.dev>
 ;; URL: https://github.com/copilot-emacs/copilot.el
-;; Package-Requires: ((emacs "27.2") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0"))
+;; Package-Requires: ((emacs "27.2") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0") (track-changes "1.4"))
 ;; Version: 0.3.0-snapshot
 ;; Keywords: convenience copilot
 
@@ -48,6 +48,7 @@
 (require 'editorconfig)
 
 (require 'copilot-balancer)
+(require 'track-changes)
 
 (defgroup copilot nil
   "Copilot."
@@ -705,6 +706,14 @@ automatically, browse to %s." user-code verification-uri))
   (or (copilot--get-minor-mode-language-id)
       (copilot--get-major-mode-language-id)))
 
+(defun copilot--lsp-pos (&optional pos)
+  "Return an LSP position plist for buffer POS.
+POS defaults to point."
+  (save-excursion
+    (when pos (goto-char pos))
+    (list :line (- (line-number-at-pos) copilot--line-bias)
+          :character (- (point) (line-beginning-position)))))
+
 (defun copilot--generate-doc ()
   "Generate doc parameters for completion request."
   (save-restriction
@@ -719,8 +728,7 @@ automatically, browse to %s." user-code verification-uri))
           :uri (copilot--get-uri)
           :relativePath (copilot--get-relative-path)
           :languageId (copilot--get-language-id)
-          :position (list :line (- (line-number-at-pos) copilot--line-bias)
-                          :character (- (point) (line-beginning-position))))))
+          :position (copilot--lsp-pos))))
 
 (defun copilot--get-completion (callback)
   "Get completion with CALLBACK."
@@ -1077,39 +1085,12 @@ provided."
                                                  :version copilot--doc-version
                                                  :text (copilot--get-source)))))))
 
-(defun copilot--on-doc-change (&optional beg end chars-replaced)
-  "Notify that the document has changed.
-
-Arguments BEG, END, and CHARS-REPLACED are metadata for region changed."
-  (let* ((is-before-change (null chars-replaced))
-         (is-after-change (not is-before-change))
-         ;; for a deletion, the post-change beginning and end are at the same place.
-         (is-insertion (and is-after-change (not (equal beg end))))
-         (is-deletion (and is-before-change (not (equal beg end)))))
-    (when (or is-insertion is-deletion)
-      (save-restriction
-        (save-match-data
-          (widen)
-          (let* ((range-start (list :line (- (line-number-at-pos beg) copilot--line-bias)
-                                    :character (- beg (save-excursion (goto-char beg) (line-beginning-position)))))
-                 (range-end (if is-insertion range-start
-                              (list :line (- (line-number-at-pos end) copilot--line-bias)
-                                    :character (- end (save-excursion (goto-char end) (line-beginning-position))))))
-                 (text (if is-insertion (buffer-substring-no-properties beg end) ""))
-                 (content-changes (vector (list :range (list :start range-start :end range-end)
-                                                :text text))))
-            (cl-incf copilot--doc-version)
-            (copilot--notify 'textDocument/didChange
-                             (list :textDocument (list :uri (copilot--get-uri) :version copilot--doc-version)
-                                   :contentChanges content-changes))))))))
-
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."
   (when (seq-contains-p copilot--opened-buffers (current-buffer))
     (copilot--notify 'textDocument/didClose
                      (list :textDocument (list :uri (copilot--get-uri))))
     (setq copilot--opened-buffers (delete (current-buffer) copilot--opened-buffers))))
-
 
 ;;;###autoload
 (defun copilot-complete ()
@@ -1128,6 +1109,60 @@ Arguments BEG, END, and CHARS-REPLACED are metadata for region changed."
              (copilot--show-completion completion)
            (when called-interactively
              (copilot--log 'warning "No completion is available."))))))))
+
+;;
+;; integration with track-changes
+;;
+
+(defvar-local copilot--track-changes-id nil
+  "Tracker id from `track-changes-register' for this buffer.")
+
+(defun copilot--lsp-range-end-from-oldtext (beg oldtext)
+  "Compute old end position plist for change at BEG replacing OLDTEXT."
+  (if (string-empty-p oldtext)
+      ;; Optimization for pure insertions
+      (copilot--lsp-pos beg)
+    (let* ((start (copilot--lsp-pos beg))
+           (start-line (plist-get start :line))
+           (start-char (plist-get start :character))
+           (end-info (with-temp-buffer
+                       (insert oldtext)
+                       (goto-char (point-max))
+                       (cons (1- (line-number-at-pos))
+                             (current-column))))
+           (num-newlines (car end-info))
+           (end-char (cdr end-info)))
+      (list :line (+ start-line num-newlines)
+            :character (if (= num-newlines 0)
+                           (+ start-char (length oldtext))
+                         end-char)))))
+
+(defun copilot--track-changes-signal (id &optional _distance)
+  "Handle track changes signal for given tracker ID.
+Fetch changes and notify the language server."
+  (condition-case err
+      (save-restriction
+        (widen)
+        (track-changes-fetch
+         id
+         (lambda (beg end before)
+           (unless (eq before 'error)
+             (save-restriction
+               (widen)
+               (let* ((new-text (buffer-substring-no-properties beg end))
+                      (start-pos (copilot--lsp-pos beg))
+                      (end-pos (copilot--lsp-range-end-from-oldtext beg (or before ""))))
+                 (cl-incf copilot--doc-version)
+                 (copilot--notify
+                  'textDocument/didChange
+                  (list :textDocument (list :uri (copilot--get-uri)
+                                            :version copilot--doc-version)
+                        :contentChanges
+                        (vector
+                         (list :range (list :start start-pos :end end-pos)
+                               :text new-text))))))))))
+    (error
+     (copilot--log 'error "Change fetch failed: %s" (error-message-string err)))))
 
 ;;
 ;; minor mode
@@ -1249,24 +1284,26 @@ Use this for custom bindings in `copilot-mode'.")
 (defun copilot--mode-setup ()
   "Set up copilot mode."
   (add-hook 'post-command-hook #'copilot--post-command nil 'local)
-  (add-hook 'before-change-functions #'copilot--on-doc-change nil 'local)
-  (add-hook 'after-change-functions #'copilot--on-doc-change nil 'local)
   ;; Hook onto both window-selection-change-functions and window-buffer-change-functions
   ;; since both are separate ways of 'focussing' a buffer.
   (add-hook 'window-selection-change-functions #'copilot--on-doc-focus nil 'local)
   (add-hook 'window-buffer-change-functions #'copilot--on-doc-focus nil 'local)
   (add-hook 'kill-buffer-hook #'copilot--on-doc-close nil 'local)
+  (unless copilot--track-changes-id
+    (setq copilot--track-changes-id
+          (track-changes-register #'copilot--track-changes-signal)))
   ;; The mode may be activated manually while focus remains on the current window/buffer.
   (copilot--on-doc-focus (selected-window)))
 
 (defun copilot--mode-teardown ()
   "Tear down copilot mode."
   (remove-hook 'post-command-hook #'copilot--post-command 'local)
-  (remove-hook 'before-change-functions #'copilot--on-doc-change 'local)
-  (remove-hook 'after-change-functions #'copilot--on-doc-change 'local)
   (remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
   (remove-hook 'window-buffer-change-functions #'copilot--on-doc-focus 'local)
   (remove-hook 'kill-buffer-hook #'copilot--on-doc-close 'local)
+  (when copilot--track-changes-id
+    (track-changes-unregister copilot--track-changes-id)
+    (setq copilot--track-changes-id nil))
   ;; Send the close event for the active buffer since activating the mode will open it again.
   (copilot--on-doc-close))
 

@@ -46,9 +46,9 @@
 
 (require 'f)
 (require 'editorconfig)
+(require 'track-changes)
 
 (require 'copilot-balancer)
-(require 'track-changes)
 
 (defgroup copilot nil
   "Copilot."

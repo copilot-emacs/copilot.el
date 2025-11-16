@@ -287,9 +287,9 @@ Log out from GitHub.
 > Use <kbd>M-x</kbd> `customize-group` <kbd>RET</kbd> `copilot` to see all available
 > configuration options.
 
-### copilot-version
+### copilot-lsp-server-version
 
-The version of the [@github/copilot-language-server][] to use. If set to `nil`,
+The version of the [@github/copilot-language-server][] to use. If set to `nil` (default),
 the latest version will be installed.
 
 ### copilot-idle-delay

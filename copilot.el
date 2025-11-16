@@ -168,8 +168,8 @@ find indentation offset."
   :group 'copilot
   :package-version '(copilot . "0.1"))
 
-(defcustom copilot-version nil
-  "Copilot server version.
+(defcustom copilot-lsp-server-version nil
+  "Copilot LSP server version.
 
 The default value is the preferred version and ensures functionality.
 You may adjust this variable at your own risk."
@@ -177,6 +177,8 @@ You may adjust this variable at your own risk."
                  (string :tag "Specific Version"))
   :group 'copilot
   :package-version '(copilot . "0.1"))
+
+(define-obsolete-variable-alias 'copilot-version 'copilot-lsp-server-version)
 
 (defun copilot--lsp-settings-changed (symbol value)
   "Restart the Copilot LSP due to SYMBOL changed to VALUE.
@@ -369,7 +371,7 @@ Incremented after each change.")
          npm-binary
          "-g" "--prefix" copilot-install-dir
          "install" (concat copilot-server-package-name
-                           (when copilot-version (format "@%s" copilot-version)))))
+                           (when copilot-lsp-server-version (format "@%s" copilot-lsp-server-version)))))
     (copilot--log 'warning "Unable to install %s via `npm' because it is not present" copilot-server-package-name)
     nil))
 
@@ -468,10 +470,10 @@ SUCCESS-FN is the CALLBACK."
     (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
    (t
     (let ((installed-version (copilot-installed-version)))
-      (when (and copilot-version (not (equal installed-version copilot-version)))
-        (warn "This package has been tested for Copilot server version %s but version %s has been detected.
-You can change the installed version with `M-x copilot-reinstall-server` or remove this warning by changing the value of `copilot-version'."
-              copilot-version installed-version)))
+      (when (and copilot-lsp-server-version (not (equal installed-version copilot-lsp-server-version)))
+        (warn "This package has been tested for Copilot LSP server version %s but version %s has been detected.
+You can change the installed version with `M-x copilot-reinstall-server` or remove this warning by changing the value of `copilot-lsp-server-version'."
+              copilot-lsp-server-version installed-version)))
     (setq copilot--connection (copilot--make-connection))
     (copilot--log 'info "Copilot server started.")
     (copilot--request

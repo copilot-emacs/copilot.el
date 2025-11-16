@@ -9,7 +9,7 @@
 ;;             Bozhidar Batsov <bozhidar@batsov.dev>
 ;; URL: https://github.com/copilot-emacs/copilot.el
 ;; Package-Requires: ((emacs "27.2") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0") (track-changes "1.4"))
-;; Version: 0.3.0-snapshot
+;; Version: 0.3.0
 ;; Keywords: convenience copilot
 
 ;; The MIT License (MIT)

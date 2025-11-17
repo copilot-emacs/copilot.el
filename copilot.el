@@ -427,7 +427,8 @@ SUCCESS-FN is the CALLBACK."
   `(progn
      (unless (copilot--connection-alivep)
        (copilot--start-server))
-     ;; jsonrpc will use temp buffer for callbacks, so we need to save the current buffer and restore it inside callback
+     ;; jsonrpc will use temp buffer for callbacks, so we need to save the
+     ;; current buffer and restore it inside callback
      (let ((buf (current-buffer)))
        (jsonrpc-async-request copilot--connection
                               ,method ,params

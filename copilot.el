@@ -178,7 +178,7 @@ You may adjust this variable at your own risk."
   :group 'copilot
   :package-version '(copilot . "0.1"))
 
-(define-obsolete-variable-alias 'copilot-version 'copilot-lsp-server-version)
+(define-obsolete-variable-alias 'copilot-version 'copilot-lsp-server-version "0.4.0")
 
 (defun copilot--lsp-settings-changed (symbol value)
   "Restart the Copilot LSP due to SYMBOL changed to VALUE.

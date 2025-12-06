@@ -1223,6 +1223,9 @@ Copilot will show completions only if all predicates return t."
                        (or
                         (string-prefix-p "copilot-" (symbol-name this-command))
                         (member this-command copilot-clear-overlay-ignore-commands)
+                        ;; `this-original-command' captures remapped helpers like
+                        ;; `universal-argument-more' and `digit-argument'.
+                        (member this-original-command copilot-clear-overlay-ignore-commands)
                         (copilot--self-insert this-command)))))
     (copilot-clear-overlay)
     (when copilot--post-command-timer

@@ -270,7 +270,25 @@ Clear copilot overlay in the current buffer.
 
 Similar to `copilot-accept-completion`, but accept the completion by line or
 word. You can use prefix argument to specify the number of lines or words to
-accept.
+accept.  Some further variants are included:
+
+- `copilot-accept-completion-by-sentence`
+- `copilot-accept-completion-by-paragraph`
+
+#### copilot-accept-completion-up-to-char / copilot-accept-completion-to-char
+
+Partially accept the completion until a delimiter, similar to Emacs's
+`zap-up-to-char` (exclusive) and `zap-to-char` (inclusive).  To remap
+the built-in zap commands automatically whenever the overlay is
+visible, use:
+
+```elisp
+(keymap-set copilot-completion-map "<remap> <zap-to-char>" #'copilot-accept-completion-to-char)
+(keymap-set copilot-completion-map "<remap> <zap-up-to-char>" #'copilot-accept-completion-up-to-char)
+```
+
+You can use prefix arguments.  For example, with default bindings,
+`C-2 M-z ,` accepts through the second comma.
 
 #### copilot-next-completion / copilot-previous-completion
 

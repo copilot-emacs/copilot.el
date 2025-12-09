@@ -1039,7 +1039,52 @@ provided."
 
 (copilot--define-accept-completion-by-action copilot-accept-completion-by-word #'forward-word)
 (copilot--define-accept-completion-by-action copilot-accept-completion-by-line #'forward-line)
+(copilot--define-accept-completion-by-action copilot-accept-completion-by-sentence #'forward-sentence)
 (copilot--define-accept-completion-by-action copilot-accept-completion-by-paragraph #'forward-paragraph)
+
+(defun copilot--uppercase-char-p (char)
+  "Return non-nil when CHAR is uppercase in the current locale."
+  (and (characterp char)
+       (let ((up (upcase char))
+             (down (downcase char)))
+         (and (not (eq up down)) (eq char up)))))
+
+(defun copilot--completion-chunk-to-char (completion char count include-char)
+  "Return COMPLETION substring up to CHAR.
+COUNT specifies the occurrence.  INCLUDE-CHAR toggles whether CHAR stays
+in.  Uppercase CHAR disables `case-fold-search'."
+  (let ((count (or count 1)))
+    (when (<= count 0)
+      (user-error "COUNT must be positive"))
+    (with-temp-buffer
+      (insert completion)
+      (goto-char (point-min))
+      (let ((case-fold-search (if (copilot--uppercase-char-p char)
+                                  nil case-fold-search)))
+        (search-forward (char-to-string char) nil nil count)
+        (unless include-char
+          (backward-char))
+        (buffer-substring-no-properties (point-min) (point))))))
+
+(defun copilot-accept-completion-up-to-char (char &optional count)
+  "Accept completion up to but excluding CHAR.
+COUNT must be positive; signal an error if CHAR does not occur COUNT times.
+Uppercase CHAR disables `case-fold-search', mirroring `zap-up-to-char'."
+  (interactive (list (read-char "Accept completion up to char: ")
+                     (prefix-numeric-value current-prefix-arg)))
+  (copilot-accept-completion
+   (lambda (completion)
+     (copilot--completion-chunk-to-char completion char count nil))))
+
+(defun copilot-accept-completion-to-char (char &optional count)
+  "Accept completion up to and including CHAR.
+COUNT must be positive; signal an error if CHAR does not occur COUNT times.
+Uppercase CHAR disables `case-fold-search', mirroring `zap-to-char'."
+  (interactive (list (read-char "Accept completion through char: ")
+                     (prefix-numeric-value current-prefix-arg)))
+  (copilot-accept-completion
+   (lambda (completion)
+     (copilot--completion-chunk-to-char completion char count t))))
 
 (defun copilot--show-completion (completion-data)
   "Show COMPLETION-DATA."

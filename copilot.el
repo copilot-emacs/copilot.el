@@ -122,6 +122,10 @@ performance."
   :type '(repeat function)
   :package-version '(copilot . "0.1"))
 
+(defconst copilot--hardcoded-clear-overlay-ignore-commands
+  '(universal-argument digit-argument negative-argument universal-argument-more)
+  "Hardcoded list of commands that should not clear the overlay.")
+
 (defcustom copilot-indent-offset-warning-disable nil
   "Disable indentation warnings.
 
@@ -1226,6 +1230,7 @@ Copilot will show completions only if all predicates return t."
                         ;; `this-original-command' captures remapped helpers like
                         ;; `universal-argument-more' and `digit-argument'.
                         (member this-original-command copilot-clear-overlay-ignore-commands)
+                        (member this-original-command copilot--hardcoded-clear-overlay-ignore-commands)
                         (copilot--self-insert this-command)))))
     (copilot-clear-overlay)
     (when copilot--post-command-timer

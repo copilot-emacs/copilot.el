@@ -126,6 +126,12 @@ performance."
   '(universal-argument digit-argument negative-argument universal-argument-more)
   "Hardcoded list of commands that should not clear the overlay.")
 
+(defcustom copilot-clear-overlay-on-commands '(beginning-of-visual-line)
+  "Commands that must clear the Copilot overlay before execution."
+  :group 'copilot
+  :type '(repeat function)
+  :package-version '(copilot . "0.4"))
+
 (defcustom copilot-indent-offset-warning-disable nil
   "Disable indentation warnings.
 
@@ -1257,6 +1263,16 @@ Copilot will show completions only if all predicates return t."
                      (if (functionp pred) (funcall pred) nil))
                    ,disable)))
 
+(defun copilot--pre-command ()
+  "Handle `pre-command-hook' for Copilot.
+Clear the overlay for commands in `copilot-clear-overlay-on-commands' so
+that display-based motions (such as `beginning-of-visual-line') work
+consistently even when the overlay is visible."
+  (when (and this-command
+             (copilot--overlay-visible)
+             (memq this-command copilot-clear-overlay-on-commands))
+    (copilot-clear-overlay)))
+
 (defun copilot--satisfy-trigger-predicates ()
   "Return t if all trigger predicates are satisfied."
   (copilot--satisfy-predicates copilot-enable-predicates copilot-disable-predicates))
@@ -1339,6 +1355,7 @@ Use this for custom bindings in `copilot-mode'.")
 
 (defun copilot--mode-setup ()
   "Set up copilot mode."
+  (add-hook 'pre-command-hook #'copilot--pre-command nil 'local)
   (add-hook 'post-command-hook #'copilot--post-command nil 'local)
   ;; Hook onto both window-selection-change-functions and window-buffer-change-functions
   ;; since both are separate ways of 'focussing' a buffer.
@@ -1353,6 +1370,7 @@ Use this for custom bindings in `copilot-mode'.")
 
 (defun copilot--mode-teardown ()
   "Tear down copilot mode."
+  (remove-hook 'pre-command-hook #'copilot--pre-command 'local)
   (remove-hook 'post-command-hook #'copilot--post-command 'local)
   (remove-hook 'window-selection-change-functions #'copilot--on-doc-focus 'local)
   (remove-hook 'window-buffer-change-functions #'copilot--on-doc-focus 'local)

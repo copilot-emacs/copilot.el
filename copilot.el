@@ -188,6 +188,13 @@ You may adjust this variable at your own risk."
   :group 'copilot
   :package-version '(copilot . "0.1"))
 
+(defcustom copilot-mode-line-symbol "CP"
+  "When non-nil, show Copilot status in the mode line.
+
+The value of this variable is the string shown in the mode line."
+  :group 'copilot
+  :package-version '(copilot . "0.4"))
+
 (define-obsolete-variable-alias 'copilot-version 'copilot-lsp-server-version "0.4.0")
 
 (defun copilot--lsp-settings-changed (symbol value)
@@ -1388,6 +1395,12 @@ Use this for custom bindings in `copilot-mode'.")
   :lighter " Copilot"
   (copilot-clear-overlay)
   (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
+
+  (add-to-list 'mode-line-misc-info
+               '(:eval (if (and copilot-mode copilot-mode-line-symbol)
+                           copilot-mode-line-symbol
+                         "")))
+
   (if copilot-mode
       (copilot--mode-setup)
     (copilot--mode-teardown)))

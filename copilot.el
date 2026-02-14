@@ -1395,8 +1395,12 @@ Use this for custom bindings in `copilot-mode'.")
     (copilot--mode-teardown)))
 
 (defun copilot-turn-on-unless-buffer-read-only ()
-  "Turn on `copilot-mode' if the buffer is writable."
-  (unless buffer-read-only
+  "Turn on `copilot-mode' if the buffer is writable and not internal.
+Skip read-only buffers, minibuffers, and hidden internal buffers
+whose names start with a space."
+  (unless (or buffer-read-only
+              (minibufferp)
+              (string-prefix-p " " (buffer-name)))
     (copilot-mode 1)))
 
 ;;;###autoload

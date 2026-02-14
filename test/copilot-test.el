@@ -129,8 +129,8 @@
     (it "respects buffer-local tab-width as fallback"
       (with-temp-buffer
         (fundamental-mode)
-        (let ((copilot-indent-offset-warning-disable t))
-          (setq-local tab-width 8)
+        (let ((copilot-indent-offset-warning-disable t)
+              (tab-width 8))
           (expect (copilot--infer-indentation-offset) :to-equal 8)))))
 
   ;;
@@ -232,6 +232,49 @@
         (setq-local copilot--overlay nil)
         (let ((ov (copilot--get-overlay)))
           (expect (overlay-get ov 'priority) :to-equal 100)))))
+
+  ;;
+  ;; Global mode buffer filtering
+  ;;
+
+  (describe "copilot-turn-on-unless-buffer-read-only"
+    (it "enables copilot-mode in writable buffers"
+      (let ((buf (get-buffer-create "*copilot-writable-test*")))
+        (unwind-protect
+            (with-current-buffer buf
+              (spy-on 'copilot--on-doc-focus)
+              (spy-on 'copilot--on-doc-close)
+              (copilot-turn-on-unless-buffer-read-only)
+              (expect copilot-mode :to-be-truthy)
+              (copilot-mode -1))
+          (kill-buffer buf))))
+
+    (it "does not enable copilot-mode in read-only buffers"
+      (with-temp-buffer
+        (setq buffer-read-only t)
+        (copilot-turn-on-unless-buffer-read-only)
+        (expect copilot-mode :not :to-be-truthy)))
+
+    (it "does not enable copilot-mode in internal buffers"
+      (let ((buf (get-buffer-create " *internal-test*")))
+        (unwind-protect
+            (with-current-buffer buf
+              (spy-on 'copilot--on-doc-focus)
+              (spy-on 'copilot--on-doc-close)
+              (copilot-turn-on-unless-buffer-read-only)
+              (expect copilot-mode :not :to-be-truthy))
+          (kill-buffer buf))))
+
+    (it "enables copilot-mode in normal named buffers"
+      (let ((buf (get-buffer-create "*scratch-test*")))
+        (unwind-protect
+            (with-current-buffer buf
+              (spy-on 'copilot--on-doc-focus)
+              (spy-on 'copilot--on-doc-close)
+              (copilot-turn-on-unless-buffer-read-only)
+              (expect copilot-mode :to-be-truthy)
+              (copilot-mode -1))
+          (kill-buffer buf)))))
 
   ;;
   ;; Minor mode

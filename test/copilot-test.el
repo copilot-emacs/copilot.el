@@ -14,6 +14,12 @@
     (it "provides the copilot feature"
       (expect (featurep 'copilot) :to-be-truthy)))
 
+  (describe "no company dependency"
+    (it "loads copilot without requiring company-mode"
+      (expect (featurep 'copilot) :to-be-truthy)
+      ;; copilot.el should not require or reference company-mode
+      (expect (featurep 'company) :not :to-be-truthy)))
+
   (describe "copilot--make-connection"
     (it "handles both :events-buffer-config and :events-buffer-scrollback-size"
       ;; copilot--make-connection uses condition-case to try the new

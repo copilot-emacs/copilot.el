@@ -8,7 +8,7 @@
 ;;             Rakotomandimby Mihamina <mihamina.rakotomandimby@rktmb.org>
 ;;             Bozhidar Batsov <bozhidar@batsov.dev>
 ;; URL: https://github.com/copilot-emacs/copilot.el
-;; Package-Requires: ((emacs "27.2") (editorconfig "0.8.2") (jsonrpc "1.0.14") (f "0.20.0") (track-changes "1.4"))
+;; Package-Requires: ((emacs "27.2") (editorconfig "0.8.2") (jsonrpc "1.0.14") (compat "30") (track-changes "1.4"))
 ;; Version: 0.4.0-snapshot
 ;; Keywords: convenience copilot
 
@@ -39,12 +39,12 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'compat)
 (require 'compile)
 (require 'json)
 (require 'jsonrpc)
 (require 'subr-x)
 
-(require 'f)
 (require 'editorconfig)
 (require 'track-changes)
 
@@ -165,7 +165,7 @@ find indentation offset."
   "The name of the package to install copilot server.")
 
 (defcustom copilot-install-dir (expand-file-name
-                                (locate-user-emacs-file (f-join ".cache" "copilot")))
+                                (locate-user-emacs-file (file-name-concat ".cache" "copilot")))
   "Directory in which the servers will be installed."
   :risky t
   :type 'directory
@@ -310,9 +310,9 @@ Incremented after each change.")
   "Return the version number of currently installed `copilot-server-package-name'."
   (let ((possible-paths (list
                          (when (eq system-type 'windows-nt)
-                           (f-join copilot-install-dir "node_modules" copilot-server-package-name "package.json"))
-                         (f-join copilot-install-dir "lib" "node_modules" copilot-server-package-name "package.json")
-                         (f-join copilot-install-dir "lib64" "node_modules" copilot-server-package-name "package.json"))))
+                           (file-name-concat copilot-install-dir "node_modules" copilot-server-package-name "package.json"))
+                         (file-name-concat copilot-install-dir "lib" "node_modules" copilot-server-package-name "package.json")
+                         (file-name-concat copilot-install-dir "lib64" "node_modules" copilot-server-package-name "package.json"))))
     (seq-some
      (lambda (path)
        (when (and path (file-exists-p path))
@@ -332,10 +332,10 @@ Incremented after each change.")
    ((executable-find copilot-server-executable t))
    (t
     (let ((path (executable-find
-                 (f-join copilot-install-dir
-                         (cond ((eq system-type 'windows-nt) "")
-                               (t "bin"))
-                         copilot-server-executable)
+                 (file-name-concat copilot-install-dir
+                                   (cond ((eq system-type 'windows-nt) "")
+                                         (t "bin"))
+                                   copilot-server-executable)
                  t)))
       (unless (and path (file-exists-p path))
         (error "The package %s is not installed.  Unable to find %s"

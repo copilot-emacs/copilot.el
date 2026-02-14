@@ -230,6 +230,16 @@ Exchange the URI with the correct URI of your organization."
   :group 'copilot
   :package-version '(copilot . "0.2"))
 
+(defcustom copilot-completion-model nil
+  "The completion model to use for Copilot suggestions.
+When nil, the server's default model is used.
+Use `M-x copilot-select-completion-model' to interactively choose
+from available models."
+  :type '(choice (const :tag "Default" nil)
+                 (string :tag "Model ID"))
+  :group 'copilot
+  :package-version '(copilot . "0.5"))
+
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
 
@@ -474,6 +484,17 @@ SUCCESS-FN is the CALLBACK."
        ;; handle older jsonrpc versions
        (funcall make-fn :events-buffer-scrollback-size copilot-log-max)))))
 
+(defun copilot--effective-lsp-settings ()
+  "Return the effective LSP settings, including completion model."
+  (let ((settings (copy-sequence copilot-lsp-settings)))
+    (when copilot-completion-model
+      (let* ((github (or (plist-get settings :github) '()))
+             (copilot-section (or (plist-get github :copilot) '())))
+        (setq copilot-section (plist-put copilot-section :selectedCompletionModel copilot-completion-model))
+        (setq github (plist-put github :copilot copilot-section))
+        (setq settings (plist-put settings :github github))))
+    settings))
+
 (defun copilot--start-server ()
   "Start the copilot server process in local."
   (cond
@@ -502,7 +523,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
         ,@(when copilot-network-proxy
             `(:networkProxy ,copilot-network-proxy)))))
     (copilot--notify 'initialized '())
-    (copilot--notify 'workspace/didChangeConfiguration `(:settings ,copilot-lsp-settings)))))
+    (copilot--notify 'workspace/didChangeConfiguration `(:settings ,(copilot--effective-lsp-settings))))))
 
 ;;
 ;; login / logout
@@ -572,6 +593,29 @@ automatically, browse to %s." user-code verification-uri))
                                       (copilot--log 'error "%S" err))
                           :timeout-fn (lambda ()
                                         (copilot--log 'warning "Copilot server timeout."))))
+
+;;
+;; completion model selection
+;;
+
+(defun copilot-select-completion-model ()
+  "Interactively select a Copilot completion model."
+  (interactive)
+  (let* ((models (copilot--request 'copilot/models '(:dummy "dummy")))
+         (completion-models
+          (seq-filter (lambda (m)
+                        (seq-contains-p (plist-get m :scopes) "completion"))
+                      models))
+         (choices (mapcar (lambda (m)
+                            (cons (format "%s (%s)" (plist-get m :modelName) (plist-get m :id))
+                                  (plist-get m :id)))
+                          completion-models))
+         (choice (completing-read "Completion model: " choices nil t))
+         (model-id (cdr (assoc choice choices))))
+    (setq copilot-completion-model model-id)
+    (copilot--notify 'workspace/didChangeConfiguration
+                     `(:settings ,(copilot--effective-lsp-settings)))
+    (copilot--log 'info "Completion model set to %s" model-id)))
 
 ;;
 ;; Auto completion

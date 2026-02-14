@@ -384,6 +384,35 @@
           (expect (plist-member doc :relativePath) :to-be-truthy)))))
 
   ;;
+  ;; Effective LSP settings
+  ;;
+
+  (describe "copilot--effective-lsp-settings"
+    (it "returns copilot-lsp-settings unchanged when completion model is nil"
+      (let ((copilot-completion-model nil)
+            (copilot-lsp-settings '(:foo "bar")))
+        (expect (copilot--effective-lsp-settings) :to-equal '(:foo "bar"))))
+
+    (it "merges model into empty settings"
+      (let ((copilot-completion-model "gpt-4o")
+            (copilot-lsp-settings nil))
+        (let ((result (copilot--effective-lsp-settings)))
+          (expect (plist-get (plist-get (plist-get result :github) :copilot)
+                             :selectedCompletionModel)
+                  :to-equal "gpt-4o"))))
+
+    (it "merges model when settings has existing :github key"
+      (let ((copilot-completion-model "gpt-4o")
+            (copilot-lsp-settings '(:github (:copilot (:other "value")))))
+        (let ((result (copilot--effective-lsp-settings)))
+          (expect (plist-get (plist-get (plist-get result :github) :copilot)
+                             :selectedCompletionModel)
+                  :to-equal "gpt-4o")
+          (expect (plist-get (plist-get (plist-get result :github) :copilot)
+                             :other)
+                  :to-equal "value")))))
+
+  ;;
   ;; LSP position
   ;;
 

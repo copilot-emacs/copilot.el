@@ -4,6 +4,7 @@
 
 ### New Features
 
+- Add `copilot-completion-model` option and `copilot-select-completion-model` command for choosing the AI model used for completions. ([#382](https://github.com/copilot-emacs/copilot.el/issues/382))
 - Add `copilot-accept-completion-by-sentence` command.
 - Add `copilot-accept-completion-up-to-char` and `copilot-accept-completion-to-char` commands, similar to `zap-up-to-char` and `zap-to-char`.
 - Add `copilot-clear-overlay-on-commands` user option to clear the overlay before specific commands (e.g. `beginning-of-visual-line`).

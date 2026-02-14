@@ -933,6 +933,7 @@ To work around posn problems with after-string property.")
   "Create or get overlay for Copilot."
   (unless (overlayp copilot--overlay)
     (setq copilot--overlay (make-overlay 1 1 nil nil t))
+    (overlay-put copilot--overlay 'priority 100)
     (overlay-put
      copilot--overlay 'keymap-overlay (copilot--get-or-create-keymap-overlay)))
   copilot--overlay)

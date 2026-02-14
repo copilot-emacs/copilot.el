@@ -224,7 +224,14 @@
         (insert "test")
         (let ((ov1 (copilot--get-overlay))
               (ov2 (copilot--get-overlay)))
-          (expect ov1 :to-equal ov2)))))
+          (expect ov1 :to-equal ov2))))
+
+    (it "sets priority on the overlay"
+      (with-temp-buffer
+        (insert "test")
+        (setq-local copilot--overlay nil)
+        (let ((ov (copilot--get-overlay)))
+          (expect (overlay-get ov 'priority) :to-equal 100)))))
 
   ;;
   ;; Minor mode

@@ -45,6 +45,29 @@
     (it "returns buffer contents"
       (with-temp-buffer
         (insert "hello world")
-        (expect (copilot--get-source) :to-equal "hello world")))))
+        (expect (copilot--get-source) :to-equal "hello world")))
+
+    (it "does not warn about copilot-max-char in non-file buffers"
+      (with-temp-buffer
+        (let ((copilot-max-char 10)
+              (copilot-max-char-warning-disable nil))
+          (insert (make-string 20 ?x))
+          (spy-on 'display-warning)
+          (copilot--get-source)
+          (expect 'display-warning :not :to-have-been-called))))
+
+    (it "warns about copilot-max-char in file-visiting buffers"
+      (let ((temp-file (make-temp-file "copilot-test")))
+        (unwind-protect
+            (with-current-buffer (find-file-noselect temp-file)
+              (let ((copilot-max-char 10)
+                    (copilot-max-char-warning-disable nil))
+                (insert (make-string 20 ?x))
+                (spy-on 'display-warning)
+                (copilot--get-source)
+                (expect 'display-warning :to-have-been-called))
+              (set-buffer-modified-p nil)
+              (kill-buffer))
+          (delete-file temp-file))))))
 
 ;;; copilot-test.el ends here

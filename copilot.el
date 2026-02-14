@@ -671,7 +671,8 @@ automatically, browse to %s." user-code verification-uri))
            (pmax (point-max))
            (pmin (point-min))
            (half-window (/ copilot-max-char 2)))
-      (when (and (>= copilot-max-char 0)
+      (when (and buffer-file-name
+                 (>= copilot-max-char 0)
                  (> pmax copilot-max-char))
         (let ((msg (format "%s size exceeds 'copilot-max-char' (%s), copilot completions may not work"
                            (current-buffer) copilot-max-char)))

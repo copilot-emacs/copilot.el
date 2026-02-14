@@ -54,6 +54,40 @@ jobs:
         eask install
         eask compile
 
+  test:
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        emacs-version:
+          - 28.2
+          - 29.4
+          - 30.1
+        experimental: [false]
+        include:
+        - os: ubuntu-latest
+          emacs-version: snapshot
+          experimental: true
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: jcs090218/setup-emacs@master
+      with:
+        version: ${{ matrix.emacs-version }}
+
+    - uses: emacs-eask/setup-eask@master
+      with:
+        version: 'snapshot'
+
+    - name: Run tests
+      run: |
+        eask package
+        eask install-deps --dev
+        eask test buttercup
+
   lint:
     runs-on: ubuntu-latest
 

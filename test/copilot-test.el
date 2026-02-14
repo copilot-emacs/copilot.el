@@ -310,6 +310,39 @@
         (expect (memq #'copilot--pre-command pre-command-hook) :not :to-be-truthy))))
 
   ;;
+  ;; Document open/close
+  ;;
+
+  (describe "copilot--on-doc-close"
+    (it "does not start the server when connection is not alive"
+      (with-temp-buffer
+        (add-to-list 'copilot--opened-buffers (current-buffer))
+        (spy-on 'copilot--connection-alivep :and-return-value nil)
+        (spy-on 'jsonrpc-notify)
+        (copilot--on-doc-close)
+        ;; Should not send notification when server is not alive
+        (expect 'jsonrpc-notify :not :to-have-been-called)
+        ;; But should still clean up opened-buffers
+        (expect (seq-contains-p copilot--opened-buffers (current-buffer))
+                :not :to-be-truthy)))
+
+    (it "sends notification when connection is alive"
+      (with-temp-buffer
+        (add-to-list 'copilot--opened-buffers (current-buffer))
+        ;; copilot--connection-alivep is a defsubst (inlined when
+        ;; byte-compiled), so mock the underlying pieces instead.
+        (let ((copilot--connection t))
+          (spy-on 'jsonrpc--process :and-return-value t)
+          (spy-on 'process-exit-status :and-return-value 0)
+          (spy-on 'jsonrpc-notify)
+          (copilot--on-doc-close)
+          ;; Should send didClose notification
+          (expect 'jsonrpc-notify :to-have-been-called)
+          ;; And clean up opened-buffers
+          (expect (seq-contains-p copilot--opened-buffers (current-buffer))
+                  :not :to-be-truthy)))))
+
+  ;;
   ;; Predicates
   ;;
 

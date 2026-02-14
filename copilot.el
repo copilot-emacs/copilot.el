@@ -1148,8 +1148,9 @@ Uppercase CHAR disables `case-fold-search', mirroring `zap-to-char'."
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."
   (when (seq-contains-p copilot--opened-buffers (current-buffer))
-    (copilot--notify 'textDocument/didClose
-                     (list :textDocument (list :uri (copilot--get-uri))))
+    (when (copilot--connection-alivep)
+      (jsonrpc-notify copilot--connection 'textDocument/didClose
+                      (list :textDocument (list :uri (copilot--get-uri)))))
     (setq copilot--opened-buffers (delete (current-buffer) copilot--opened-buffers))))
 
 ;;;###autoload

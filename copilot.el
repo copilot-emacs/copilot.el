@@ -333,9 +333,9 @@ Incremented after each change.")
    (t
     (let ((path (executable-find
                  (f-join copilot-install-dir
-                       (cond ((eq system-type 'windows-nt) "")
-                             (t "bin"))
-                       copilot-server-executable)
+                         (cond ((eq system-type 'windows-nt) "")
+                               (t "bin"))
+                         copilot-server-executable)
                  t)))
       (unless (and path (file-exists-p path))
         (error "The package %s is not installed.  Unable to find %s"
@@ -913,7 +913,7 @@ To work around posn problems with after-string property.")
   "Keymap for Copilot completion overlay.")
 
 (defun copilot--posn-advice (&rest args)
-  "Remap posn if in copilot-mode with ARGS."
+  "Remap posn if in `copilot-mode' with ARGS."
   (when copilot-mode
     (let ((pos (or (car-safe args) (point))))
       (when (and copilot--real-posn
@@ -1196,8 +1196,8 @@ Uppercase CHAR disables `case-fold-search', mirroring `zap-to-char'."
                          end-char)))))
 
 (defun copilot--track-changes-signal (id &optional _distance)
-  "Handle track changes signal for given tracker ID.
-Fetch changes and notify the language server."
+  "Handle `track-changes' signal for given tracker ID.
+Fetch the changes and notify the language server."
   (condition-case err
       (save-restriction
         (widen)
@@ -1335,7 +1335,7 @@ in `post-command-hook'."
   "Keymap for Copilot minor mode.
 Use this for custom bindings in `copilot-mode'.")
 
-(easy-menu-define copilot-mode-menu copilot-mode-map "Copilot Menu"
+(easy-menu-define copilot-mode-menu copilot-mode-map "Copilot menu."
   '("Copilot"
     ["Accept Completion" copilot-accept-completion]
     ["Accept Completion by Word" copilot-accept-completion-by-word]

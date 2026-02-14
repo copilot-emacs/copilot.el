@@ -638,7 +638,7 @@ automatically, browse to %s." user-code verification-uri))
           (display-warning '(copilot copilot-no-mode-indent)
                            "copilot--infer-indentation-offset found no mode-specific indentation offset.")
           (setq-local copilot--indent-warning-printed-p t))
-        standard-indent)))
+        tab-width)))
 
 (defun copilot--get-relative-path ()
   "Get relative path to current buffer."

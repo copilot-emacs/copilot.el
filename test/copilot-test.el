@@ -119,11 +119,19 @@
         (let ((lisp-indent-offset 2))
           (expect (copilot--infer-indentation-offset) :to-equal 2))))
 
-    (it "falls back to standard-indent for unknown modes"
+    (it "falls back to tab-width for unknown modes"
+      (with-temp-buffer
+        (fundamental-mode)
+        (let ((copilot-indent-offset-warning-disable t)
+              (tab-width 4))
+          (expect (copilot--infer-indentation-offset) :to-equal 4))))
+
+    (it "respects buffer-local tab-width as fallback"
       (with-temp-buffer
         (fundamental-mode)
         (let ((copilot-indent-offset-warning-disable t))
-          (expect (copilot--infer-indentation-offset) :to-equal standard-indent)))))
+          (setq-local tab-width 8)
+          (expect (copilot--infer-indentation-offset) :to-equal 8)))))
 
   ;;
   ;; copilot--get-source

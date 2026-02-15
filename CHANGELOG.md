@@ -2,6 +2,10 @@
 
 ## master (unreleased)
 
+### New Features
+
+- Add native binary installation support. `copilot-install-server` now falls back to downloading precompiled binaries when npm is unavailable, removing the Node.js requirement on supported platforms. A new `copilot-install-server-native` command is also available for explicit native installation.
+
 ### Changes
 
 - `copilot-chat` now only attaches the originating buffer as context when it is a file-visiting buffer, so invoking chat from an unrelated buffer (dired, `*scratch*`, etc.) no longer sends it as context. ([#470](https://github.com/copilot-emacs/copilot.el/issues/470))

@@ -904,7 +904,7 @@ Each request METHOD can have only one HANDLER."
                    "  :END:\n"
                    "#+BEGIN_SRC " copilot--panel-lang "\n"
                    completion-text "\n#+END_SRC\n\n")
-           (call-interactively #'mark-whole-buffer)
+           (goto-char (point-min))
            (org-sort-entries nil ?R nil nil "SCORE")))))))
 
 (copilot-on-notification

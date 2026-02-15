@@ -24,7 +24,7 @@ This plugin uses the official [@github/copilot-language-server][] provided by Mi
 - `compat`
 - `track-changes`
 
-[@github/copilot-language-server][] requires Node.js 22+.
+[@github/copilot-language-server][] ships precompiled native binaries for macOS (Apple Silicon & Intel), Linux (x64 & ARM64), and Windows (x64).  When npm is not available, `copilot-install-server` automatically downloads and installs the native binary — no Node.js required.  If you prefer to install via npm, Node.js 22+ is needed.
 
 ## Quick Start
 

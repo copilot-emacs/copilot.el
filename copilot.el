@@ -537,7 +537,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
   (interactive)
   (copilot--dbind
       (status user ((:userCode user-code)) ((:verificationUri verification-uri)))
-      (copilot--request 'signInInitiate '(:dummy "signInInitiate"))
+      (copilot--request 'signInInitiate nil)
     (when (string-equal status "AlreadySignedIn")
       (user-error "Already signed in as %s" user))
     (if (display-graphic-p)
@@ -555,13 +555,13 @@ automatically, browse to %s." user-code verification-uri))
         (copilot--request 'signInConfirm (list :userCode user-code))
       (jsonrpc-error
        (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
-    (copilot--dbind (user) (copilot--request 'checkStatus '(:dummy "checkStatus"))
+    (copilot--dbind (user) (copilot--request 'checkStatus nil)
       (copilot--log 'info "Authenticated as GitHub user %s." user))))
 
 (defun copilot-logout ()
   "Logout from Copilot."
   (interactive)
-  (copilot--request 'signOut '(:dummy "signOut"))
+  (copilot--request 'signOut nil)
   (copilot--log 'warning "Logged out."))
 
 ;;
@@ -600,7 +600,7 @@ automatically, browse to %s." user-code verification-uri))
 (defun copilot-select-completion-model ()
   "Interactively select a Copilot completion model."
   (interactive)
-  (let* ((models (copilot--request 'copilot/models '(:dummy "dummy")))
+  (let* ((models (copilot--request 'copilot/models nil))
          (completion-models
           (seq-filter (lambda (m)
                         (seq-contains-p (plist-get m :scopes) "completion"))

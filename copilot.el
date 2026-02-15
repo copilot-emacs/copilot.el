@@ -191,21 +191,16 @@ You may adjust this variable at your own risk."
 (define-obsolete-variable-alias 'copilot-version 'copilot-lsp-server-version "0.4.0")
 
 (defun copilot--lsp-settings-changed (symbol value)
-  "Restart the Copilot LSP due to SYMBOL changed to VALUE.
+  "Notify the Copilot LSP that SYMBOL changed to VALUE.
 
 This function will be called by the customization framework when the
 `copilot-lsp-settings' is changed.  When changed with `setq', then this function
 will not be called."
   (let ((was-bound (boundp symbol)))
     (set-default symbol value)
-    (when was-bound
-      ;; Notifying the agent with the new value does only work if we include the
-      ;; last value (as nil) as well. For example, having the value
-      ;; '(:github-enterprise (:uri "https://example2.ghe.com")) and setting it
-      ;; to nil would require to send the value '(:github-enterprise (:uri nil))
-      ;; to the server. Otherwise, the value is ignored, since sending nil is
-      ;; not enough.
-      (copilot--start-server))))
+    (when (and was-bound (copilot--connection-alivep))
+      (copilot--notify 'workspace/didChangeConfiguration
+                       `(:settings ,(copilot--effective-lsp-settings))))))
 
 (defcustom copilot-lsp-settings nil
   "Settings for the Copilot LSP server.

@@ -486,7 +486,24 @@
         (goto-char 8) ; 'r' in "world"
         (let ((pos (copilot--lsp-pos)))
           (expect (plist-get pos :line) :to-equal 1)
-          (expect (plist-get pos :character) :to-equal 1))))))
+          (expect (plist-get pos :character) :to-equal 1)))))
+
+  ;;
+  ;; Settings change
+  ;;
+
+  (describe "copilot--lsp-settings-changed"
+    (it "does not restart the server"
+      (let ((copilot--connection nil))
+        (spy-on 'copilot--start-server)
+        (copilot--lsp-settings-changed 'copilot-lsp-settings '(:new "value"))
+        (expect 'copilot--start-server :not :to-have-been-called)))
+
+    (it "does not send notification when connection is not alive"
+      (let ((copilot--connection nil))
+        (spy-on 'jsonrpc-notify)
+        (copilot--lsp-settings-changed 'copilot-lsp-settings '(:new "value"))
+        (expect 'jsonrpc-notify :not :to-have-been-called)))))
 
 ;;
 ;; copilot-balancer

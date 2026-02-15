@@ -363,6 +363,50 @@
         (expect (copilot--satisfy-trigger-predicates) :not :to-be-truthy))))
 
   ;;
+  ;; Inline completion params
+  ;;
+
+  (describe "copilot--inline-completion-params"
+    (it "returns correct structure with uri, position, context"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (emacs-lisp-mode)
+        (insert "(defun foo () nil)")
+        (let ((params (copilot--inline-completion-params 2)))
+          (expect (plist-get (plist-get params :textDocument) :uri) :to-be-truthy)
+          (expect (plist-get params :position) :to-be-truthy)
+          (expect (plist-get (plist-get params :context) :triggerKind) :to-equal 2)
+          (expect (plist-get (plist-get params :formattingOptions) :tabSize) :to-be-truthy)
+          (expect (plist-member (plist-get params :formattingOptions) :insertSpaces) :to-be-truthy))))
+
+    (it "uses trigger-kind 1 for manual invocation"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (let ((params (copilot--inline-completion-params 1)))
+          (expect (plist-get (plist-get params :context) :triggerKind) :to-equal 1)))))
+
+  ;;
+  ;; Normalize completion response
+  ;;
+
+  (describe "copilot--normalize-completion-response"
+    (it "returns nil for nil response"
+      (expect (copilot--normalize-completion-response nil) :to-equal nil))
+
+    (it "converts vector response to list"
+      (let ((response [(:insertText "foo") (:insertText "bar")]))
+        (expect (copilot--normalize-completion-response response) :to-equal
+                '((:insertText "foo") (:insertText "bar")))))
+
+    (it "extracts items from plist response"
+      (let ((response (list :items [(:insertText "hello")])))
+        (expect (copilot--normalize-completion-response response) :to-equal
+                '((:insertText "hello")))))
+
+    (it "returns nil for unrecognized response"
+      (expect (copilot--normalize-completion-response '(:unknown "data")) :to-equal nil)))
+
+  ;;
   ;; Doc generation
   ;;
 

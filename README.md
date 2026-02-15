@@ -401,6 +401,24 @@ If you are using `whitespace-mode`, make sure to remove `newline-mark` from `whi
 - Please enable event logging by customize `copilot-log-max` (to e.g. 1000) and enable debug log `(setq copilot-server-args '("--stdio" "--debug"))`, then paste related logs in the `*copilot events*`, `*copilot stderr*` and `*copilot-language-server-log*` buffer.
 - If an exception is thrown, please also paste the stack trace (use `M-x toggle-debug-on-error` to enable stack trace).
 
+## Development
+
+### Running Tests
+
+Unit tests (requires [eask](https://emacs-eask.github.io/)):
+
+```sh
+eask test buttercup
+```
+
+### Integration Testing
+
+There's a manual integration test in `dev/test-integration.el` that connects to the real Copilot language server and verifies the `textDocument/inlineCompletion` round-trip. It requires the server to be installed and authenticated.
+
+```sh
+emacs --batch -L . -l dev/test-integration.el
+```
+
 ## Thanks
 
 These projects helped me a lot:

@@ -12,6 +12,7 @@
 
 ### Changes
 
+- Migrate from legacy `getCompletions` API to standard `textDocument/inlineCompletion` for compatibility with newer Copilot language server versions. Adds partial acceptance telemetry via `textDocument/didPartiallyAcceptCompletion`.
 - Rename `copilot-version` to `copilot-lsp-server-version` (`copilot-version` is now an obsolete alias).
 - Replace the `f` library dependency with `compat`.
 - Hardcode `universal-argument`, `digit-argument`, `negative-argument`, and `universal-argument-more` as commands that should not clear the overlay.

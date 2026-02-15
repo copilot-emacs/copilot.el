@@ -514,7 +514,10 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
        ,(emacs-pid)
        :capabilities
        (:workspace
-        (:workspaceFolders t))
+        (:workspaceFolders t)
+        :textDocument
+        (:inlineCompletion
+         (:dynamicRegistration :json-false)))
        :initializationOptions
        (:editorInfo
         (:name "Emacs" :version ,emacs-version)
@@ -579,14 +582,10 @@ automatically, browse to %s." user-code verification-uri))
   (if copilot-mode
       (copilot--on-doc-focus (selected-window))
     (copilot-mode))
-  (copilot--async-request 'getCompletions
-                          `(:doc (:version 0
-                                           :source "\n"
-                                           :path ""
-                                           :uri ,(copilot--get-uri)
-                                           :relativePath ""
-                                           :languageId "text"
-                                           :position (:line 0 :character 0)))
+  (copilot--async-request 'textDocument/inlineCompletion
+                          (list :textDocument (list :uri (copilot--get-uri))
+                                :position '(:line 0 :character 0)
+                                :context '(:triggerKind 1))
                           :success-fn (lambda (_)
                                         (copilot--log 'info "Copilot OK."))
                           :error-fn (lambda (err)
@@ -788,37 +787,44 @@ POS defaults to point."
           :languageId (copilot--get-language-id)
           :position (copilot--lsp-pos))))
 
-(defun copilot--get-completion (callback)
-  "Get completion with CALLBACK."
-  (copilot--async-request 'getCompletions
-                          (list :doc (copilot--generate-doc))
-                          :success-fn callback))
+(defun copilot--inline-completion-params (trigger-kind)
+  "Build parameters for textDocument/inlineCompletion.
+TRIGGER-KIND is 1 for manual invocation, 2 for automatic."
+  (save-restriction
+    (widen)
+    (list :textDocument (list :uri (copilot--get-uri))
+          :position (copilot--lsp-pos)
+          :context (list :triggerKind trigger-kind)
+          :formattingOptions (list :tabSize (copilot--infer-indentation-offset)
+                                   :insertSpaces (if indent-tabs-mode :json-false t)))))
 
-(defun copilot--get-completions-cycling (callback)
-  "Get completion cycling options with CALLBACK."
-  (if copilot--completion-cache
-      (funcall callback copilot--completion-cache)
-    (copilot--async-request 'getCompletionsCycling
-                            (list :doc (copilot--generate-doc))
-                            :success-fn callback)))
+(defun copilot--normalize-completion-response (response)
+  "Normalize RESPONSE from textDocument/inlineCompletion to a list of items."
+  (cond
+   ((null response) nil)
+   ((vectorp response) (append response nil))
+   ((plist-get response :items)
+    (append (plist-get response :items) nil))
+   (t nil)))
+
+(defun copilot--get-completion (callback &optional trigger-kind)
+  "Get completion with CALLBACK.
+TRIGGER-KIND is 1 for invoked, 2 for automatic (default)."
+  (copilot--async-request 'textDocument/inlineCompletion
+                          (copilot--inline-completion-params (or trigger-kind 2))
+                          :success-fn callback))
 
 (defun copilot--cycle-completion (direction)
   "Cycle completion with DIRECTION."
-  (lambda (result)
-    (unless copilot--completion-cache
-      (setq copilot--completion-cache result))
-    (let ((completions (cl-remove-duplicates (plist-get result :completions)
-                                             :key (lambda (x) (plist-get x :text))
-                                             :test #'string-equal)))
-      (cond ((seq-empty-p completions)
-             (copilot--log 'warning "No completion is available."))
-            ((= (length completions) 1)
-             (copilot--log 'warning "Only one completion is available."))
-            (t (let ((idx (mod (+ copilot--completion-idx direction)
-                               (length completions))))
-                 (setq copilot--completion-idx idx)
-                 (let ((completion (elt completions idx)))
-                   (copilot--show-completion completion))))))))
+  (let* ((items copilot--completion-cache)
+         (len (length items)))
+    (cond ((or (null items) (zerop len))
+           (copilot--log 'warning "No completion is available."))
+          ((= len 1)
+           (copilot--log 'warning "Only one completion is available."))
+          (t
+           (setq copilot--completion-idx (mod (+ copilot--completion-idx direction) len))
+           (copilot--show-completion (nth copilot--completion-idx items))))))
 
 (defsubst copilot--overlay-visible ()
   "Return whether the `copilot--overlay' is available."
@@ -829,13 +835,13 @@ POS defaults to point."
   "Cycle to next completion."
   (interactive)
   (when (copilot--overlay-visible)
-    (copilot--get-completions-cycling (copilot--cycle-completion 1))))
+    (copilot--cycle-completion 1)))
 
 (defun copilot-previous-completion ()
   "Cycle to previous completion."
   (interactive)
   (when (copilot--overlay-visible)
-    (copilot--get-completions-cycling (copilot--cycle-completion -1))))
+    (copilot--cycle-completion -1)))
 
 (defvar copilot--panel-lang nil
   "Language of current panel solutions.")
@@ -1014,8 +1020,8 @@ To work around posn problems with after-string property.")
     (overlay-put ov 'completion completion)
     (overlay-put ov 'start (point))))
 
-(defun copilot--display-overlay-completion (completion uuid start end)
-  "Show COMPLETION with UUID between START and END.
+(defun copilot--display-overlay-completion (completion command full-insert-text start end)
+  "Show COMPLETION with COMMAND and FULL-INSERT-TEXT between START and END.
 
 `save-excursion' is not necessary since there is only one caller, and they are
 already saving an excursion.  This is also a private function."
@@ -1025,18 +1031,17 @@ already saving an excursion.  This is also a private function."
     (let* ((ov (copilot--get-overlay)))
       (overlay-put ov 'tail-length (- (line-end-position) end))
       (copilot--set-overlay-text ov completion)
-      (overlay-put ov 'uuid uuid)
+      (overlay-put ov 'command command)
+      (overlay-put ov 'full-insert-text full-insert-text)
       (overlay-put ov 'completion-start start)
-      (copilot--async-request 'notifyShown (list :uuid uuid)))))
+      (when command
+        (copilot--notify 'textDocument/didShowCompletion
+                         (list :item (list :command command)))))))
 
-(defun copilot-clear-overlay (&optional is-accepted)
-  "Clear Copilot overlay.
-If IS-ACCEPTED is nil, notify rejected."
+(defun copilot-clear-overlay (&optional _is-accepted)
+  "Clear Copilot overlay."
   (interactive)
   (when (copilot--overlay-visible)
-    (unless is-accepted
-      (copilot--async-request 'notifyRejected
-                              (list :uuids `[,(overlay-get copilot--overlay 'uuid)])))
     (delete-overlay copilot--overlay)
     (delete-overlay copilot--keymap-overlay)
     (setq copilot--real-posn nil)))
@@ -1050,7 +1055,8 @@ provided."
     (let* ((completion (overlay-get copilot--overlay 'completion))
            (start (overlay-get copilot--overlay 'start))
            (end (copilot--overlay-end copilot--overlay))
-           (uuid (overlay-get copilot--overlay 'uuid))
+           (command (overlay-get copilot--overlay 'command))
+           (full-insert-text (overlay-get copilot--overlay 'full-insert-text))
            (t-completion (funcall (or transform-fn #'identity) completion))
            (completion-start (overlay-get copilot--overlay 'completion-start)))
       ;; If there is extra indentation before the point, delete it and shift the completion
@@ -1063,18 +1069,30 @@ provided."
         (setq start completion-start)
         (setq end (- end (- (point) completion-start)))
         (delete-region completion-start (point)))
-      (copilot--async-request 'notifyAccepted (list :uuid uuid))
-      (copilot-clear-overlay t)
-      (if (derived-mode-p 'vterm-mode)
-          (progn
-            (vterm-delete-region start end)
-            (vterm-insert t-completion))
-        (delete-region start end)
-        (insert t-completion))
-      ;; if it is a partial completion
-      (when (and (string-prefix-p t-completion completion)
-                 (not (string-equal t-completion completion)))
-        (copilot--set-overlay-text (copilot--get-overlay) (string-remove-prefix t-completion completion)))
+      (let ((is-partial (and (string-prefix-p t-completion completion)
+                             (not (string-equal t-completion completion)))))
+        (if is-partial
+            ;; Partial acceptance
+            (when command
+              (let* ((prefix-len (- (length full-insert-text) (length completion)))
+                     (accepted-length (+ prefix-len (length t-completion))))
+                (copilot--notify 'textDocument/didPartiallyAcceptCompletion
+                                 (list :item (list :command command)
+                                       :acceptedLength accepted-length))))
+          ;; Full acceptance
+          (when command
+            (copilot--async-request 'workspace/executeCommand
+                                    command)))
+        (copilot-clear-overlay t)
+        (if (derived-mode-p 'vterm-mode)
+            (progn
+              (vterm-delete-region start end)
+              (vterm-insert t-completion))
+          (delete-region start end)
+          (insert t-completion))
+        ;; if it is a partial completion, show remaining text
+        (when is-partial
+          (copilot--set-overlay-text (copilot--get-overlay) (string-remove-prefix t-completion completion))))
       t)))
 
 (defmacro copilot--define-accept-completion-by-action (func-name action)
@@ -1142,35 +1160,35 @@ Uppercase CHAR disables `case-fold-search', mirroring `zap-to-char'."
   "Show COMPLETION-DATA."
   (when (copilot--satisfy-display-predicates)
     (copilot--dbind
-        (text uuid ((:docVersion doc-version)) range)
+        (((:insertText insert-text)) command range)
         completion-data
-      (when (= doc-version copilot--doc-version)
-        (save-excursion
-          (save-restriction
-            (widen)
-            (let* ((p (point))
-                   (line (map-nested-elt range '(:start :line)))
-                   (start-char (map-nested-elt range '(:start :character)))
-                   (end-char (map-nested-elt range '(:end :character)))
-                   (goto-line! (lambda ()
-                                 (goto-char (point-min))
-                                 (forward-line (1- (+ line copilot--line-bias)))))
-                   (start (progn
-                            (funcall goto-line!)
-                            (forward-char start-char)
-                            (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
-                                   (common-prefix-len (length (copilot--string-common-prefix text cur-line))))
-                              (setq text (substring text common-prefix-len))
-                              (forward-char common-prefix-len)
-                              (point))))
-                   (end (progn
+      (save-excursion
+        (save-restriction
+          (widen)
+          (let* ((p (point))
+                 (full-insert-text insert-text)
+                 (line (map-nested-elt range '(:start :line)))
+                 (start-char (map-nested-elt range '(:start :character)))
+                 (end-char (map-nested-elt range '(:end :character)))
+                 (goto-line! (lambda ()
+                               (goto-char (point-min))
+                               (forward-line (1- (+ line copilot--line-bias)))))
+                 (start (progn
                           (funcall goto-line!)
-                          (forward-char end-char)
-                          (point)))
-                   (fixed-completion (copilot-balancer-fix-completion start end text)))
-              (goto-char p)
-              (pcase-let ((`(,start ,end ,balanced-text) fixed-completion))
-                (copilot--display-overlay-completion balanced-text uuid start end)))))))))
+                          (forward-char start-char)
+                          (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
+                                 (common-prefix-len (length (copilot--string-common-prefix insert-text cur-line))))
+                            (setq insert-text (substring insert-text common-prefix-len))
+                            (forward-char common-prefix-len)
+                            (point))))
+                 (end (progn
+                        (funcall goto-line!)
+                        (forward-char end-char)
+                        (point)))
+                 (fixed-completion (copilot-balancer-fix-completion start end insert-text)))
+            (goto-char p)
+            (pcase-let ((`(,start ,end ,balanced-text) fixed-completion))
+              (copilot--display-overlay-completion balanced-text command full-insert-text start end))))))))
 
 (defun copilot--on-doc-focus (window)
   "Notify that the document WINDOW has been focussed or opened."
@@ -1206,14 +1224,18 @@ Uppercase CHAR disables `case-fold-search', mirroring `zap-to-char'."
   (setq copilot--completion-cache nil)
   (setq copilot--completion-idx 0)
 
-  (let ((called-interactively (called-interactively-p 'interactive)))
+  (let ((called-interactively (called-interactively-p 'interactive))
+        (request-doc-version copilot--doc-version))
     (copilot--get-completion
-     (jsonrpc-lambda (&key completions &allow-other-keys)
-       (let ((completion (if (seq-empty-p completions) nil (seq-elt completions 0))))
-         (if completion
-             (copilot--show-completion completion)
-           (when called-interactively
-             (copilot--log 'warning "No completion is available."))))))))
+     (lambda (response)
+       (when (= request-doc-version copilot--doc-version)
+         (let ((items (copilot--normalize-completion-response response)))
+           (setq copilot--completion-cache items)
+           (if items
+               (copilot--show-completion (car items))
+             (when called-interactively
+               (copilot--log 'warning "No completion is available."))))))
+     (if called-interactively 1 2))))
 
 ;;
 ;; integration with track-changes

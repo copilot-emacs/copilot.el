@@ -1,4 +1,4 @@
-;;; integration-test.el --- Integration test for inlineCompletion API -*- lexical-binding: t; -*-
+;;; integration-smoke.el --- Integration test for inlineCompletion API -*- lexical-binding: t; -*-
 
 ;; Manual smoke test that connects to the real Copilot language server
 ;; and exercises the textDocument/inlineCompletion round-trip.
@@ -8,7 +8,7 @@
 ;;   - Authenticated (`M-x copilot-login')
 ;;
 ;; Usage:
-;;   emacs --batch -L . -l dev/integration-test.el
+;;   emacs --batch -L . -l dev/integration-smoke.el
 
 ;;; Code:
 
@@ -51,7 +51,7 @@
 
   ;; 3. Open a document
   (message "[3/5] Opening test document...")
-  (let ((test-buf (generate-new-buffer "*copilot-integration-test*")))
+  (let ((test-buf (generate-new-buffer "*copilot-integration-smoke*")))
     (with-current-buffer test-buf
       (python-mode)
       (insert "def fibonacci(n):\n    ")
@@ -138,4 +138,4 @@
 
 (test--run)
 
-;;; integration-test.el ends here
+;;; integration-smoke.el ends here

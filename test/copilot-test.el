@@ -503,7 +503,36 @@
       (let ((copilot--connection nil))
         (spy-on 'jsonrpc-notify)
         (copilot--lsp-settings-changed 'copilot-lsp-settings '(:new "value"))
-        (expect 'jsonrpc-notify :not :to-have-been-called)))))
+        (expect 'jsonrpc-notify :not :to-have-been-called))))
+
+  ;;
+  ;; Workspace root
+  ;;
+
+  (describe "copilot--workspace-root"
+    (it "returns nil for non-file buffers"
+      (with-temp-buffer
+        (expect (copilot--workspace-root) :to-equal nil)))
+
+    (it "returns a directory when project is detected"
+      (let ((temp-file (make-temp-file "copilot-test")))
+        (unwind-protect
+            (with-current-buffer (find-file-noselect temp-file)
+              ;; Mock project-current to return a fake project
+              (spy-on 'project-current :and-return-value
+                      (list 'vc 'Git (file-name-directory temp-file)))
+              (spy-on 'project-root :and-return-value
+                      (file-name-directory temp-file))
+              (let ((root (copilot--workspace-root)))
+                (expect root :to-be-truthy)
+                (expect (file-directory-p root) :to-be-truthy))
+              (kill-buffer))
+          (delete-file temp-file)))))
+
+  (describe "copilot--path-to-uri"
+    (it "creates a file URI for unix paths"
+      (expect (copilot--path-to-uri "/home/user/project")
+              :to-match "^file:///home/user/project"))))
 
 ;;
 ;; copilot-balancer

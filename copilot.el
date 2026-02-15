@@ -265,6 +265,9 @@ Incremented after each change.")
 (defvar copilot--opened-buffers nil
   "List of buffers that have been opened in Copilot.")
 
+(defvar copilot--workspace-folders nil
+  "List of workspace folder URIs already reported to the server.")
+
 (defmacro copilot--dbind (pattern source &rest body)
   "Destructure SOURCE against plist PATTERN and eval BODY."
   (declare (indent 2))
@@ -502,24 +505,32 @@ SUCCESS-FN is the CALLBACK."
 You can change the installed version with `M-x copilot-reinstall-server` or remove this warning by changing the value of `copilot-lsp-server-version'."
               copilot-lsp-server-version installed-version)))
     (setq copilot--connection (copilot--make-connection))
+    (setq copilot--workspace-folders nil)
     (copilot--log 'info "Copilot server started.")
-    (copilot--request
-     'initialize
-     `(:processId
-       ,(emacs-pid)
-       :capabilities
-       (:workspace
-        (:workspaceFolders t)
-        :textDocument
-        (:inlineCompletion
-         (:dynamicRegistration :json-false)))
-       :initializationOptions
-       (:editorInfo
-        (:name "Emacs" :version ,emacs-version)
-        :editorPluginInfo
-        (:name "copilot.el" :version ,(or (package-get-version) "unknown"))
-        ,@(when copilot-network-proxy
-            `(:networkProxy ,copilot-network-proxy)))))
+    (let* ((root (copilot--workspace-root))
+           (root-uri (when root (copilot--path-to-uri root)))
+           (folders (when root-uri
+                      (setq copilot--workspace-folders (list root-uri))
+                      (vector (list :uri root-uri :name (file-name-nondirectory (directory-file-name root)))))))
+      (copilot--request
+       'initialize
+       `(:processId
+         ,(emacs-pid)
+         ,@(when root-uri `(:rootUri ,root-uri))
+         :capabilities
+         (:workspace
+          (:workspaceFolders t)
+          :textDocument
+          (:inlineCompletion
+           (:dynamicRegistration :json-false)))
+         ,@(when folders `(:workspaceFolders ,folders))
+         :initializationOptions
+         (:editorInfo
+          (:name "Emacs" :version ,emacs-version)
+          :editorPluginInfo
+          (:name "copilot.el" :version ,(or (package-get-version) "unknown"))
+          ,@(when copilot-network-proxy
+              `(:networkProxy ,copilot-network-proxy))))))
     (copilot--notify 'initialized '())
     (copilot--notify 'workspace/didChangeConfiguration `(:settings ,(copilot--effective-lsp-settings))))))
 
@@ -570,6 +581,7 @@ automatically, browse to %s." user-code verification-uri))
     (jsonrpc-shutdown copilot--connection 'kill)
     (setq copilot--connection nil))
   (setq copilot--opened-buffers nil)
+  (setq copilot--workspace-folders nil)
   ;; We are going to send a test request for the current buffer so we have to activate the mode
   ;; if it is not already activated.
   ;; If it the mode is already active, we have to make sure the current buffer is loaded in the
@@ -678,28 +690,43 @@ automatically, browse to %s." user-code verification-uri))
           (setq-local copilot--indent-warning-printed-p t))
         tab-width)))
 
+(defun copilot--workspace-root ()
+  "Return the root directory of the current workspace, or nil."
+  (when buffer-file-name
+    (let ((root (or (and (fboundp 'project-current)
+                         (when-let* ((proj (project-current)))
+                           (project-root proj)))
+                    (and (fboundp 'projectile-project-root)
+                         (projectile-project-root))
+                    (and (fboundp 'vc-root-dir)
+                         (vc-root-dir)))))
+      (when root
+        (file-truename root)))))
+
 (defun copilot--get-relative-path ()
   "Get relative path to current buffer."
   (cond
    ((not buffer-file-name)
     "")
-   ((fboundp 'projectile-project-root)
-    (file-relative-name buffer-file-name (projectile-project-root)))
-   ((boundp 'vc-root-dir)
-    (file-relative-name buffer-file-name (vc-root-dir)))
    (t
-    (file-name-nondirectory buffer-file-name))))
+    (if-let* ((root (copilot--workspace-root)))
+        (file-relative-name buffer-file-name root)
+      (file-name-nondirectory buffer-file-name)))))
+
+(defun copilot--path-to-uri (path)
+  "Convert file PATH to a URI string."
+  (cond
+   ((and (eq system-type 'windows-nt)
+         (not (string-prefix-p "/" path)))
+    (concat "file:///" (url-encode-url path)))
+   (t
+    (concat "file://" (url-encode-url path)))))
 
 (defun copilot--get-uri ()
   "Get URI of current buffer."
-  (cond
-   ((not buffer-file-name)
-    (concat "file:///buffer/" (url-encode-url (buffer-name (current-buffer)))))
-   ((and (eq system-type 'windows-nt)
-         (not (string-prefix-p "/" buffer-file-name)))
-    (concat "file:///" (url-encode-url buffer-file-name)))
-   (t
-    (concat "file://" (url-encode-url buffer-file-name)))))
+  (if buffer-file-name
+      (copilot--path-to-uri buffer-file-name)
+    (concat "file:///buffer/" (url-encode-url (buffer-name (current-buffer))))))
 
 (defun copilot--get-source ()
   "Get source code from current buffer."
@@ -1192,6 +1219,17 @@ Uppercase CHAR disables `case-fold-search', mirroring `zap-to-char'."
   ;; send a notification for the window gaining focus and only if the buffer has
   ;; copilot-mode enabled.
   (when (and copilot-mode (eq window (selected-window)))
+    ;; Detect new workspace roots and notify the server.
+    (when-let* ((root (copilot--workspace-root))
+                (root-uri (copilot--path-to-uri root)))
+      (unless (member root-uri copilot--workspace-folders)
+        (push root-uri copilot--workspace-folders)
+        (copilot--notify 'workspace/didChangeWorkspaceFolders
+                         (list :event
+                               (list :added (vector (list :uri root-uri
+                                                          :name (file-name-nondirectory
+                                                                 (directory-file-name root))))
+                                     :removed [])))))
     (if (seq-contains-p copilot--opened-buffers (current-buffer))
         (copilot--notify 'textDocument/didFocus
                          (list :textDocument (list :uri (copilot--get-uri))))

@@ -785,13 +785,44 @@ automatically, browse to %s." user-code verification-uri))
   (or (copilot--get-minor-mode-language-id)
       (copilot--get-major-mode-language-id)))
 
+(defun copilot--utf16-offset ()
+  "Return the number of UTF-16 code units from line start to point.
+Characters above U+FFFF (e.g. emoji) count as 2 UTF-16 code units."
+  (let ((offset 0)
+        (p (line-beginning-position)))
+    (while (< p (point))
+      (let ((ch (char-after p)))
+        (setq offset (+ offset (if (>= ch #x10000) 2 1)))
+        (setq p (1+ p))))
+    offset))
+
+(defun copilot--utf16-strlen (str)
+  "Return the UTF-16 code-unit length of STR."
+  (let ((offset 0)
+        (i 0)
+        (len (length str)))
+    (while (< i len)
+      (let ((ch (aref str i)))
+        (setq offset (+ offset (if (>= ch #x10000) 2 1)))
+        (setq i (1+ i))))
+    offset))
+
+(defun copilot--goto-utf16-offset (utf16-offset)
+  "Move point forward by UTF16-OFFSET UTF-16 code units from line start.
+Point must be at line beginning before calling this."
+  (let ((remaining utf16-offset))
+    (while (and (> remaining 0) (not (eolp)))
+      (let ((ch (char-after)))
+        (setq remaining (- remaining (if (>= ch #x10000) 2 1))))
+      (forward-char 1))))
+
 (defun copilot--lsp-pos (&optional pos)
   "Return an LSP position plist for buffer POS.
-POS defaults to point."
+POS defaults to point.  Character offset is in UTF-16 code units."
   (save-excursion
     (when pos (goto-char pos))
     (list :line (- (line-number-at-pos) copilot--line-bias)
-          :character (- (point) (line-beginning-position)))))
+          :character (copilot--utf16-offset))))
 
 (defun copilot--generate-doc ()
   "Generate doc parameters for completion request."
@@ -1197,7 +1228,7 @@ Uppercase CHAR disables `case-fold-search', mirroring `zap-to-char'."
                                (forward-line (1- (+ line copilot--line-bias)))))
                  (start (progn
                           (funcall goto-line!)
-                          (forward-char start-char)
+                          (copilot--goto-utf16-offset start-char)
                           (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
                                  (common-prefix-len (length (copilot--string-common-prefix insert-text cur-line))))
                             (setq insert-text (substring insert-text common-prefix-len))
@@ -1205,7 +1236,7 @@ Uppercase CHAR disables `case-fold-search', mirroring `zap-to-char'."
                             (point))))
                  (end (progn
                         (funcall goto-line!)
-                        (forward-char end-char)
+                        (copilot--goto-utf16-offset end-char)
                         (point)))
                  (fixed-completion (copilot-balancer-fix-completion start end insert-text)))
             (goto-char p)
@@ -1289,12 +1320,12 @@ Uppercase CHAR disables `case-fold-search', mirroring `zap-to-char'."
                        (insert oldtext)
                        (goto-char (point-max))
                        (cons (1- (line-number-at-pos))
-                             (current-column))))
+                             (copilot--utf16-offset))))
            (num-newlines (car end-info))
            (end-char (cdr end-info)))
       (list :line (+ start-line num-newlines)
             :character (if (= num-newlines 0)
-                           (+ start-char (length oldtext))
+                           (+ start-char (copilot--utf16-strlen oldtext))
                          end-char)))))
 
 (defun copilot--track-changes-signal (id &optional _distance)

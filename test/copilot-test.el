@@ -486,7 +486,53 @@
         (goto-char 8) ; 'r' in "world"
         (let ((pos (copilot--lsp-pos)))
           (expect (plist-get pos :line) :to-equal 1)
-          (expect (plist-get pos :character) :to-equal 1)))))
+          (expect (plist-get pos :character) :to-equal 1))))
+
+    (it "counts BMP characters as 1 UTF-16 unit"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (insert "café")  ; é is U+00E9, BMP
+        (let ((pos (copilot--lsp-pos)))
+          (expect (plist-get pos :character) :to-equal 4))))
+
+    (it "counts supplementary plane characters as 2 UTF-16 units"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (insert "a😀b")  ; 😀 is U+1F600, supplementary plane
+        (let ((pos (copilot--lsp-pos)))
+          ;; a(1) + 😀(2) + b(1) = 4 UTF-16 code units
+          (expect (plist-get pos :character) :to-equal 4)))))
+
+  ;;
+  ;; UTF-16 helpers
+  ;;
+
+  (describe "copilot--utf16-strlen"
+    (it "returns length for ASCII string"
+      (expect (copilot--utf16-strlen "hello") :to-equal 5))
+
+    (it "returns length for BMP characters"
+      (expect (copilot--utf16-strlen "café") :to-equal 4))
+
+    (it "counts supplementary plane characters as 2"
+      ;; 😀 is U+1F600
+      (expect (copilot--utf16-strlen "a😀b") :to-equal 4)))
+
+  (describe "copilot--goto-utf16-offset"
+    (it "moves correctly for ASCII text"
+      (with-temp-buffer
+        (insert "hello")
+        (goto-char (point-min))
+        (copilot--goto-utf16-offset 3)
+        (expect (char-after) :to-equal ?l)))
+
+    (it "moves correctly past emoji"
+      (with-temp-buffer
+        (insert "a😀b")
+        (goto-char (point-min))
+        ;; a=1 UTF-16 unit, 😀=2 UTF-16 units => offset 3 should land on 'b'
+        (copilot--goto-utf16-offset 3)
+        (expect (char-after) :to-equal ?b))))
 
   ;;
   ;; Settings change

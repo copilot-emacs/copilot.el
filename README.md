@@ -413,10 +413,10 @@ eask test buttercup
 
 ### Integration Testing
 
-There's a manual integration test in `dev/test-integration.el` that connects to the real Copilot language server and verifies the `textDocument/inlineCompletion` round-trip. It requires the server to be installed and authenticated.
+There's a manual integration test in `dev/integration-test.el` that connects to the real Copilot language server and verifies the `textDocument/inlineCompletion` round-trip. It requires the server to be installed and authenticated.
 
 ```sh
-emacs --batch -L . -l dev/test-integration.el
+emacs --batch -L . -l dev/integration-test.el
 ```
 
 ## Thanks

@@ -1,4 +1,4 @@
-;;; test-integration.el --- Integration test for inlineCompletion API -*- lexical-binding: t; -*-
+;;; integration-test.el --- Integration test for inlineCompletion API -*- lexical-binding: t; -*-
 
 ;; Manual smoke test that connects to the real Copilot language server
 ;; and exercises the textDocument/inlineCompletion round-trip.
@@ -8,7 +8,7 @@
 ;;   - Authenticated (`M-x copilot-login')
 ;;
 ;; Usage:
-;;   emacs --batch -L . -l dev/test-integration.el
+;;   emacs --batch -L . -l dev/integration-test.el
 
 ;;; Code:
 
@@ -138,4 +138,4 @@
 
 (test--run)
 
-;;; test-integration.el ends here
+;;; integration-test.el ends here

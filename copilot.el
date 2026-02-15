@@ -1198,10 +1198,10 @@ Uppercase CHAR disables `case-fold-search', mirroring `zap-to-char'."
   ;; copilot-mode enabled.
   (when (and copilot-mode (eq window (selected-window)))
     (if (seq-contains-p copilot--opened-buffers (current-buffer))
-        (copilot--notify ':textDocument/didFocus
+        (copilot--notify 'textDocument/didFocus
                          (list :textDocument (list :uri (copilot--get-uri))))
       (add-to-list 'copilot--opened-buffers (current-buffer))
-      (copilot--notify ':textDocument/didOpen
+      (copilot--notify 'textDocument/didOpen
                        (list :textDocument (list :uri (copilot--get-uri)
                                                  :languageId (copilot--get-language-id)
                                                  :version copilot--doc-version

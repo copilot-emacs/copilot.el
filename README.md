@@ -16,23 +16,80 @@ This plugin is unofficial, however it makes use of the official [@github/copilot
 
 ## Requirements
 
-`copilot.el` requires Emacs 27+.
+`copilot.el` requires Emacs 27+ and the following packages (installed automatically from MELPA):
+
+- `editorconfig`
+- `jsonrpc`
+- `compat`
+- `track-changes`
 
 [@github/copilot-language-server][] requires Node.js 22+.
 
+## Quick Start
+
+```elisp
+(use-package copilot
+  :ensure t
+  :hook (prog-mode . copilot-mode)
+  :bind (:map copilot-completion-map
+              ("<tab>" . copilot-accept-completion)
+              ("TAB" . copilot-accept-completion)))
+```
+
+Then run `M-x copilot-install-server` and `M-x copilot-login`. That's it!
+
 ## Installation
 
-1. Setup `copilot.el` as described in the next section.
+### MELPA
 
-2. Install the copilot server by `M-x copilot-install-server`.
+The simplest way to install `copilot.el` is from [MELPA](https://melpa.org/#/copilot):
 
-3. Login to Copilot by `M-x copilot-login`. You can also check the status by running `M-x copilot-diagnose` (`NotAuthorized` means you don't have a valid subscription).
+```elisp
+(use-package copilot
+  :ensure t)
+```
 
-4. Enjoy!
+Or `M-x package-install RET copilot RET`.
 
-## Configurations
+### Emacs 30+ (use-package :vc)
 
-### Example for Doom Emacs
+```elisp
+(use-package copilot
+  :vc (:url "https://github.com/copilot-emacs/copilot.el"
+            :rev :newest
+            :branch "main"))
+```
+
+### Emacs 27-29 (straight / quelpa)
+
+`straight.el`:
+
+```elisp
+(use-package copilot
+  :straight (:host github :repo "copilot-emacs/copilot.el" :files ("*.el"))
+  :ensure t)
+```
+
+`quelpa` + `quelpa-use-package`:
+
+```elisp
+(use-package copilot
+  :quelpa (copilot :fetcher github
+                   :repo "copilot-emacs/copilot.el"
+                   :branch "main"
+                   :files ("*.el")))
+```
+
+### Manual
+
+Clone this repository, make sure the dependencies listed in [Requirements](#requirements) are installed, then:
+
+```elisp
+(add-to-list 'load-path "/path/to/copilot.el")
+(require 'copilot)
+```
+
+### Doom Emacs
 
 <details>
 
@@ -98,7 +155,7 @@ If you would love to configure indentation here, this is an example config that 
 
 </details>
 
-### Example for Spacemacs
+### Spacemacs
 
 <details>
 
@@ -124,86 +181,49 @@ github-copilot layer.
 
 </details>
 
-### General Configurations
+After installing the package, run `M-x copilot-install-server` to install the language server, then `M-x copilot-login` to authenticate. You can verify everything works with `M-x copilot-diagnose` (`NotAuthorized` means you don't have a valid subscription).
 
-<details>
+## Configuration
 
-#### 1. Load `copilot.el`
+### Completion trigger
 
-##### Option 1: Load via use-package (recommended)
-
-###### Emacs 27-29:
-
-`straight.el`:
-
-```elisp
-(use-package copilot
-  :straight (:host github :repo "copilot-emacs/copilot.el" :files ("*.el"))
-  :ensure t)
-```
-
-`quelpa` + `quelpa-use-package`:
-
-```elisp
-(use-package copilot
-  :quelpa (copilot :fetcher github
-                   :repo "copilot-emacs/copilot.el"
-                   :branch "main"
-                   :files ("*.el")))
-```
-
-###### On Emacs version 30+:
-
-```elisp
-(use-package copilot
-  :vc (:url "https://github.com/copilot-emacs/copilot.el"
-            :rev :newest
-            :branch "main"))
-```
-
-Use `:map`, `:hook`, and `:config` to customize `copilot.el` via `use-package`.
-
-##### Option 3: Load manually
-
-Please make sure you have these dependencies installed (available in ELPA/MELPA):
-
-- `editorconfig`
-- `f`
-
-After installing those, clone this repository then insert the below snippet into your config file.
-
-```elisp
-(add-to-list 'load-path "/path/to/copilot.el")
-(require 'copilot)
-```
-
-#### 2. Configure completion
-
-##### Option 1: Use `copilot-mode` to automatically provide completions
+Use `copilot-mode` to automatically provide completions in a buffer:
 
 ```elisp
 (add-hook 'prog-mode-hook 'copilot-mode)
 ```
 
-To customize the behavior of `copilot-mode`, please check `copilot-enable-predicates` and `copilot-disable-predicates`.
-
-##### Option 2: Manually provide completions
-
-You need to bind `copilot-complete` to some key and call `copilot-clear-overlay` inside `post-command-hook`.
-
-#### 3. Configure completion acceptation
-
-Use tab to accept completions (you may also want to bind `copilot-accept-completion-by-word` to some key):
+Or enable it globally with `global-copilot-mode`:
 
 ```elisp
-(define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
-(define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)
+(global-copilot-mode)
 ```
 
-#### 4. Configure LSP Settings
+To customize when completions trigger, see `copilot-enable-predicates` and `copilot-disable-predicates`. To customize when completions are displayed, see `copilot-enable-display-predicates` and `copilot-disable-display-predicates`.
 
-You can configure the underlying LSP settings by changing
-`copilot-lsp-settings`. The complete list of available options can be found
+Alternatively, you can call `copilot-complete` manually and use `copilot-clear-overlay` in `post-command-hook` to dismiss completions.
+
+### Keybindings
+
+`copilot-mode` does not set any keybindings by default. Use `copilot-completion-map` (active while a completion overlay is visible) to bind keys:
+
+```elisp
+(keymap-set copilot-completion-map "<tab>" #'copilot-accept-completion)
+(keymap-set copilot-completion-map "TAB" #'copilot-accept-completion)
+(keymap-set copilot-completion-map "C-<tab>" #'copilot-accept-completion-by-word)
+(keymap-set copilot-completion-map "C-TAB" #'copilot-accept-completion-by-word)
+```
+
+To remap the built-in zap commands automatically whenever the overlay is visible:
+
+```elisp
+(keymap-set copilot-completion-map "<remap> <zap-to-char>" #'copilot-accept-completion-to-char)
+(keymap-set copilot-completion-map "<remap> <zap-up-to-char>" #'copilot-accept-completion-up-to-char)
+```
+
+### LSP settings
+
+You can configure the underlying LSP settings via `copilot-lsp-settings`. The complete list of available options can be found
 [here](https://github.com/github/copilot-language-server-release?tab=readme-ov-file#configuration-management).
 
 Here we set the GitHub Enterprise server to `https://example2.ghe.com`, exchange the URL with your own server.
@@ -215,12 +235,10 @@ Here we set the GitHub Enterprise server to `https://example2.ghe.com`, exchange
 
 You have to restart the LSP (`M-x copilot-diagnose`) when using `setq` to change the value. When logging in, the URL for the authentication flow should be the same as the one set in `copilot-lsp-settings`.
 
-</details>
-
-### Programming language detection
+### Language detection
 
 Copilot.el detects the programming language of a buffer based on the major-mode
-name, stripping the `-mode` part. Resulting languageId should match table
+name, stripping the `-mode` part. The resulting languageId should match the table
 [here](https://code.visualstudio.com/docs/languages/identifiers#_known-language-identifiers).
 You can add unusual major-mode mappings to `copilot-major-mode-alist`. Without
 the proper language set suggestions may be of poorer quality.
@@ -229,115 +247,9 @@ the proper language set suggestions may be of poorer quality.
 (add-to-list 'copilot-major-mode-alist '("enh-ruby" . "ruby"))
 ```
 
-## Commands
+### Network proxy
 
-In this section you'll find a listing of all the essential interactive
-commands provided by `copilot.el`. It's important to note that by default
-`copilot-mode` doesn't setup any keybindings for its completion commands,
-so you'll have to do this yourself - as shown in the "Configurations" section.
-
-> [!TIP]
->
-> You don't need to memorize the list as you can always do `M-x copilot-` followed
-> TAB or refer to the mode's menu in Emacs's menubar.
-
-#### copilot-diagnose
-
-Check the current status of the plugin. Also you can check logs in the `*copilot
-events*` buffer and stderr output in the `*copilot stderr*` buffer.
-
-#### copilot-login
-
-Login to GitHub, required for using the plugin.
-
-#### copilot-mode
-
-Enable/disable `copilot-mode`.
-
-#### copilot-complete
-
-Try to complete at the current point.
-
-#### copilot-accept-completion
-
-Accept the current completion.
-
-#### copilot-clear-overlay
-
-Clear copilot overlay in the current buffer.
-
-#### copilot-accept-completion-by-line / copilot-accept-completion-by-word
-
-Similar to `copilot-accept-completion`, but accept the completion by line or
-word. You can use prefix argument to specify the number of lines or words to
-accept.  Some further variants are included:
-
-- `copilot-accept-completion-by-sentence`
-- `copilot-accept-completion-by-paragraph`
-
-#### copilot-accept-completion-up-to-char / copilot-accept-completion-to-char
-
-Partially accept the completion until a delimiter, similar to Emacs's
-`zap-up-to-char` (exclusive) and `zap-to-char` (inclusive).  To remap
-the built-in zap commands automatically whenever the overlay is
-visible, use:
-
-```elisp
-(keymap-set copilot-completion-map "<remap> <zap-to-char>" #'copilot-accept-completion-to-char)
-(keymap-set copilot-completion-map "<remap> <zap-up-to-char>" #'copilot-accept-completion-up-to-char)
-```
-
-You can use prefix arguments.  For example, with default bindings,
-`C-2 M-z ,` accepts through the second comma.
-
-#### copilot-next-completion / copilot-previous-completion
-
-Cycle through the completion list.
-
-#### copilot-logout
-
-Log out from GitHub.
-
-## Customization
-
-> [!TIP]
->
-> Use <kbd>M-x</kbd> `customize-group` <kbd>RET</kbd> `copilot` to see all available
-> configuration options.
-
-### copilot-lsp-server-version
-
-The version of the [@github/copilot-language-server][] to use. If set to `nil` (default),
-the latest version will be installed.
-
-### copilot-idle-delay
-
-Time in seconds to wait before starting completion (default to 0). Note that
-Copilot itself has a ~100ms delay because of network communication. You can
-disable it completely by setting it to `nil`:
-
-``` elisp
-(setq copilot-idle-delay nil)
-```
-
-### copilot-enable-predicates / copilot-disable-predicates
-
-A list of predicate functions with no argument to enable/disable triggering
-Copilot in `copilot-mode`.
-
-### copilot-enable-display-predicates / copilot-disable-display-predicates
-
-A list of predicate functions with no argument to enable/disable showing
-Copilot's completions in `copilot-mode`.
-
-### copilot-clear-overlay-ignore-commands
-
-A list of commands that won't cause the overlay to be cleared.
-
-### copilot-network-proxy
-
-Format: `'(:host "127.0.0.1" :port 7890 :username: "user" :password:
-"password")`, where `:username` and `:password` are optional.
+Format: `'(:host "127.0.0.1" :port 7890 :username "user" :password "password")`, where `:username` and `:password` are optional.
 
 For example:
 
@@ -345,32 +257,72 @@ For example:
 (setq copilot-network-proxy '(:host "127.0.0.1" :port 7890))
 ```
 
-### copilot-on-request
+### Server-side hooks (copilot-on-request / copilot-on-notification)
 
-Register a handler to be called when a request of type method is
-received. Return JSON serializable as result or calling `jsonrpc-error` for
-errors. [readmore](https://www.gnu.org/software/emacs/manual/html_node/elisp/JSONRPC-Overview.html)
-
-For example:
+`copilot-on-request` registers a handler for incoming LSP requests. Return a JSON-serializable value as the result, or call `jsonrpc-error` for errors. [Read more](https://www.gnu.org/software/emacs/manual/html_node/elisp/JSONRPC-Overview.html).
 
 ```elisp
-; Display desktop notification if emacs is built with d-bus
+;; Display desktop notification if Emacs is built with D-Bus
 (copilot-on-request
  'window/showMessageRequest
  (lambda (msg) (notifications-notify :title "Emacs Copilot" :body (plist-get msg :message))))
 ```
 
-### copilot-on-notification
-
-Register a listener for copilot notifications.
-
-For example:
+`copilot-on-notification` registers a listener for incoming LSP notifications.
 
 ```elisp
 (copilot-on-notification
   'window/logMessage
-  (lambda (msg) (message (plist-get msg :message))
+  (lambda (msg) (message (plist-get msg :message))))
 ```
+
+## Commands
+
+> [!TIP]
+>
+> You don't need to memorize the list — just type `M-x copilot-` followed by TAB, or use the Copilot menu in the menubar.
+
+| Command | Description |
+|---------|-------------|
+| **Setup** | |
+| `copilot-install-server` | Install the language server |
+| `copilot-uninstall-server` | Remove the installed language server |
+| `copilot-reinstall-server` | Re-install the language server |
+| `copilot-login` | Log in to GitHub Copilot |
+| `copilot-logout` | Log out from GitHub Copilot |
+| `copilot-diagnose` | Restart the server and show diagnostic info |
+| `copilot-select-completion-model` | Choose which model to use for completions |
+| **Completion** | |
+| `copilot-mode` | Toggle automatic completions in the current buffer |
+| `copilot-complete` | Trigger a completion at point |
+| `copilot-panel-complete` | Show a panel buffer with multiple completion suggestions |
+| `copilot-accept-completion` | Accept the current completion |
+| `copilot-accept-completion-by-word` | Accept the next N words (prefix arg) |
+| `copilot-accept-completion-by-line` | Accept the next N lines (prefix arg) |
+| `copilot-accept-completion-by-sentence` | Accept the next N sentences (prefix arg) |
+| `copilot-accept-completion-by-paragraph` | Accept the next N paragraphs (prefix arg) |
+| `copilot-accept-completion-to-char` | Accept through a character (inclusive, like `zap-to-char`) |
+| `copilot-accept-completion-up-to-char` | Accept up to a character (exclusive, like `zap-up-to-char`) |
+| `copilot-clear-overlay` | Dismiss the completion overlay |
+| **Navigation** | |
+| `copilot-next-completion` | Cycle to the next completion |
+| `copilot-previous-completion` | Cycle to the previous completion |
+
+## Customization
+
+> [!TIP]
+>
+> Use <kbd>M-x</kbd> `customize-group` <kbd>RET</kbd> `copilot` to browse all available
+> configuration options and their documentation.
+
+A few commonly tweaked variables:
+
+- **`copilot-idle-delay`** — Seconds to wait before triggering completion (default `0`). Set to `nil` to disable automatic completion entirely.
+- **`copilot-lsp-server-version`** — Pin a specific [@github/copilot-language-server][] version (`nil` means latest).
+- **`copilot-enable-predicates`** / **`copilot-disable-predicates`** — Control when `copilot-mode` requests completions.
+- **`copilot-enable-display-predicates`** / **`copilot-disable-display-predicates`** — Control when completions are shown.
+- **`copilot-clear-overlay-ignore-commands`** — Commands that won't dismiss the overlay.
+- **`copilot-indentation-alist`** — Override indentation width per major mode.
 
 ## Known Issues
 
@@ -411,6 +363,13 @@ Unit tests (requires [eask](https://emacs-eask.github.io/)):
 eask test buttercup
 ```
 
+### Linting
+
+```sh
+eask lint checkdoc
+eask lint indent
+```
+
 ### Integration Testing
 
 There's a manual integration test in `dev/integration-smoke.el` that connects to the real Copilot language server and verifies the `textDocument/inlineCompletion` round-trip. It requires the server to be installed and authenticated.
@@ -428,7 +387,7 @@ These projects helped me a lot:
 - <https://github.com/github/copilot.vim>
 - [@github/copilot-language-server][]
 
-## Do you want chat with Github Copilot?
+## Do you want to chat with GitHub Copilot?
 
 Just like the copilot plugin for Intellij or VS Code?
 
@@ -448,7 +407,7 @@ Retired maintainer: [@zerolfx][].
 
 copilot.el is distributed under the MIT license.
 
-Copyright © 2022-2025 copilot-emacs maintainers and
+Copyright © 2022-2026 copilot-emacs maintainers and
 [contributors](https://github.com/copilot-emacs/copilot.el/contributors).
 
 <!-- Links -->

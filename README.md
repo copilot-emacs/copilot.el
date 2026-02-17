@@ -33,7 +33,11 @@ This plugin is unofficial, however it makes use of the official [@github/copilot
   :hook (prog-mode . copilot-mode)
   :bind (:map copilot-completion-map
               ("<tab>" . copilot-accept-completion)
-              ("TAB" . copilot-accept-completion)))
+              ("TAB" . copilot-accept-completion)
+              ("C-<tab>" . copilot-accept-completion-by-word)
+              ("C-TAB" . copilot-accept-completion-by-word)
+              ("C-n" . copilot-next-completion)
+              ("C-p" . copilot-previous-completion)))
 ```
 
 Then run `M-x copilot-install-server` and `M-x copilot-login`. That's it!
@@ -212,7 +216,26 @@ Alternatively, you can call `copilot-complete` manually and use `copilot-clear-o
 (keymap-set copilot-completion-map "TAB" #'copilot-accept-completion)
 (keymap-set copilot-completion-map "C-<tab>" #'copilot-accept-completion-by-word)
 (keymap-set copilot-completion-map "C-TAB" #'copilot-accept-completion-by-word)
+(keymap-set copilot-completion-map "M-n" #'copilot-next-completion)
+(keymap-set copilot-completion-map "M-p" #'copilot-previous-completion)
 ```
+
+#### Fish-style keybindings
+
+If you use `company-mode` or `corfu`, TAB is already taken. An alternative inspired by Fish shell avoids the conflict entirely — right-arrow accepts, and forward-word/end-of-line accept partially:
+
+```elisp
+(keymap-set copilot-completion-map "<right>" #'copilot-accept-completion)
+(keymap-set copilot-completion-map "C-f" #'copilot-accept-completion)
+(keymap-set copilot-completion-map "M-<right>" #'copilot-accept-completion-by-word)
+(keymap-set copilot-completion-map "M-f" #'copilot-accept-completion-by-word)
+(keymap-set copilot-completion-map "C-e" #'copilot-accept-completion-by-line)
+(keymap-set copilot-completion-map "<end>" #'copilot-accept-completion-by-line)
+(keymap-set copilot-completion-map "M-n" #'copilot-next-completion)
+(keymap-set copilot-completion-map "M-p" #'copilot-previous-completion)
+```
+
+#### Zap-style partial acceptance
 
 To remap the built-in zap commands automatically whenever the overlay is visible:
 

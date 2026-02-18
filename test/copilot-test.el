@@ -629,6 +629,107 @@
           (expect 'force-mode-line-update :to-have-been-called-with t)))))
 
   ;;
+  ;; window/showMessageRequest handler
+  ;;
+
+  (describe "window/showMessageRequest handler"
+    (it "returns selected action via completing-read"
+      (spy-on 'completing-read :and-return-value "Accept")
+      (let* ((handler (gethash 'window/showMessageRequest
+                                copilot--request-handlers))
+             (result (funcall handler
+                              '(:type 3 :message "Choose"
+                                :actions [(:title "Accept") (:title "Deny")]))))
+        (expect 'completing-read :to-have-been-called)
+        (expect (plist-get result :title) :to-equal "Accept")))
+
+    (it "returns json-null when no actions"
+      (spy-on 'message)
+      (let* ((handler (gethash 'window/showMessageRequest
+                                copilot--request-handlers))
+             (result (funcall handler '(:type 3 :message "Info msg"))))
+        (expect result :to-equal :json-null)
+        (expect 'message :to-have-been-called)))
+
+    (it "logs errors at error level"
+      (spy-on 'message)
+      (let ((handler (gethash 'window/showMessageRequest
+                               copilot--request-handlers)))
+        (funcall handler '(:type 1 :message "Something failed"))
+        (let ((args (spy-calls-args-for 'message 0)))
+          (expect (apply #'format args) :to-match "Something failed"))))
+
+    (it "logs warnings at warning level"
+      (spy-on 'message)
+      (let ((handler (gethash 'window/showMessageRequest
+                               copilot--request-handlers)))
+        (funcall handler '(:type 2 :message "Watch out"))
+        (let ((args (spy-calls-args-for 'message 0)))
+          (expect (apply #'format args) :to-match "Watch out")))))
+
+  ;;
+  ;; window/showDocument handler
+  ;;
+
+  (describe "window/showDocument handler"
+    (it "opens HTTP URIs with browse-url"
+      (spy-on 'browse-url)
+      (let* ((handler (gethash 'window/showDocument
+                                copilot--request-handlers))
+             (result (funcall handler
+                              '(:uri "https://example.com/docs"))))
+        (expect 'browse-url :to-have-been-called-with "https://example.com/docs")
+        (expect (plist-get result :success) :to-equal t)))
+
+    (it "opens file URIs with find-file when takeFocus is true"
+      (let ((temp-file (make-temp-file "copilot-showdoc")))
+        (unwind-protect
+            (progn
+              (spy-on 'find-file)
+              (let* ((handler (gethash 'window/showDocument
+                                        copilot--request-handlers))
+                     (uri (concat "file://" temp-file))
+                     (result (funcall handler
+                                      (list :uri uri :takeFocus t))))
+                (expect 'find-file :to-have-been-called)
+                (expect (plist-get result :success) :to-equal t)))
+          (delete-file temp-file))))
+
+    (it "opens file URIs with display-buffer when takeFocus is false"
+      (let ((temp-file (make-temp-file "copilot-showdoc")))
+        (unwind-protect
+            (progn
+              (spy-on 'find-file-noselect :and-return-value (current-buffer))
+              (spy-on 'display-buffer)
+              (let* ((handler (gethash 'window/showDocument
+                                        copilot--request-handlers))
+                     (uri (concat "file://" temp-file))
+                     (result (funcall handler
+                                      (list :uri uri :takeFocus :json-false))))
+                (expect 'display-buffer :to-have-been-called)
+                (expect 'find-file-noselect :to-have-been-called)
+                (expect (plist-get result :success) :to-equal t)))
+          (delete-file temp-file))))
+
+    (it "opens external URIs with browse-url"
+      (spy-on 'browse-url)
+      (let* ((handler (gethash 'window/showDocument
+                                copilot--request-handlers))
+             (result (funcall handler
+                              '(:uri "vscode://extension" :external t))))
+        (expect 'browse-url :to-have-been-called-with "vscode://extension")
+        (expect (plist-get result :success) :to-equal t)))
+
+    (it "returns success false on error"
+      (spy-on 'browse-url :and-call-fake
+              (lambda (&rest _) (error "Cannot open")))
+      (let* ((handler (gethash 'window/showDocument
+                                copilot--request-handlers))
+             (result (funcall handler
+                              '(:uri "https://example.com"))))
+        (expect (plist-get result :success) :to-equal :json-false))))
+
+  ;;
   ;; Server shutdown
   ;;
 

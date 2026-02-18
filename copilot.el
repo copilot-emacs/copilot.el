@@ -1013,6 +1013,42 @@ Each request METHOD can have only one HANDLER."
      (setq copilot--status (list :kind kind :busy busy :message message))
      (force-mode-line-update t))))
 
+(copilot-on-request
+ 'window/showMessageRequest
+ (lambda (msg)
+   (copilot--dbind (type message actions) msg
+     (if actions
+         (let* ((titles (mapcar (lambda (a) (plist-get a :title))
+                                (append actions nil)))
+                (chosen (completing-read
+                         (format "Copilot (%s): "
+                                 (pcase type (1 "Error") (2 "Warning")
+                                        (3 "Info") (_ "Log")))
+                         titles nil t)))
+           (list :title chosen))
+       (copilot--log (pcase type (1 'error) (2 'warning) (_ 'info))
+                     "%s" message)
+       :json-null))))
+
+(copilot-on-request
+ 'window/showDocument
+ (lambda (msg)
+   (condition-case _err
+       (copilot--dbind (uri external takeFocus) msg
+         (let ((focus (not (eq takeFocus :json-false))))
+           (cond
+            ((or external (string-match-p "\\`https?://" uri))
+             (browse-url uri))
+            ((string-prefix-p "file://" uri)
+             (let* ((path (url-unhex-string
+                           (string-remove-prefix "file://" uri)))
+                    (buf (find-file-noselect path)))
+               (if focus
+                   (find-file path)
+                 (display-buffer buf)))))
+           (list :success t)))
+     (error (list :success :json-false)))))
+
 (defun copilot--get-panel-completions (callback)
   "Get panel completions with CALLBACK."
   (copilot--async-request 'getPanelCompletions

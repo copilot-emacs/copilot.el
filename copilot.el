@@ -485,20 +485,22 @@ recently updated session."
 
 Arguments METHOD, PARAMS and ARGS are used in function `jsonrpc-async-request'.
 
-SUCCESS-FN is the CALLBACK."
+SUCCESS-FN is the CALLBACK.
+
+Returns the request ID (a number) so callers can cancel the request later."
   `(progn
      (unless (copilot--connection-alivep)
        (copilot--start-server))
      ;; jsonrpc will use temp buffer for callbacks, so we need to save the
      ;; current buffer and restore it inside callback
      (let ((buf (current-buffer)))
-       (jsonrpc-async-request copilot--connection
-                              ,method ,params
-                              :success-fn (lambda (result)
-                                            (if (buffer-live-p buf)
-                                                (with-current-buffer buf
-                                                  (funcall ,success-fn result))))
-                              ,@args))))
+       (car (jsonrpc--async-request-1 copilot--connection
+                                      ,method ,params
+                                      :success-fn (lambda (result)
+                                                    (if (buffer-live-p buf)
+                                                        (with-current-buffer buf
+                                                          (funcall ,success-fn result))))
+                                      ,@args)))))
 
 (defun copilot--shutdown-server ()
   "Shut down the Copilot server with the standard LSP shutdown sequence.
@@ -720,6 +722,19 @@ automatically, browse to %s." user-code verification-uri))
 (defvar-local copilot--completion-cache nil)
 (defvar-local copilot--completion-idx 0)
 
+(defvar-local copilot--completion-request-id nil
+  "Request ID of the in-flight completion request, or nil.")
+
+(defun copilot--cancel-completion ()
+  "Cancel the in-flight completion request, if any.
+Sends `$/cancelRequest' to the server and resets the stored request ID."
+  (when copilot--completion-request-id
+    (when (copilot--connection-alivep)
+      (jsonrpc-notify copilot--connection
+                      '$/cancelRequest
+                      (list :id copilot--completion-request-id)))
+    (setq copilot--completion-request-id nil)))
+
 (defvar-local copilot--indent-warning-printed-p nil
   "Flag indicating whether indent warning was already printed.")
 
@@ -922,9 +937,11 @@ TRIGGER-KIND is 1 for manual invocation, 2 for automatic."
 (defun copilot--get-completion (callback &optional trigger-kind)
   "Get completion with CALLBACK.
 TRIGGER-KIND is 1 for invoked, 2 for automatic (default)."
-  (copilot--async-request 'textDocument/inlineCompletion
-                          (copilot--inline-completion-params (or trigger-kind 2))
-                          :success-fn callback))
+  (copilot--cancel-completion)
+  (setq copilot--completion-request-id
+        (copilot--async-request 'textDocument/inlineCompletion
+                                (copilot--inline-completion-params (or trigger-kind 2))
+                                :success-fn callback)))
 
 (defun copilot--cycle-completion (direction)
   "Cycle completion with DIRECTION."
@@ -1219,6 +1236,7 @@ already saving an excursion.  This is also a private function."
 (defun copilot-clear-overlay (&optional _is-accepted)
   "Clear Copilot overlay."
   (interactive)
+  (copilot--cancel-completion)
   (when (copilot--overlay-visible)
     (delete-overlay copilot--overlay)
     (delete-overlay copilot--keymap-overlay)

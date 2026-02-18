@@ -864,6 +864,47 @@
         (expect copilot--workspace-folders :to-be nil)
         (expect copilot--status :to-be nil))))
 
+  ;;
+  ;; $/cancelRequest
+  ;;
+
+  (describe "copilot--cancel-completion"
+    (it "sends $/cancelRequest and clears ID when request is in-flight"
+      (with-temp-buffer
+        (setq-local copilot--completion-request-id 42)
+        (let ((copilot--connection t))
+          (spy-on 'jsonrpc--process :and-return-value t)
+          (spy-on 'process-exit-status :and-return-value 0)
+          (spy-on 'jsonrpc-notify)
+          (copilot--cancel-completion)
+          (expect 'jsonrpc-notify :to-have-been-called-with
+                  t '$/cancelRequest '(:id 42))
+          (expect copilot--completion-request-id :to-be nil))))
+
+    (it "is a no-op when no request is in-flight"
+      (with-temp-buffer
+        (setq-local copilot--completion-request-id nil)
+        (spy-on 'jsonrpc-notify)
+        (copilot--cancel-completion)
+        (expect 'jsonrpc-notify :not :to-have-been-called)))
+
+    (it "clears ID without notifying when connection is dead"
+      (with-temp-buffer
+        (setq-local copilot--completion-request-id 99)
+        (let ((copilot--connection nil))
+          (spy-on 'jsonrpc-notify)
+          (copilot--cancel-completion)
+          (expect 'jsonrpc-notify :not :to-have-been-called)
+          (expect copilot--completion-request-id :to-be nil)))))
+
+  (describe "copilot-clear-overlay cancellation"
+    (it "cancels in-flight request when clearing overlay"
+      (with-temp-buffer
+        (spy-on 'copilot--cancel-completion)
+        (setq-local copilot--overlay nil)
+        (copilot-clear-overlay)
+        (expect 'copilot--cancel-completion :to-have-been-called))))
+
   (describe "copilot--path-to-uri"
     (it "creates a file URI for unix paths"
       (expect (copilot--path-to-uri "/home/user/project")

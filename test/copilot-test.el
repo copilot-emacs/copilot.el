@@ -730,6 +730,82 @@
         (expect (plist-get result :success) :to-equal :json-false))))
 
   ;;
+  ;; $/progress handler
+  ;;
+
+  (describe "$/progress handler"
+    (it "stores session on begin and reports progress"
+      (let ((copilot--progress-sessions (make-hash-table :test 'equal)))
+        (spy-on 'force-mode-line-update)
+        (let ((handlers (gethash '$/progress copilot--notification-handlers)))
+          (expect handlers :to-be-truthy)
+          (funcall (car handlers)
+                   '(:token "tok1"
+                     :value (:kind "begin" :title "Indexing" :message "Starting")))
+          (expect (hash-table-count copilot--progress-sessions) :to-equal 1)
+          (let ((session (gethash "tok1" copilot--progress-sessions)))
+            (expect (plist-get session :title) :to-equal "Indexing")
+            (expect (plist-get session :message) :to-equal "Starting"))
+          (expect (copilot--progress-lighter) :to-equal " [Indexing: Starting]")
+          (expect 'force-mode-line-update :to-have-been-called-with t))))
+
+    (it "updates session on report"
+      (let ((copilot--progress-sessions (make-hash-table :test 'equal)))
+        (spy-on 'force-mode-line-update)
+        (let ((handlers (gethash '$/progress copilot--notification-handlers)))
+          (funcall (car handlers)
+                   '(:token "tok1"
+                     :value (:kind "begin" :title "Indexing" :message "Starting")))
+          (funcall (car handlers)
+                   '(:token "tok1"
+                     :value (:kind "report" :message "50 files" :percentage 42)))
+          (let ((session (gethash "tok1" copilot--progress-sessions)))
+            (expect (plist-get session :message) :to-equal "50 files")
+            (expect (plist-get session :percentage) :to-equal 42))
+          (expect (copilot--progress-lighter) :to-equal " [Indexing: 50 files]"))))
+
+    (it "removes session on end"
+      (let ((copilot--progress-sessions (make-hash-table :test 'equal)))
+        (spy-on 'force-mode-line-update)
+        (let ((handlers (gethash '$/progress copilot--notification-handlers)))
+          (funcall (car handlers)
+                   '(:token "tok1"
+                     :value (:kind "begin" :title "Indexing")))
+          (funcall (car handlers)
+                   '(:token "tok1"
+                     :value (:kind "end")))
+          (expect (hash-table-count copilot--progress-sessions) :to-equal 0)
+          (expect (copilot--progress-lighter) :to-be nil))))
+
+    (it "tracks multiple tokens independently"
+      (let ((copilot--progress-sessions (make-hash-table :test 'equal)))
+        (spy-on 'force-mode-line-update)
+        (let ((handlers (gethash '$/progress copilot--notification-handlers)))
+          (funcall (car handlers)
+                   '(:token "tok1"
+                     :value (:kind "begin" :title "Indexing")))
+          (funcall (car handlers)
+                   '(:token "tok2"
+                     :value (:kind "begin" :title "Loading")))
+          (expect (hash-table-count copilot--progress-sessions) :to-equal 2)
+          (funcall (car handlers)
+                   '(:token "tok1"
+                     :value (:kind "end")))
+          (expect (hash-table-count copilot--progress-sessions) :to-equal 1)
+          (expect (gethash "tok1" copilot--progress-sessions) :to-be nil)
+          (expect (gethash "tok2" copilot--progress-sessions) :to-be-truthy))))
+
+    (it "includes progress in mode-line lighter"
+      (let ((copilot--progress-sessions (make-hash-table :test 'equal))
+            (copilot--status nil))
+        (spy-on 'force-mode-line-update)
+        (let ((handlers (gethash '$/progress copilot--notification-handlers)))
+          (funcall (car handlers)
+                   '(:token "tok1"
+                     :value (:kind "begin" :title "Indexing" :percentage 42)))
+          (expect (copilot--status-lighter) :to-equal " Copilot [Indexing: 42%]")))))
+
+  ;;
   ;; Server shutdown
   ;;
 

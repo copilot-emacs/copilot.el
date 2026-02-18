@@ -272,22 +272,45 @@ Incremented after each change.")
   "Current server status from `didChangeStatus' notification.
 Plist with keys :kind, :busy, and :message.")
 
+(defvar copilot--progress-sessions (make-hash-table :test 'equal)
+  "Hash table of active progress sessions, keyed by token.
+Each value is a plist with :title, :message, and :percentage.")
+
+(defun copilot--progress-lighter ()
+  "Compute mode-line progress indicator from active sessions.
+Returns nil when no active sessions.  Otherwise returns a string
+like \"[title: message]\" or \"[title: 42%]\" from the most
+recently updated session."
+  (when (> (hash-table-count copilot--progress-sessions) 0)
+    (let (latest)
+      (maphash (lambda (_k v) (setq latest v)) copilot--progress-sessions)
+      (let ((title (plist-get latest :title))
+            (message (plist-get latest :message))
+            (percentage (plist-get latest :percentage)))
+        (cond
+         (message (format " [%s: %s]" title message))
+         (percentage (format " [%s: %d%%]" title percentage))
+         (t (format " [%s]" title)))))))
+
 (defun copilot--status-lighter ()
   "Compute the mode-line lighter string from `copilot--status'."
   (let ((kind (plist-get copilot--status :kind))
-        (busy (plist-get copilot--status :busy)))
-    (cond
-     ((or (null kind) (and (equal kind "Normal") (not busy)))
-      " Copilot")
-     ((and (equal kind "Normal") busy)
-      " Copilot*")
-     ((equal kind "Warning")
-      (propertize " Copilot:Warning" 'face 'warning))
-     ((equal kind "Error")
-      (propertize " Copilot:Error" 'face 'error))
-     ((equal kind "Inactive")
-      (propertize " Copilot:Inactive" 'face 'shadow))
-     (t " Copilot"))))
+        (busy (plist-get copilot--status :busy))
+        (progress (copilot--progress-lighter)))
+    (concat
+     (cond
+      ((or (null kind) (and (equal kind "Normal") (not busy)))
+       " Copilot")
+      ((and (equal kind "Normal") busy)
+       " Copilot*")
+      ((equal kind "Warning")
+       (propertize " Copilot:Warning" 'face 'warning))
+      ((equal kind "Error")
+       (propertize " Copilot:Error" 'face 'error))
+      ((equal kind "Inactive")
+       (propertize " Copilot:Inactive" 'face 'shadow))
+      (t " Copilot"))
+     progress)))
 
 (defmacro copilot--dbind (pattern source &rest body)
   "Destructure SOURCE against plist PATTERN and eval BODY."
@@ -1048,6 +1071,29 @@ Each request METHOD can have only one HANDLER."
                  (display-buffer buf)))))
            (list :success t)))
      (error (list :success :json-false)))))
+
+(copilot-on-notification
+ '$/progress
+ (lambda (msg)
+   (copilot--dbind (token value) msg
+     (let ((kind (plist-get value :kind)))
+       (cond
+        ((equal kind "begin")
+         (puthash token
+                  (list :title (plist-get value :title)
+                        :message (plist-get value :message)
+                        :percentage (plist-get value :percentage))
+                  copilot--progress-sessions))
+        ((equal kind "report")
+         (let ((session (gethash token copilot--progress-sessions)))
+           (when session
+             (when (plist-member value :message)
+               (plist-put session :message (plist-get value :message)))
+             (when (plist-member value :percentage)
+               (plist-put session :percentage (plist-get value :percentage))))))
+        ((equal kind "end")
+         (remhash token copilot--progress-sessions)))
+       (force-mode-line-update t)))))
 
 (defun copilot--get-panel-completions (callback)
   "Get panel completions with CALLBACK."

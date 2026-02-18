@@ -268,6 +268,27 @@ Incremented after each change.")
 (defvar copilot--workspace-folders nil
   "List of workspace folder URIs already reported to the server.")
 
+(defvar copilot--status nil
+  "Current server status from `didChangeStatus' notification.
+Plist with keys :kind, :busy, and :message.")
+
+(defun copilot--status-lighter ()
+  "Compute the mode-line lighter string from `copilot--status'."
+  (let ((kind (plist-get copilot--status :kind))
+        (busy (plist-get copilot--status :busy)))
+    (cond
+     ((or (null kind) (and (equal kind "Normal") (not busy)))
+      " Copilot")
+     ((and (equal kind "Normal") busy)
+      " Copilot*")
+     ((equal kind "Warning")
+      (propertize " Copilot:Warning" 'face 'warning))
+     ((equal kind "Error")
+      (propertize " Copilot:Error" 'face 'error))
+     ((equal kind "Inactive")
+      (propertize " Copilot:Inactive" 'face 'shadow))
+     (t " Copilot"))))
+
 (defmacro copilot--dbind (pattern source &rest body)
   "Destructure SOURCE against plist PATTERN and eval BODY."
   (declare (indent 2))
@@ -471,7 +492,8 @@ there is no active connection."
     (jsonrpc-shutdown copilot--connection)
     (setq copilot--connection nil)
     (setq copilot--opened-buffers nil)
-    (setq copilot--workspace-folders nil)))
+    (setq copilot--workspace-folders nil)
+    (setq copilot--status nil)))
 
 (defun copilot--command ()
   "Return the command-line to start copilot server."
@@ -983,6 +1005,13 @@ Each request METHOD can have only one HANDLER."
      (save-excursion
        (goto-char (point-max))
        (insert "End of solutions.\n")))))
+
+(copilot-on-notification
+ 'didChangeStatus
+ (lambda (msg)
+   (copilot--dbind (kind busy message) msg
+     (setq copilot--status (list :kind kind :busy busy :message message))
+     (force-mode-line-update t))))
 
 (defun copilot--get-panel-completions (callback)
   "Get panel completions with CALLBACK."
@@ -1532,7 +1561,7 @@ Use this for custom bindings in `copilot-mode'.")
 (define-minor-mode copilot-mode
   "Minor mode for Copilot."
   :init-value nil
-  :lighter " Copilot"
+  :lighter (:eval (copilot--status-lighter))
   (copilot-clear-overlay)
   (advice-add 'posn-at-point :before-until #'copilot--posn-advice)
   (if copilot-mode

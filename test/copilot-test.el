@@ -576,6 +576,59 @@
           (delete-file temp-file)))))
 
   ;;
+  ;; Status lighter
+  ;;
+
+  (describe "copilot--status-lighter"
+    (it "returns \" Copilot\" when status is nil"
+      (let ((copilot--status nil))
+        (expect (copilot--status-lighter) :to-equal " Copilot")))
+
+    (it "returns \" Copilot\" for Normal and not busy"
+      (let ((copilot--status '(:kind "Normal" :busy nil :message "")))
+        (expect (copilot--status-lighter) :to-equal " Copilot")))
+
+    (it "returns \" Copilot*\" for Normal and busy"
+      (let ((copilot--status '(:kind "Normal" :busy t :message "")))
+        (expect (copilot--status-lighter) :to-equal " Copilot*")))
+
+    (it "returns propertized warning string for Warning kind"
+      (let ((copilot--status '(:kind "Warning" :busy nil :message "some warning")))
+        (let ((result (copilot--status-lighter)))
+          (expect result :to-equal " Copilot:Warning")
+          (expect (get-text-property 0 'face result) :to-equal 'warning))))
+
+    (it "returns propertized error string for Error kind"
+      (let ((copilot--status '(:kind "Error" :busy nil :message "auth failed")))
+        (let ((result (copilot--status-lighter)))
+          (expect result :to-equal " Copilot:Error")
+          (expect (get-text-property 0 'face result) :to-equal 'error))))
+
+    (it "returns propertized inactive string for Inactive kind"
+      (let ((copilot--status '(:kind "Inactive" :busy nil :message "")))
+        (let ((result (copilot--status-lighter)))
+          (expect result :to-equal " Copilot:Inactive")
+          (expect (get-text-property 0 'face result) :to-equal 'shadow)))))
+
+  ;;
+  ;; didChangeStatus notification
+  ;;
+
+  (describe "didChangeStatus handler"
+    (it "sets copilot--status from notification"
+      (let ((copilot--status nil))
+        (spy-on 'force-mode-line-update)
+        ;; Simulate the notification by looking up and calling the handler
+        (let ((handlers (gethash 'didChangeStatus copilot--notification-handlers)))
+          (expect handlers :to-be-truthy)
+          (funcall (car handlers)
+                   '(:kind "Warning" :busy nil :message "something"))
+          (expect (plist-get copilot--status :kind) :to-equal "Warning")
+          (expect (plist-get copilot--status :busy) :to-equal nil)
+          (expect (plist-get copilot--status :message) :to-equal "something")
+          (expect 'force-mode-line-update :to-have-been-called-with t)))))
+
+  ;;
   ;; Server shutdown
   ;;
 
@@ -623,14 +676,16 @@
     (it "resets global state"
       (let ((copilot--connection (make-symbol "fake-conn"))
             (copilot--opened-buffers '(buf1 buf2))
-            (copilot--workspace-folders '("file:///a" "file:///b")))
+            (copilot--workspace-folders '("file:///a" "file:///b"))
+            (copilot--status '(:kind "Error" :busy nil :message "stale")))
         (spy-on 'jsonrpc-request)
         (spy-on 'jsonrpc-notify)
         (spy-on 'jsonrpc-shutdown)
         (copilot--shutdown-server)
         (expect copilot--connection :to-be nil)
         (expect copilot--opened-buffers :to-be nil)
-        (expect copilot--workspace-folders :to-be nil))))
+        (expect copilot--workspace-folders :to-be nil)
+        (expect copilot--status :to-be nil))))
 
   (describe "copilot--path-to-uri"
     (it "creates a file URI for unix paths"

@@ -915,22 +915,6 @@
 ;;
 
 (describe "copilot-balancer"
-  (describe "copilot-balancer-extract-pairs"
-    (it "extracts parentheses"
-      (let ((pairs (copilot-balancer-extract-pairs "(foo (bar))")))
-        (expect pairs :to-equal '(?\( ?\( ?\) ?\)))))
-
-    (it "extracts brackets and braces"
-      (let ((pairs (copilot-balancer-extract-pairs "[{x}]")))
-        (expect pairs :to-equal '(?\[ ?\{ ?\} ?\]))))
-
-    (it "returns empty list for no pairs"
-      (expect (copilot-balancer-extract-pairs "hello") :to-equal nil))
-
-    (it "skips escaped characters"
-      (let ((pairs (copilot-balancer-extract-pairs "\\(foo)")))
-        (expect pairs :to-equal '(?\))))))
-
   (describe "copilot-balancer-trim-closing-pairs-at-end"
     (it "trims trailing closing parens"
       (expect (copilot-balancer-trim-closing-pairs-at-end "foo))") :to-equal "foo"))
@@ -942,16 +926,10 @@
       (expect (copilot-balancer-trim-closing-pairs-at-end "hello") :to-equal "hello"))
 
     (it "does not trim escaped closers"
-      (expect (copilot-balancer-trim-closing-pairs-at-end "foo\\)") :to-equal "foo\\)")))
+      (expect (copilot-balancer-trim-closing-pairs-at-end "foo\\)") :to-equal "foo\\)"))
 
-  (describe "copilot-balancer-collapse-matching-pairs"
-    (it "collapses matching open-close pairs"
-      (let ((result (copilot-balancer-collapse-matching-pairs '(?\( ?\)) nil)))
-        (expect (car result) :to-equal nil)))
-
-    (it "preserves unmatched pairs"
-      (let ((result (copilot-balancer-collapse-matching-pairs '(?\( ?\( ?\)) nil)))
-        (expect (car result) :to-equal '(?\()))))
+    (it "does not trim trailing double quotes"
+      (expect (copilot-balancer-trim-closing-pairs-at-end "foo\"") :to-equal "foo\"")))
 
   (describe "copilot-balancer-fix-completion"
     (it "passes through completion in non-lisp modes"
@@ -976,6 +954,39 @@
         (let* ((completion "(bar))")
                (result (copilot-balancer-fix-completion (point) (point) completion)))
           ;; Should return something reasonable
-          (expect (nth 2 result) :to-be-truthy))))))
+          (expect (nth 2 result) :to-be-truthy))))
+
+    (it "ignores parens inside comments"
+      (with-temp-buffer
+        (emacs-lisp-mode)
+        (insert "(defun foo ()\n  ;; a stray (\n  (bar")
+        (let ((result (copilot-balancer-fix-completion (point) (point) "")))
+          ;; Should close (bar and (defun, not the comment paren
+          (expect (nth 2 result) :to-equal "))"))))
+
+    (it "ignores parens inside strings"
+      (with-temp-buffer
+        (emacs-lisp-mode)
+        (insert "(defun foo ()\n  (message \"(\"")
+        (let ((result (copilot-balancer-fix-completion (point) (point) "")))
+          ;; Should close (message and (defun, not the string paren
+          (expect (nth 2 result) :to-equal "))"))))
+
+    (it "handles mixed bracket types"
+      (with-temp-buffer
+        (emacs-lisp-mode)
+        (insert "(let ([a 1]")
+        (let ((result (copilot-balancer-fix-completion (point) (point) "")))
+          ;; [a 1] is balanced; two ( remain unmatched
+          (expect (nth 2 result) :to-equal "))"))))
+
+    (it "accounts for closers in suffix"
+      (with-temp-buffer
+        (emacs-lisp-mode)
+        (insert "(defun foo ()\n  (bar")
+        (save-excursion (insert "))\n"))
+        (let ((result (copilot-balancer-fix-completion (point) (point) "")))
+          ;; Suffix already has the closing parens, no extras needed
+          (expect (nth 2 result) :to-equal ""))))))
 
 ;;; copilot-test.el ends here

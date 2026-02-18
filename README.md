@@ -347,6 +347,58 @@ A few commonly tweaked variables:
 - **`copilot-clear-overlay-ignore-commands`** — Commands that won't dismiss the overlay.
 - **`copilot-indentation-alist`** — Override indentation width per major mode.
 
+## Protocol Support
+
+`copilot.el` communicates with [@github/copilot-language-server][] over JSON-RPC using the LSP protocol plus Copilot-specific extensions. The table below shows the current coverage.
+
+### Client-to-Server Requests
+
+| Method | Status | Notes |
+|--------|--------|-------|
+| `initialize` | Supported | Sends `rootUri`, `workspaceFolders`, and editor info |
+| `shutdown` | Supported | Clean shutdown before exit |
+| `textDocument/inlineCompletion` | Supported | Core completion mechanism |
+| `workspace/executeCommand` | Supported | Executes server-side commands on accept |
+| `signInInitiate` / `signInConfirm` / `checkStatus` / `signOut` | Supported | Authentication flow |
+| `copilot/models` | Supported | Lists available completion models |
+| `getPanelCompletions` | Supported | Multiple suggestions in a panel buffer |
+
+### Client-to-Server Notifications
+
+| Method | Status | Notes |
+|--------|--------|-------|
+| `initialized` | Supported | |
+| `exit` | Supported | Sent after `shutdown` |
+| `textDocument/didOpen` | Supported | |
+| `textDocument/didClose` | Supported | |
+| `textDocument/didChange` | Supported | Incremental sync |
+| `textDocument/didFocus` | Supported | |
+| `textDocument/didShowCompletion` | Supported | Telemetry when overlay is displayed |
+| `textDocument/didPartiallyAcceptCompletion` | Supported | Telemetry for partial acceptance |
+| `workspace/didChangeConfiguration` | Supported | Sent on settings change |
+| `workspace/didChangeWorkspaceFolders` | Supported | Dynamic workspace roots |
+| `$/cancelRequest` | Supported | Cancels stale completion requests |
+| `textDocument/didSave` | Not yet | |
+| `notebookDocument/*` | Not yet | |
+
+### Server-to-Client Requests
+
+| Method | Status | Notes |
+|--------|--------|-------|
+| `window/showMessageRequest` | Supported | Prompts via `completing-read` |
+| `window/showDocument` | Supported | Opens URIs in browser or Emacs |
+
+### Server-to-Client Notifications
+
+| Method | Status | Notes |
+|--------|--------|-------|
+| `window/logMessage` | Supported | Logged to `*copilot-language-server-log*` |
+| `didChangeStatus` | Supported | Shown in mode-line |
+| `$/progress` | Supported | Progress shown in mode-line |
+| `PanelSolution` / `PanelSolutionsDone` | Supported | Panel completion results |
+
+Extensible via `copilot-on-request` and `copilot-on-notification` for any messages not handled above.
+
 ## Known Issues
 
 ### Wrong Position of Other Completion Popups

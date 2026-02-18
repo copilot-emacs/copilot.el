@@ -9,6 +9,12 @@
 - Add `copilot-accept-completion-by-sentence` command.
 - Add `copilot-accept-completion-up-to-char` and `copilot-accept-completion-to-char` commands, similar to `zap-up-to-char` and `zap-to-char`.
 - Add `copilot-clear-overlay-on-commands` user option to clear the overlay before specific commands (e.g. `beginning-of-visual-line`).
+- Handle `window/showMessageRequest` server requests via `completing-read` and `window/showDocument` to open URIs in the browser or Emacs.
+- Handle `didChangeStatus` server notifications to show Copilot status (Normal, Warning, Error, Inactive) in the mode-line.
+- Handle `$/progress` server notifications to display progress for long-running operations (e.g. indexing) in the mode-line.
+- Send `$/cancelRequest` when a new completion is requested or the overlay is dismissed, so the server stops working on stale in-flight requests.
+- Perform a clean LSP shutdown sequence (`shutdown` request + `exit` notification) instead of just killing the server process.
+- Add `copilot-on-request` and `copilot-on-notification` for user-defined handlers on incoming server messages.
 - Add buttercup test infrastructure with comprehensive tests for core functionality.
 
 ### Changes

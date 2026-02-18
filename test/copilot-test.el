@@ -575,6 +575,63 @@
               (kill-buffer))
           (delete-file temp-file)))))
 
+  ;;
+  ;; Server shutdown
+  ;;
+
+  (describe "copilot--shutdown-server"
+    (it "sends shutdown request and exit notification when connection is alive"
+      (let* ((conn (make-symbol "fake-conn"))
+             (copilot--connection conn)
+             (copilot--opened-buffers '(buf1))
+             (copilot--workspace-folders '("file:///tmp")))
+        (spy-on 'jsonrpc-request)
+        (spy-on 'jsonrpc-notify)
+        (spy-on 'jsonrpc-shutdown)
+        (copilot--shutdown-server)
+        (expect 'jsonrpc-request :to-have-been-called-with
+                conn 'shutdown nil :timeout 3)
+        (expect 'jsonrpc-notify :to-have-been-called-with
+                conn 'exit nil)
+        (expect 'jsonrpc-shutdown :to-have-been-called)))
+
+    (it "handles unresponsive server gracefully"
+      (let ((copilot--connection (make-symbol "fake-conn"))
+            (copilot--opened-buffers '(buf1))
+            (copilot--workspace-folders '("file:///tmp")))
+        (spy-on 'jsonrpc-request :and-call-fake
+                (lambda (&rest _) (error "Timeout")))
+        (spy-on 'jsonrpc-notify)
+        (spy-on 'jsonrpc-shutdown)
+        ;; Should not signal an error
+        (copilot--shutdown-server)
+        ;; Should still attempt exit and cleanup
+        (expect 'jsonrpc-notify :to-have-been-called)
+        (expect 'jsonrpc-shutdown :to-have-been-called)
+        (expect copilot--connection :to-be nil)))
+
+    (it "is a no-op when connection is nil"
+      (let ((copilot--connection nil))
+        (spy-on 'jsonrpc-request)
+        (spy-on 'jsonrpc-notify)
+        (spy-on 'jsonrpc-shutdown)
+        (copilot--shutdown-server)
+        (expect 'jsonrpc-request :not :to-have-been-called)
+        (expect 'jsonrpc-notify :not :to-have-been-called)
+        (expect 'jsonrpc-shutdown :not :to-have-been-called)))
+
+    (it "resets global state"
+      (let ((copilot--connection (make-symbol "fake-conn"))
+            (copilot--opened-buffers '(buf1 buf2))
+            (copilot--workspace-folders '("file:///a" "file:///b")))
+        (spy-on 'jsonrpc-request)
+        (spy-on 'jsonrpc-notify)
+        (spy-on 'jsonrpc-shutdown)
+        (copilot--shutdown-server)
+        (expect copilot--connection :to-be nil)
+        (expect copilot--opened-buffers :to-be nil)
+        (expect copilot--workspace-folders :to-be nil))))
+
   (describe "copilot--path-to-uri"
     (it "creates a file URI for unix paths"
       (expect (copilot--path-to-uri "/home/user/project")

@@ -456,6 +456,23 @@ SUCCESS-FN is the CALLBACK."
                                                   (funcall ,success-fn result))))
                               ,@args))))
 
+(defun copilot--shutdown-server ()
+  "Shut down the Copilot server with the standard LSP shutdown sequence.
+Sends a `shutdown' request followed by an `exit' notification, then
+cleans up the connection and resets global state.  Safe to call when
+there is no active connection."
+  (when copilot--connection
+    (condition-case _err
+        (jsonrpc-request copilot--connection 'shutdown nil :timeout 3)
+      (error nil))
+    (condition-case _err
+        (jsonrpc-notify copilot--connection 'exit nil)
+      (error nil))
+    (jsonrpc-shutdown copilot--connection)
+    (setq copilot--connection nil)
+    (setq copilot--opened-buffers nil)
+    (setq copilot--workspace-folders nil)))
+
 (defun copilot--command ()
   "Return the command-line to start copilot server."
   (append
@@ -532,7 +549,8 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
           ,@(when copilot-network-proxy
               `(:networkProxy ,copilot-network-proxy))))))
     (copilot--notify 'initialized '())
-    (copilot--notify 'workspace/didChangeConfiguration `(:settings ,(copilot--effective-lsp-settings))))))
+    (copilot--notify 'workspace/didChangeConfiguration `(:settings ,(copilot--effective-lsp-settings)))
+    (add-hook 'kill-emacs-hook #'copilot--shutdown-server))))
 
 ;;
 ;; login / logout
@@ -577,11 +595,7 @@ automatically, browse to %s." user-code verification-uri))
 (defun copilot-diagnose ()
   "Restart and diagnose copilot."
   (interactive)
-  (when copilot--connection
-    (jsonrpc-shutdown copilot--connection 'kill)
-    (setq copilot--connection nil))
-  (setq copilot--opened-buffers nil)
-  (setq copilot--workspace-folders nil)
+  (copilot--shutdown-server)
   ;; We are going to send a test request for the current buffer so we have to activate the mode
   ;; if it is not already activated.
   ;; If it the mode is already active, we have to make sure the current buffer is loaded in the

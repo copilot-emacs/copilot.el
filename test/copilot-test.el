@@ -987,6 +987,15 @@
         (save-excursion (insert "))\n"))
         (let ((result (copilot-balancer-fix-completion (point) (point) "")))
           ;; Suffix already has the closing parens, no extras needed
-          (expect (nth 2 result) :to-equal ""))))))
+          (expect (nth 2 result) :to-equal ""))))
+
+    (it "strips redundant closers when suffix has them"
+      (with-temp-buffer
+        (emacs-lisp-mode)
+        (insert "(defun add (a ")
+        (save-excursion (insert "))\n"))
+        (let ((result (copilot-balancer-fix-completion (point) (point) "b))")))
+          ;; Suffix )) already closes both parens; trimmed completion is just "b"
+          (expect (nth 2 result) :to-equal "b"))))))
 
 ;;; copilot-test.el ends here

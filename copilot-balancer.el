@@ -43,13 +43,7 @@
 
 (require 'cl-lib)
 
-(defcustom copilot-enable-parentheses-balancer t
-  "Whether to post-process completions to balance parentheses in Lisp modes.
-When non-nil, completions in Lisp modes are adjusted to ensure that
-parentheses remain balanced within the surrounding top-level form.
-Set to nil to use completions from the server verbatim."
-  :type 'boolean
-  :group 'copilot)
+(defvar copilot-enable-parentheses-balancer)
 
 (defvar copilot-balancer-lisp-modes '( emacs-lisp-mode
                                        lisp-mode

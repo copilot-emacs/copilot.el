@@ -1006,4 +1006,78 @@
           ;; Suffix )) already closes both parens; trimmed completion is just "b"
           (expect (nth 2 result) :to-equal "b"))))))
 
+  ;;
+  ;; copilot-accept-completion
+  ;;
+
+  (describe "copilot-accept-completion"
+    (it "accepts full completion"
+      (with-temp-buffer
+        (insert "(defun add (a ")
+        (save-excursion (insert "))"))
+        (spy-on 'copilot--notify)
+        (spy-on 'copilot--async-request)
+        (copilot--display-overlay-completion "b)" nil nil (point) (+ (point) 2))
+        (copilot-accept-completion)
+        (expect (buffer-string) :to-equal "(defun add (a b)")
+        (expect (copilot--overlay-visible) :not :to-be-truthy)))
+
+    (it "accepts completion by word"
+      (with-temp-buffer
+        (insert "(defun add (a ")
+        (save-excursion (insert "))"))
+        (spy-on 'copilot--notify)
+        (spy-on 'copilot--async-request)
+        (copilot--display-overlay-completion "b)\n  (+ a b))" nil nil (point) (+ (point) 2))
+        (copilot-accept-completion-by-word)
+        (expect (buffer-substring-no-properties (point-min) (point))
+                :to-equal "(defun add (a b")
+        (expect (copilot--overlay-visible) :to-be-truthy)
+        (expect (overlay-get copilot--overlay 'completion)
+                :to-equal ")\n  (+ a b))")))
+
+    (it "accepts by word with replacement range"
+      (with-temp-buffer
+        (insert "(defun add (a ")
+        (let ((start (point)))
+          (save-excursion (insert "))"))
+          (let ((end (+ start 2)))
+            (spy-on 'copilot--notify)
+            (spy-on 'copilot--async-request)
+            (copilot--display-overlay-completion "b)\n  (+ a b))" nil nil start end)
+            (copilot-accept-completion-by-word)
+            ;; First word "b" inserted, replacement range "))" deleted
+            (expect (buffer-string) :to-equal "(defun add (a b")
+            (expect (copilot--overlay-visible) :to-be-truthy)
+            ;; tail-length updated to reflect current state (point is at EOL)
+            (expect (overlay-get copilot--overlay 'tail-length)
+                    :to-equal (- (line-end-position) (point)))
+            ;; Second accept-by-word inserts ")\n  (+ a" (forward-word finds "a")
+            (copilot-accept-completion-by-word)
+            (expect (buffer-string) :to-equal "(defun add (a b)\n  (+ a")))))
+
+    (it "accepts by word with replacement range and trailing text"
+      (with-temp-buffer
+        (insert "(let ((x ")
+        (let ((start (point)))
+          (save-excursion (insert ")) ; trailing"))
+          (let ((end (+ start 2)))
+            (spy-on 'copilot--notify)
+            (spy-on 'copilot--async-request)
+            (copilot--display-overlay-completion "(+ 1 2)" nil nil start end)
+            (copilot-accept-completion-by-word)
+            ;; forward-word on "(+ 1 2)" skips "(+ " then matches "1" -> "(+ 1"
+            ;; Replacement range "))" deleted, "(+ 1" inserted
+            ;; Trailing text " ; trailing" preserved
+            (expect (buffer-string) :to-equal "(let ((x (+ 1 ; trailing")
+            (expect (copilot--overlay-visible) :to-be-truthy)
+            ;; tail-length correctly reflects trailing text
+            (expect (overlay-get copilot--overlay 'tail-length)
+                    :to-equal (- (line-end-position) (point)))
+            ;; Second accept inserts " 2", remaining ")" shown as overlay
+            (copilot-accept-completion-by-word)
+            (expect (buffer-string) :to-equal "(let ((x (+ 1 2 ; trailing")
+            (expect (overlay-get copilot--overlay 'tail-length)
+                    :to-equal (- (line-end-position) (point))))))))
+
 ;;; copilot-test.el ends here

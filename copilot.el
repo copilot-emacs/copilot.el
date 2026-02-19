@@ -1296,7 +1296,9 @@ provided."
           (insert t-completion))
         ;; if it is a partial completion, show remaining text
         (when is-partial
-          (copilot--set-overlay-text (copilot--get-overlay) (string-remove-prefix t-completion completion))))
+          (let ((ov (copilot--get-overlay)))
+            (overlay-put ov 'tail-length (- (line-end-position) (point)))
+            (copilot--set-overlay-text ov (string-remove-prefix t-completion completion)))))
       t)))
 
 (defmacro copilot--define-accept-completion-by-action (func-name action)

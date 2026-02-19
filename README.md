@@ -346,6 +346,7 @@ A few commonly tweaked variables:
 - **`copilot-enable-display-predicates`** / **`copilot-disable-display-predicates`** — Control when completions are shown.
 - **`copilot-clear-overlay-ignore-commands`** — Commands that won't dismiss the overlay.
 - **`copilot-indentation-alist`** — Override indentation width per major mode.
+- **`copilot-enable-parentheses-balancer`** — Post-process completions to balance parentheses in Lisp modes (default `t`). Set to `nil` to use raw server completions.
 
 ## Protocol Support
 

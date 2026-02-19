@@ -36,10 +36,20 @@
 ;; If Copilot's completion quality for Lisp languages improves to the point
 ;; where balanced delimiters are reliably produced, this module can be removed
 ;; and `copilot-balancer-fix-completion' replaced with a simple pass-through.
+;; Users can disable balancing by setting `copilot-enable-parentheses-balancer'
+;; to nil.
 
 ;;; Code:
 
 (require 'cl-lib)
+
+(defcustom copilot-enable-parentheses-balancer t
+  "Whether to post-process completions to balance parentheses in Lisp modes.
+When non-nil, completions in Lisp modes are adjusted to ensure that
+parentheses remain balanced within the surrounding top-level form.
+Set to nil to use completions from the server verbatim."
+  :type 'boolean
+  :group 'copilot)
 
 (defvar copilot-balancer-lisp-modes '( emacs-lisp-mode
                                        lisp-mode
@@ -120,7 +130,8 @@ Uses SYNTAX-TABLE for parsing.  Returns a string of closing characters."
 (defun copilot-balancer-fix-completion (start end completion)
   "Fix COMPLETION from START to END."
   (cond
-   ((apply #'derived-mode-p copilot-balancer-lisp-modes)
+   ((and copilot-enable-parentheses-balancer
+         (apply #'derived-mode-p copilot-balancer-lisp-modes))
     (copilot-balancer--fix-lisp start end completion))
    (t (list start end completion))))
 

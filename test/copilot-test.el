@@ -939,6 +939,14 @@
         (let ((result (copilot-balancer-fix-completion (point) (point) "world")))
           (expect (nth 2 result) :to-equal "world"))))
 
+    (it "passes through when balancer is disabled"
+      (with-temp-buffer
+        (emacs-lisp-mode)
+        (insert "(defun foo ()\n  (bar")
+        (let ((copilot-enable-parentheses-balancer nil))
+          (let ((result (copilot-balancer-fix-completion (point) (point) "")))
+            (expect (nth 2 result) :to-equal "")))))
+
     (it "balances parentheses in emacs-lisp-mode"
       (with-temp-buffer
         (emacs-lisp-mode)

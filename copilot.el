@@ -474,12 +474,14 @@ recently updated session."
   (and copilot--connection
        (zerop (process-exit-status (jsonrpc--process copilot--connection)))))
 
-(defmacro copilot--request (&rest args)
-  "Send a request to the copilot server with ARGS."
+(defmacro copilot--request (method &optional params &rest args)
+  "Send a request to the copilot server for METHOD with PARAMS and ARGS.
+When PARAMS is nil, send an empty JSON object so the server does not
+reject the request with a schema-validation error."
   `(progn
      (unless (copilot--connection-alivep)
        (copilot--start-server))
-     (jsonrpc-request copilot--connection ,@args)))
+     (jsonrpc-request copilot--connection ,method (or ,params (make-hash-table)) ,@args)))
 
 (defmacro copilot--notify (&rest args)
   "Send a notification to the copilot server with ARGS."

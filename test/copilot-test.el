@@ -45,6 +45,18 @@
           (invalid-slot-name nil))
         (expect (spy-calls-count 'make-instance) :to-be-greater-than 1))))
 
+  (describe "copilot--request"
+    (it "sends empty object when params is nil"
+      (let ((sent-params nil))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc-request :and-call-fake
+                (lambda (_conn _method params)
+                  (setq sent-params params)
+                  nil))
+        (copilot--request 'signInInitiate nil)
+        ;; params should be a hash table (serializes to {}), not nil
+        (expect (hash-table-p sent-params) :to-be-truthy))))
+
   ;;
   ;; Utility functions
   ;;

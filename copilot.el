@@ -1290,15 +1290,13 @@ provided."
         (copilot-clear-overlay t)
         (if (derived-mode-p 'vterm-mode)
             (progn
-              (vterm-delete-region start end)
+              (unless is-partial (vterm-delete-region start end))
               (vterm-insert t-completion))
-          (delete-region start end)
+          (unless is-partial (delete-region start end))
           (insert t-completion))
         ;; if it is a partial completion, show remaining text
         (when is-partial
-          (let ((ov (copilot--get-overlay)))
-            (overlay-put ov 'tail-length (- (line-end-position) (point)))
-            (copilot--set-overlay-text ov (string-remove-prefix t-completion completion)))))
+          (copilot--set-overlay-text (copilot--get-overlay) (string-remove-prefix t-completion completion))))
       t)))
 
 (defmacro copilot--define-accept-completion-by-action (func-name action)

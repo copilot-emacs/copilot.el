@@ -1016,7 +1016,17 @@
         (save-excursion (insert "))\n"))
         (let ((result (copilot-balancer-fix-completion (point) (point) "b))")))
           ;; Suffix )) already closes both parens; trimmed completion is just "b"
-          (expect (nth 2 result) :to-equal "b"))))))
+          (expect (nth 2 result) :to-equal "b"))))
+
+    (it "keeps comment closers when server uses a replacement range"
+      (with-temp-buffer
+        (emacs-lisp-mode)
+        (insert ";; (require cl-)")
+        (search-backward ")")
+        (let* ((start (point))
+               (end (1+ start))
+               (result (copilot-balancer-fix-completion start end "lib")))
+          (expect (nth 2 result) :to-equal "lib)"))))))
 
   ;;
   ;; copilot-accept-completion

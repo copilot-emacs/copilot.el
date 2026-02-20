@@ -118,8 +118,16 @@ Uses SYNTAX-TABLE for parsing.  Returns a string of closing characters."
                        (scan-error (goto-char (point-max))))
                      (buffer-substring-no-properties end (point)))))
          (closers (copilot-balancer--compute-closers
-                   prefix trimmed suffix (syntax-table))))
-    (list start end (concat trimmed closers))))
+                   prefix trimmed suffix (syntax-table)))
+         (replaced-closers
+          (when (< start end)
+            (let ((ppss (syntax-ppss start)))
+              (when (or (nth 3 ppss) (nth 4 ppss))
+                (let* ((replaced (buffer-substring-no-properties start end))
+                       (replaced-trimmed
+                        (copilot-balancer-trim-closing-pairs-at-end replaced)))
+                  (substring replaced (length replaced-trimmed))))))))
+    (list start end (concat trimmed closers (or replaced-closers "")))))
 
 (defun copilot-balancer-fix-completion (start end completion)
   "Fix COMPLETION from START to END."

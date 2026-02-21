@@ -917,6 +917,30 @@
         (copilot-clear-overlay)
         (expect 'copilot--cancel-completion :to-have-been-called))))
 
+  ;;
+  ;; Native installation helpers
+  ;;
+
+  (describe "copilot--system-arch"
+    (it "returns a non-nil string"
+      (expect (copilot--system-arch) :to-be-truthy))
+
+    (it "returns arm64 or x64"
+      (expect (copilot--system-arch) :to-match "\\`\\(arm64\\|x64\\)\\'")))
+
+  (describe "copilot--native-platform"
+    (it "returns a string matching os-arch pattern"
+      (expect (copilot--native-platform) :to-match "\\`\\(darwin\\|linux\\|win32\\)-\\(arm64\\|x64\\)\\'")))
+
+  (describe "copilot--native-binary-name"
+    (it "returns copilot-language-server on unix"
+      (let ((system-type 'darwin))
+        (expect (copilot--native-binary-name) :to-equal "copilot-language-server")))
+
+    (it "returns copilot-language-server.exe on windows"
+      (let ((system-type 'windows-nt))
+        (expect (copilot--native-binary-name) :to-equal "copilot-language-server.exe"))))
+
   (describe "copilot--path-to-uri"
     (it "creates a file URI for unix paths"
       (expect (copilot--path-to-uri "/home/user/project")

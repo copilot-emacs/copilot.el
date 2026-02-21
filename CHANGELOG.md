@@ -4,6 +4,7 @@
 
 ### New Features
 
+- Add native binary installation support — `copilot-install-server` now falls back to downloading precompiled binaries when npm is unavailable, removing the Node.js requirement on supported platforms. A new `copilot-install-server-native` command is also available for explicit native installation.
 - Send workspace folders (`rootUri` and `workspaceFolders`) during LSP initialization and dynamically notify the server when new project roots are encountered. This improves suggestion quality for multi-root workspaces.
 - Add `copilot-completion-model` option and `copilot-select-completion-model` command for choosing the AI model used for completions. ([#382](https://github.com/copilot-emacs/copilot.el/issues/382))
 - Add `copilot-enable-parentheses-balancer` option to control whether Lisp completions are post-processed for balanced delimiters (enabled by default).

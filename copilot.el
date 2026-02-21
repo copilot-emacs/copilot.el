@@ -44,6 +44,7 @@
 (require 'json)
 (require 'jsonrpc)
 (require 'subr-x)
+(require 'url)
 
 (require 'editorconfig)
 (require 'track-changes)
@@ -383,6 +384,33 @@ recently updated session."
                (match-string 1))))))
      possible-paths)))
 
+(defun copilot--system-arch ()
+  "Return the npm-style architecture string for the current system.
+Returns \"arm64\" for AArch64 systems or \"x64\" for x86-64 systems."
+  (let ((config (or system-configuration "")))
+    (cond
+     ((string-match-p "aarch64" config) "arm64")
+     ((string-match-p "x86_64" config) "x64")
+     (t (error "Unsupported architecture: %s" config)))))
+
+(defun copilot--native-platform ()
+  "Return the native platform string like \"darwin-arm64\".
+Combines the OS type and architecture for selecting the correct
+native binary from the npm package."
+  (let ((os (pcase system-type
+              ('darwin "darwin")
+              ('gnu/linux "linux")
+              ('windows-nt "win32")
+              (_ (error "Unsupported OS: %s" system-type))))
+        (arch (copilot--system-arch)))
+    (format "%s-%s" os arch)))
+
+(defun copilot--native-binary-name ()
+  "Return the platform-specific binary filename for the Copilot server."
+  (if (eq system-type 'windows-nt)
+      "copilot-language-server.exe"
+    "copilot-language-server"))
+
 (defun copilot-server-executable ()
   "Return the location of the `copilot-server-executable' file."
   (cond
@@ -429,9 +457,97 @@ recently updated session."
            (funcall error-callback (string-trim-right status)))))
      nil t)))
 
+(defun copilot--npm-registry-info ()
+  "Fetch package metadata from the npm registry.
+Return a plist with `:version' and `:tarball' keys."
+  (let* ((url (if copilot-lsp-server-version
+                  (format "https://registry.npmjs.org/%s/%s"
+                          copilot-server-package-name copilot-lsp-server-version)
+                (format "https://registry.npmjs.org/%s/latest"
+                        copilot-server-package-name)))
+         (buf (url-retrieve-synchronously url t)))
+    (unless buf
+      (error "Failed to fetch package info from %s" url))
+    (unwind-protect
+        (with-current-buffer buf
+          (goto-char (point-min))
+          (re-search-forward "\n\n")
+          (let* ((json-object-type 'plist)
+                 (json-key-type 'keyword)
+                 (data (json-read))
+                 (version (plist-get data :version))
+                 (tarball (plist-get (plist-get data :dist) :tarball)))
+            (unless version
+              (error "Could not determine package version from npm registry"))
+            (unless tarball
+              (error "Could not determine tarball URL from npm registry"))
+            (list :version version :tarball tarball)))
+      (kill-buffer buf))))
+
+(defun copilot--install-server-native ()
+  "Install the Copilot server using native precompiled binaries."
+  (let* ((platform (copilot--native-platform))
+         (_ (message "Copilot: Detected platform %s" platform))
+         (registry-info (progn
+                          (message "Copilot: Fetching package info from npm registry...")
+                          (copilot--npm-registry-info)))
+         (version (plist-get registry-info :version))
+         (tarball-url (plist-get registry-info :tarball))
+         (pkg-dir (file-name-concat copilot-install-dir "lib" "node_modules"
+                                    "@github" "copilot-language-server"))
+         (bin-dir (file-name-concat copilot-install-dir "bin"))
+         (binary-name (copilot--native-binary-name))
+         (native-binary (file-name-concat pkg-dir "native" platform binary-name))
+         (target-binary (if (eq system-type 'windows-nt)
+                            (file-name-concat copilot-install-dir binary-name)
+                          (file-name-concat bin-dir binary-name)))
+         (tarball-file (make-temp-file "copilot-server" nil ".tar.gz")))
+    (message "Copilot: Downloading %s v%s..." copilot-server-package-name version)
+    (url-copy-file tarball-url tarball-file t)
+    ;; Create target directory
+    (make-directory pkg-dir 'parents)
+    ;; Extract tarball
+    (message "Copilot: Extracting package...")
+    (let ((exit-code (call-process "tar" nil nil nil "xzf" tarball-file "-C" pkg-dir)))
+      (unless (eq exit-code 0)
+        (error "Failed to extract tarball (exit code %d)" exit-code)))
+    ;; Move extracted package/ contents to pkg-dir
+    (let ((extracted-dir (file-name-concat pkg-dir "package")))
+      (dolist (file (directory-files extracted-dir nil "\\`[^.]"))
+        (let ((src (file-name-concat extracted-dir file))
+              (dst (file-name-concat pkg-dir file)))
+          (when (file-exists-p dst)
+            (if (file-directory-p dst)
+                (delete-directory dst t)
+              (delete-file dst)))
+          (rename-file src dst t)))
+      ;; Remove the empty package/ directory
+      (when (file-directory-p extracted-dir)
+        (delete-directory extracted-dir t)))
+    ;; Verify native binary exists
+    (unless (file-exists-p native-binary)
+      (error "Native binary not found at %s (platform %s may not be supported)"
+             native-binary platform))
+    ;; Create bin directory and copy binary
+    (make-directory (file-name-directory target-binary) 'parents)
+    (copy-file native-binary target-binary t)
+    (set-file-modes target-binary #o755)
+    ;; Clean up temp file
+    (delete-file tarball-file)
+    (message "Copilot: Successfully installed %s v%s (native %s)"
+             copilot-server-package-name version platform)))
+
+;;;###autoload
+(defun copilot-install-server-native ()
+  "Install the Copilot server using native binaries (no npm required)."
+  (interactive)
+  (copilot--install-server-native))
+
 ;;;###autoload
 (defun copilot-install-server ()
-  "Interactively install server."
+  "Interactively install server.
+When npm is available, install using npm.  Otherwise, fall back to
+downloading precompiled native binaries from the npm registry."
   (interactive)
   (if-let* ((npm-binary (executable-find "npm")))
       (progn
@@ -442,8 +558,7 @@ recently updated session."
          "-g" "--prefix" copilot-install-dir
          "install" (concat copilot-server-package-name
                            (when copilot-lsp-server-version (format "@%s" copilot-lsp-server-version)))))
-    (copilot--log 'warning "Unable to install %s via `npm' because it is not present" copilot-server-package-name)
-    nil))
+    (copilot--install-server-native)))
 
 ;;;###autoload
 (defun copilot-uninstall-server ()

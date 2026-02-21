@@ -1,6 +1,7 @@
 [![JCS-ELPA](https://raw.githubusercontent.com/jcs-emacs/badges/master/elpa/v/copilot.svg)](https://jcs-emacs.github.io/jcs-elpa/#/copilot)
 [![MELPA](http://melpa.org/packages/copilot-badge.svg)](http://melpa.org/#/copilot)
 [![MELPA Stable](http://stable.melpa.org/packages/copilot-badge.svg)](http://stable.melpa.org/#/copilot)
+[![CI](https://github.com/copilot-emacs/copilot.el/actions/workflows/test.yml/badge.svg)](https://github.com/copilot-emacs/copilot.el/actions/workflows/test.yml)
 
 # Copilot.el
 

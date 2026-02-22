@@ -100,6 +100,9 @@ Contains keys :text, :range, :command, and :textDocument.")
 (defvar-local copilot-nes--move-count 0
   "Number of cursor movements since the suggestion was shown.")
 
+(defvar-local copilot-nes--last-point nil
+  "Position of point after the previous command, for detecting actual movement.")
+
 ;;
 ;; Internal helpers
 ;;
@@ -141,7 +144,8 @@ Contains keys :text, :range, :command, and :textDocument.")
   (mapc #'delete-overlay copilot-nes--overlays)
   (setq copilot-nes--overlays nil)
   (setq copilot-nes--edit nil)
-  (setq copilot-nes--move-count 0))
+  (setq copilot-nes--move-count 0)
+  (setq copilot-nes--last-point nil))
 
 (defun copilot-nes--display (edit)
   "Display EDIT as overlays in the buffer."
@@ -168,6 +172,8 @@ Contains keys :text, :range, :command, and :textDocument.")
           (overlay-put ov 'copilot-nes t)
           (overlay-put ov 'evaporate t)
           (push ov copilot-nes--overlays)))))
+  ;; Record point so the post-command hook can detect actual movement
+  (setq copilot-nes--last-point (point))
   ;; Notify server that we showed the suggestion
   (copilot--dbind (command) edit
     (when command
@@ -262,12 +268,14 @@ invocation (or when already at the edit), apply the edit."
    ;; After a text-modifying command, schedule a new request
    ((memq this-command copilot-nes--text-changing-commands)
     (copilot-nes--schedule-request))
-   ;; When a suggestion is pending and the user moves, track it
+   ;; When a suggestion is pending and point actually moved, track it
    (copilot-nes--edit
-    (cl-incf copilot-nes--move-count)
-    (when (or (>= copilot-nes--move-count copilot-nes-auto-dismiss-move-count)
-              (copilot-nes--too-far-p))
-      (copilot-nes--clear)))))
+    (when (and copilot-nes--last-point (/= (point) copilot-nes--last-point))
+      (cl-incf copilot-nes--move-count)
+      (when (or (>= copilot-nes--move-count copilot-nes-auto-dismiss-move-count)
+                (copilot-nes--too-far-p))
+        (copilot-nes--clear)))))
+  (setq copilot-nes--last-point (point)))
 
 (defun copilot-nes--too-far-p ()
   "Return non-nil if point is too far from the current suggestion."

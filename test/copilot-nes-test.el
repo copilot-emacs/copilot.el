@@ -243,24 +243,44 @@
   ;;
 
   (describe "copilot-nes--post-command"
-    (it "increments move count on non-text-modifying commands"
+    (it "increments move count when point actually moves"
       (with-temp-buffer
         (setq-local copilot--line-bias 1)
-        (insert "hello\n")
+        (insert "hello\nworld\n")
+        (goto-char (point-min))
         (let ((edit (list :text "x"
                           :range (list :start (list :line 0 :character 0)
                                        :end (list :line 0 :character 1))
                           :command nil)))
           (spy-on 'copilot--notify)
           (copilot-nes--display edit)
+          ;; Simulate a command that moves point
           (let ((this-command 'next-line))
+            (forward-line 1)
             (copilot-nes--post-command))
           (expect copilot-nes--move-count :to-equal 1))))
+
+    (it "does not increment move count when point stays put"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (insert "hello\n")
+        (goto-char (point-min))
+        (let ((edit (list :text "x"
+                          :range (list :start (list :line 0 :character 0)
+                                       :end (list :line 0 :character 1))
+                          :command nil)))
+          (spy-on 'copilot--notify)
+          (copilot-nes--display edit)
+          ;; Simulate a command that does not move point (e.g. scroll)
+          (let ((this-command 'scroll-up-command))
+            (copilot-nes--post-command))
+          (expect copilot-nes--move-count :to-equal 0))))
 
     (it "auto-dismisses after enough cursor movements"
       (with-temp-buffer
         (setq-local copilot--line-bias 1)
-        (insert "hello\n")
+        (insert "hello\nworld\nfoo\n")
+        (goto-char (point-min))
         (let ((edit (list :text "x"
                           :range (list :start (list :line 0 :character 0)
                                        :end (list :line 0 :character 1))
@@ -269,7 +289,9 @@
           (spy-on 'copilot--notify)
           (copilot-nes--display edit)
           (let ((this-command 'next-line))
+            (forward-line 1)
             (copilot-nes--post-command)
+            (forward-line 1)
             (copilot-nes--post-command))
           (expect copilot-nes--edit :to-equal nil))))
 

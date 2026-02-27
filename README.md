@@ -208,6 +208,29 @@ To customize when completions trigger, see `copilot-enable-predicates` and `copi
 
 Alternatively, you can call `copilot-complete` manually and use `copilot-clear-overlay` in `post-command-hook` to dismiss completions.
 
+### Next Edit Suggestions (NES)
+
+NES predicts the next edit you'll want to make anywhere in the file, based on your recent editing patterns. Unlike inline completions (ghost text at the cursor), NES suggestions can replace or delete existing text at any location.
+
+> [!NOTE]
+>
+> NES requires `copilot-language-server` version 1.434.0 or newer. Run `M-x copilot-reinstall-server` to upgrade if needed.
+
+Enable `copilot-nes-mode` in a buffer to start receiving suggestions. It can coexist with `copilot-mode`:
+
+```elisp
+(add-hook 'prog-mode-hook #'copilot-nes-mode)
+```
+
+When a suggestion is pending:
+- **TAB** — accept the suggestion (jumps to it first if far away, applies on second press)
+- **C-g** — dismiss the suggestion
+
+Customization variables:
+- **`copilot-nes-idle-delay`** — seconds of idle time before requesting a suggestion (default `0.5`)
+- **`copilot-nes-auto-dismiss-move-count`** — cursor movements before auto-dismissing (default `3`)
+- **`copilot-nes-auto-dismiss-distance`** — max lines between point and suggestion before auto-dismissing (default `40`)
+
 ### Keybindings
 
 `copilot-mode` does not set any keybindings by default. Use `copilot-completion-map` (active while a completion overlay is visible) to bind keys:
@@ -331,6 +354,10 @@ For example:
 | **Navigation** | |
 | `copilot-next-completion` | Cycle to the next completion |
 | `copilot-previous-completion` | Cycle to the previous completion |
+| **Next Edit Suggestions** | |
+| `copilot-nes-mode` | Toggle NES in the current buffer |
+| `copilot-nes-accept` | Accept (or jump to) the current NES suggestion |
+| `copilot-nes-dismiss` | Dismiss the current NES suggestion |
 
 ## Customization
 
@@ -364,6 +391,7 @@ A few commonly tweaked variables:
 | `signInInitiate` / `signInConfirm` / `checkStatus` / `signOut` | Supported | Authentication flow |
 | `copilot/models` | Supported | Lists available completion models |
 | `getPanelCompletions` | Supported | Multiple suggestions in a panel buffer |
+| `textDocument/copilotInlineEdit` | Supported | Next Edit Suggestions (NES) |
 
 ### Client-to-Server Notifications
 
@@ -377,6 +405,7 @@ A few commonly tweaked variables:
 | `textDocument/didFocus` | Supported | |
 | `textDocument/didShowCompletion` | Supported | Telemetry when overlay is displayed |
 | `textDocument/didPartiallyAcceptCompletion` | Supported | Telemetry for partial acceptance |
+| `textDocument/didShowInlineEdit` | Supported | Telemetry when NES overlay is displayed |
 | `workspace/didChangeConfiguration` | Supported | Sent on settings change |
 | `workspace/didChangeWorkspaceFolders` | Supported | Dynamic workspace roots |
 | `$/cancelRequest` | Supported | Cancels stale completion requests |

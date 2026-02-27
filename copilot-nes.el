@@ -1,6 +1,6 @@
 ;;; copilot-nes.el --- Copilot Next Edit Suggestions -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2022-2025 copilot-emacs maintainers
+;; Copyright (C) 2022-2026 copilot-emacs maintainers
 
 ;; Author: Bozhidar Batsov <bozhidar@batsov.dev>
 ;; URL: https://github.com/copilot-emacs/copilot.el
@@ -47,6 +47,9 @@
 
 (require 'copilot)
 
+(defconst copilot-nes--min-server-version "1.434.0"
+  "Minimum copilot-language-server version required for NES support.")
+
 ;;
 ;; Customization
 ;;
@@ -74,7 +77,7 @@
 ;;
 
 (defface copilot-nes-deletion-face
-  '((t :inherit shadow :strike-through t))
+  '((t :inherit diff-removed :strike-through t))
   "Face for text that a NES suggestion would delete."
   :group 'copilot)
 
@@ -106,6 +109,19 @@ Contains keys :text, :range, :command, and :textDocument.")
 ;;
 ;; Internal helpers
 ;;
+
+(defun copilot-nes--check-server-version ()
+  "Warn if the installed copilot-language-server is too old for NES."
+  (let ((installed (copilot-installed-version)))
+    (when (and installed
+               (version-list-< (version-to-list installed)
+                                (version-to-list copilot-nes--min-server-version)))
+      (display-warning
+       'copilot-nes
+       (format "NES requires copilot-language-server >= %s, but %s is installed.
+Run `M-x copilot-reinstall-server' to upgrade."
+               copilot-nes--min-server-version installed)
+       :warning))))
 
 (defun copilot-nes--edit-start-line ()
   "Return the buffer line number where the current edit start, or nil."
@@ -163,6 +179,7 @@ Contains keys :text, :range, :command, and :textDocument.")
           (overlay-put ov 'face 'copilot-nes-deletion-face)
           (overlay-put ov 'copilot-nes t)
           (overlay-put ov 'evaporate t)
+          (overlay-put ov 'priority 100)
           (push ov copilot-nes--overlays)))
       ;; Insertion overlay: show new text
       (when has-insertion
@@ -171,6 +188,7 @@ Contains keys :text, :range, :command, and :textDocument.")
           (overlay-put ov 'after-string insertion-text)
           (overlay-put ov 'copilot-nes t)
           (overlay-put ov 'evaporate t)
+          (overlay-put ov 'priority 100)
           (push ov copilot-nes--overlays)))))
   ;; Record point so the post-command hook can detect actual movement
   (setq copilot-nes--last-point (point))
@@ -183,6 +201,20 @@ Contains keys :text, :range, :command, and :textDocument.")
 ;;
 ;; Request
 ;;
+
+(defun copilot-nes--handle-response (response expected-uri expected-version)
+  "Process RESPONSE from a NES request.
+Only display the suggestion when the document version matches
+EXPECTED-VERSION and the URI matches EXPECTED-URI."
+  (copilot--dbind (edits) response
+    (when (and edits (> (length edits) 0))
+      (let* ((edit (if (vectorp edits) (aref edits 0) (car edits))))
+        ;; Validate version matches
+        (copilot--dbind (textDocument) edit
+          (copilot--dbind (version (resp-version version)) textDocument
+            (when (and (= resp-version expected-version)
+                       (string= (plist-get textDocument :uri) expected-uri))
+              (copilot-nes--display edit))))))))
 
 (defun copilot-nes--request ()
   "Request a NES suggestion from the Copilot server."
@@ -198,15 +230,7 @@ Contains keys :text, :range, :command, and :textDocument.")
              :position pos)
        :success-fn
        (lambda (response)
-         (copilot--dbind (edits) response
-           (when (and edits (> (length edits) 0))
-             (let* ((edit (if (vectorp edits) (aref edits 0) (car edits))))
-               ;; Validate version matches
-               (copilot--dbind (textDocument) edit
-                 (copilot--dbind (version (resp-version version)) textDocument
-                   (when (and (= resp-version version)
-                              (string= (plist-get textDocument :uri) uri))
-                     (copilot-nes--display edit))))))))))))
+         (copilot-nes--handle-response response uri version))))))
 
 ;;
 ;; Accept
@@ -338,7 +362,9 @@ can replace or delete existing text.
   :lighter " NES"
   :keymap copilot-nes-mode-map
   (if copilot-nes-mode
-      (add-hook 'post-command-hook #'copilot-nes--post-command nil t)
+      (progn
+        (copilot-nes--check-server-version)
+        (add-hook 'post-command-hook #'copilot-nes--post-command nil t))
     (copilot-nes--cancel-timer)
     (copilot-nes--clear)
     (remove-hook 'post-command-hook #'copilot-nes--post-command t)))

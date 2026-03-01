@@ -2,6 +2,7 @@
 [![MELPA](http://melpa.org/packages/copilot-badge.svg)](http://melpa.org/#/copilot)
 [![MELPA Stable](http://stable.melpa.org/packages/copilot-badge.svg)](http://stable.melpa.org/#/copilot)
 [![CI](https://github.com/copilot-emacs/copilot.el/actions/workflows/test.yml/badge.svg)](https://github.com/copilot-emacs/copilot.el/actions/workflows/test.yml)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/bbatsov?style=flat&logo=github&label=Sponsors&color=ea4aaa)](https://github.com/sponsors/bbatsov)
 
 # Copilot.el
 
@@ -608,6 +609,17 @@ feature-rich alternative, take a look at
 Current maintainer(s): [@bbatsov][], [@emil-vdw][], [@jcs090218][], [@rakotomandimby][].
 
 Retired maintainer: [@zerolfx][].
+
+## Supporting the Development
+
+`copilot.el` is built and maintained by volunteers in their spare time. If you find it useful,
+please consider supporting its continued development.
+
+Here are the ways in which you can support the project:
+
+- [GitHub Sponsors](https://github.com/sponsors/bbatsov) (recurring or one-time donations)
+- [Patreon](https://www.patreon.com/bbatsov) (recurring donations)
+- [PayPal](https://www.paypal.me/bbatsov) (one-time donations)
 
 ## License
 

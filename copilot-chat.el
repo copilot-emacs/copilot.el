@@ -171,7 +171,7 @@ CALLBACK is called with the response containing conversationId and turnId."
                           :response ""
                           :turnId ""))
             :capabilities (list :skills (vector "current-editor")
-                                :allSkills (vector "current-editor"))
+                                :allSkills t)
             :source "panel")
       (when copilot-chat-model
         (list :model copilot-chat-model)))

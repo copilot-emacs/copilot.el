@@ -269,6 +269,68 @@
         (kill-buffer copilot-chat--buffer-name))
       (expect (copilot-chat-send "hello") :to-throw 'user-error)))
 
+  ;;
+  ;; Conversation creation params
+  ;;
+
+  (describe "copilot-chat--create"
+    ;; copilot--async-request is a macro that expands to
+    ;; jsonrpc--async-request-1, so we spy on the latter to capture params.
+    (it "sends allSkills as a boolean"
+      (let ((captured-params nil)
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--create "hello" #'ignore)
+              (let ((caps (plist-get captured-params :capabilities)))
+                (expect caps :to-be-truthy)
+                (expect (plist-get caps :allSkills) :to-equal t)))
+          (kill-buffer buf))))
+
+    (it "includes model when copilot-chat-model is set"
+      (let ((captured-params nil)
+            (copilot-chat-model "gpt-4o")
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--create "hello" #'ignore)
+              (expect (plist-get captured-params :model) :to-equal "gpt-4o"))
+          (kill-buffer buf))))
+
+    (it "omits model when copilot-chat-model is nil"
+      (let ((captured-params nil)
+            (copilot-chat-model nil)
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--create "hello" #'ignore)
+              (expect (plist-member captured-params :model) :not :to-be-truthy))
+          (kill-buffer buf)))))
+
   (describe "copilot-chat-send-region"
     (it "formats code with language id"
       (with-temp-buffer

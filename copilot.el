@@ -1628,21 +1628,30 @@ Use this for custom bindings in `copilot-mode'.")
 
 (easy-menu-define copilot-mode-menu copilot-mode-map "Copilot menu."
   '("Copilot"
+    ["Complete" copilot-complete]
+    ["Clear Overlay" copilot-clear-overlay]
     ["Accept Completion" copilot-accept-completion]
     ["Accept Completion by Word" copilot-accept-completion-by-word]
     ["Accept Completion by Line" copilot-accept-completion-by-line]
     ["Accept Completion by Paragraph" copilot-accept-completion-by-paragraph]
-    "--"
-    ["Complete" copilot-complete]
     ["Next Completion" copilot-next-completion]
     ["Previous Completion" copilot-previous-completion]
+    ["Panel Complete" copilot-panel-complete]
+    "--"
+    ["Chat" copilot-chat]
+    ["Chat Send Region" copilot-chat-send-region]
+    ["Chat Reset" copilot-chat-reset]
+    "--"
+    ["Toggle NES Mode" copilot-nes-mode]
+    "--"
+    ["Select Completion Model" copilot-select-completion-model]
+    ["Login" copilot-login]
+    ["Logout" copilot-logout]
     "--"
     ["Install Server" copilot-install-server]
+    ["Reinstall Server" copilot-reinstall-server]
     ["Uninstall Server" copilot-uninstall-server]
-    ["Diagnose" copilot-diagnose]
-    "--"
-    ["Login" copilot-login]
-    ["Logout" copilot-logout]))
+    ["Diagnose" copilot-diagnose]))
 
 (defun copilot--mode-setup ()
   "Set up copilot mode."

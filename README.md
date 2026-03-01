@@ -6,15 +6,21 @@
 
 # Copilot.el
 
-Copilot.el is an Emacs plugin for GitHub Copilot.
+Copilot.el is an Emacs plugin for [GitHub Copilot][]. It provides inline
+completions (ghost text), an interactive chat interface, and Next Edit
+Suggestions — all powered by the official [@github/copilot-language-server][].
 
 ![](assets/demo.gif)
 
-This plugin uses the official [@github/copilot-language-server][] provided by Microsoft.
+The plugin talks to the Copilot language server over JSON-RPC, using `jsonrpc.el`
+directly rather than going through an LSP client like eglot. This is a
+deliberate choice — most of the Copilot protocol is non-standard LSP, and a
+single global server is shared across all buffers and projects. See
+[doc/design.md](doc/design.md) for the full rationale.
 
 > [!NOTE]
 >
-> You need access to [GitHub Copilot][] to use this plugin. The service introduced a free layer in early 2025.
+> You need access to [GitHub Copilot][] to use this plugin. The service introduced a free tier in early 2025.
 
 ## Requirements
 
@@ -228,6 +234,8 @@ Key bindings in the `*copilot-chat*` buffer:
 Customization:
 - **`copilot-chat-model`** — model to use for chat (default `nil`, meaning server default)
 
+For a more feature-rich chat experience, take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el).
+
 ### Next Edit Suggestions (NES)
 
 NES predicts the next edit you'll want to make anywhere in the file, based on your recent editing patterns. Unlike inline completions (ghost text at the cursor), NES suggestions can replace or delete existing text at any location.
@@ -324,9 +332,9 @@ For example:
 (setq copilot-network-proxy '(:host "127.0.0.1" :port 7890))
 ```
 
-### Server-side hooks (copilot-on-request / copilot-on-notification)
+### Handling server messages
 
-`copilot-on-request` registers a handler for incoming LSP requests. Return a JSON-serializable value as the result, or call `jsonrpc-error` for errors. [Read more](https://www.gnu.org/software/emacs/manual/html_node/elisp/JSONRPC-Overview.html).
+`copilot-on-request` registers a handler for incoming JSON-RPC requests from the language server. Return a JSON-serializable value as the result, or call `jsonrpc-error` for errors. [Read more](https://www.gnu.org/software/emacs/manual/html_node/elisp/JSONRPC-Overview.html).
 
 ```elisp
 ;; Display desktop notification if Emacs is built with D-Bus
@@ -566,6 +574,8 @@ models available on your subscription. The selection is saved in
 
 ## Development
 
+See [doc/design.md](doc/design.md) for an overview of the architecture and key design decisions.
+
 ### Running Tests
 
 Unit tests (requires [eask](https://emacs-eask.github.io/)):
@@ -589,20 +599,28 @@ There's a manual integration test in `dev/integration-smoke.el` that connects to
 emacs --batch -L . -l dev/integration-smoke.el
 ```
 
+## History
+
+copilot.el was started in March 2022. At the time there was no public Copilot
+server package — the only way to get one was to extract the Node.js agent
+bundled inside [copilot.vim][]. Early versions of copilot.el reverse-engineered
+the agent's JSON-RPC protocol from copilot.vim and shipped a copy of that agent
+in the repository, updating it whenever a new copilot.vim release appeared.
+
+In early 2025, GitHub published the official
+[@github/copilot-language-server][] on npm. copilot.el migrated to this open
+server, dropping the copilot.vim dependency entirely. The switch also enabled
+newer protocol features like `textDocument/inlineCompletion` (replacing the
+legacy `getCompletions`), Copilot Chat, and Next Edit Suggestions.
+
 ## Thanks
 
-These projects were a great source of inspiration:
+These projects helped make copilot.el possible:
 
-- <https://github.com/TommyX12/company-tabnine/>
+- [copilot.vim][] — the original reference implementation whose bundled agent powered copilot.el for its first three years
+- <https://github.com/TommyX12/company-tabnine/> — inspiration for the overlay-based completion UX
 - <https://github.com/cryptobadger/flight-attendant.el>
-- <https://github.com/github/copilot.vim>
 - [@github/copilot-language-server][]
-
-## Do you want to chat with GitHub Copilot?
-
-Chat is built-in — see the [Chat](#chat) section above. For a more
-feature-rich alternative, take a look at
-[copilot-chat.el](https://github.com/chep/copilot-chat.el).
 
 ## Team
 
@@ -637,4 +655,5 @@ Copyright © 2022-2026 copilot-emacs maintainers and
 [@zerolfx]: https://github.com/zerolfx
 
 [GitHub Copilot]: https://github.com/features/copilot
+[copilot.vim]: https://github.com/github/copilot.vim
 [@github/copilot-language-server]: https://www.npmjs.com/package/@github/copilot-language-server

@@ -465,18 +465,18 @@ Extensible via `copilot-on-request` and `copilot-on-notification` for any messag
 
 ![](assets/company-overlay.png)
 
-This is an example of using together with default frontend of
-`company-mode`. Because both `company-mode` and `copilot.el` use overlay to show
-completion, so the conflict is inevitable.  To solve the problem, I recommend
-you to use `company-box` (only available on GUI), which is based on child frame
-rather than overlay.
+This is an example of using together with the default frontend of
+`company-mode`. Because both `company-mode` and `copilot.el` use overlays to show
+completions, the conflict is inevitable. The recommended solution is to use
+`company-box` (only available on GUI), which is based on child frames rather than
+overlays.
 
-After using `company-box`, you have:
+After using `company-box`, you get:
 
 ![](assets/company-box.png)
 
-In other editors (e.g. `VS Code`, `PyCharm`), completions from copilot and other sources can not show at the same time.
-But I decided to allow them to coexist, allowing you to choose a better one at any time.
+In other editors (e.g. `VS Code`, `PyCharm`), completions from Copilot and other sources cannot show at the same time.
+In `copilot.el` they are allowed to coexist, so you can choose the better one at any time.
 
 ### Cursor Jumps to End of Line When Typing
 
@@ -591,7 +591,7 @@ emacs --batch -L . -l dev/integration-smoke.el
 
 ## Thanks
 
-These projects helped me a lot:
+These projects were a great source of inspiration:
 
 - <https://github.com/TommyX12/company-tabnine/>
 - <https://github.com/cryptobadger/flight-attendant.el>

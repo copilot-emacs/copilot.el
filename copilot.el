@@ -3,10 +3,7 @@
 ;; Copyright (C) 2022-2026 copilot-emacs maintainers
 
 ;; Author: zerol <z@zerol.me>
-;; Maintainer: Emil van der Westhuizen
-;;             Shen, Jen-Chieh <jcs090218@gmail.com>
-;;             Rakotomandimby Mihamina <mihamina.rakotomandimby@rktmb.org>
-;;             Bozhidar Batsov <bozhidar@batsov.dev>
+;; Maintainer: Bozhidar Batsov <bozhidar@batsov.dev>
 ;; URL: https://github.com/copilot-emacs/copilot.el
 ;; Package-Requires: ((emacs "27.2") (editorconfig "0.8.2") (jsonrpc "1.0.14") (compat "30") (track-changes "1.4"))
 ;; Version: 0.4.0

@@ -606,9 +606,9 @@ feature-rich alternative, take a look at
 
 ## Team
 
-Current maintainer(s): [@bbatsov][], [@emil-vdw][], [@jcs090218][], [@rakotomandimby][].
+Current maintainer: [@bbatsov][].
 
-Retired maintainer: [@zerolfx][].
+Retired maintainers: [@zerolfx][], [@emil-vdw][], [@jcs090218][], [@rakotomandimby][].
 
 ## Supporting the Development
 

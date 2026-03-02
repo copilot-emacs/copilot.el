@@ -1059,7 +1059,7 @@ Each request METHOD can have only one HANDLER."
 (copilot-on-notification
  'PanelSolutionsDone
  (lambda (_msg)
-   (message "Copilot: Finish synthesizing solutions.")
+   (copilot--log 'info "Finished synthesizing solutions.")
    (display-buffer "*copilot-panel*")
    (with-current-buffer "*copilot-panel*"
      (save-excursion

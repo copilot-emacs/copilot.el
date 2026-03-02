@@ -82,20 +82,12 @@ to disable TLS verification.  This can be done by setting a pair
   :package-version '(copilot . "0.1"))
 
 (defcustom copilot-log-max 0
-  "Max size of events buffer.
-0 disables, nil means infinite.  Enabling event logging may slightly affect
+  "Max size of the `*copilot events*' jsonrpc events buffer.
+This buffer records all JSON-RPC traffic between Emacs and the Copilot
+language server, which is useful for debugging protocol-level issues.
+Set to a positive integer (e.g. 1000) to enable, 0 to disable, or nil
+for unlimited size.  Enabling event logging may slightly affect
 performance."
-  :group 'copilot
-  :type 'integer
-  :package-version '(copilot . "0.1"))
-
-(defcustom copilot-server-log-level 0
-  "Log level of the Copilot server.
-0 - no log
-1 - error
-2 - warning
-3 - info
-4 - debug"
   :group 'copilot
   :type 'integer
   :package-version '(copilot . "0.1"))
@@ -488,27 +480,42 @@ reject the request with a schema-validation error."
        (copilot--start-server))
      (jsonrpc-notify copilot--connection ,@args)))
 
-(cl-defmacro copilot--async-request (method params &rest args &key (success-fn #'copilot--ignore-response) &allow-other-keys)
+(cl-defmacro copilot--async-request (method params &rest args
+                                    &key
+                                    (success-fn #'copilot--ignore-response)
+                                    (error-fn nil error-fn-supplied-p)
+                                    &allow-other-keys)
   "Send an asynchronous request to the copilot server.
 
 Arguments METHOD, PARAMS and ARGS are used in function `jsonrpc-async-request'.
 
 SUCCESS-FN is the CALLBACK.
 
+ERROR-FN is called when the request fails.  When omitted, a default
+handler logs the error to *Messages* via `copilot--log'.
+
 Returns the request ID (a number) so callers can cancel the request later."
-  `(progn
-     (unless (copilot--connection-alivep)
-       (copilot--start-server))
-     ;; jsonrpc will use temp buffer for callbacks, so we need to save the
-     ;; current buffer and restore it inside callback
-     (let ((buf (current-buffer)))
-       (car (jsonrpc--async-request-1 copilot--connection
-                                      ,method ,params
-                                      :success-fn (lambda (result)
-                                                    (if (buffer-live-p buf)
-                                                        (with-current-buffer buf
-                                                          (funcall ,success-fn result))))
-                                      ,@args)))))
+  (let ((filtered-args (cl-loop for (k v) on args by #'cddr
+                                unless (eq k :error-fn)
+                                append (list k v))))
+    `(progn
+       (unless (copilot--connection-alivep)
+         (copilot--start-server))
+       ;; jsonrpc will use temp buffer for callbacks, so we need to save the
+       ;; current buffer and restore it inside callback
+       (let ((buf (current-buffer)))
+         (car (jsonrpc--async-request-1 copilot--connection
+                                        ,method ,params
+                                        :success-fn (lambda (result)
+                                                      (if (buffer-live-p buf)
+                                                          (with-current-buffer buf
+                                                            (funcall ,success-fn result))))
+                                        :error-fn ,(if error-fn-supplied-p
+                                                       error-fn
+                                                     `(lambda (err)
+                                                        (copilot--log 'error "%s failed: %S"
+                                                                      ,method err)))
+                                        ,@filtered-args))))))
 
 (defun copilot--shutdown-server ()
   "Shut down the Copilot server with the standard LSP shutdown sequence.
@@ -1131,8 +1138,6 @@ Each request METHOD can have only one HANDLER."
                           (list :doc (copilot--generate-doc)
                                 :panelId (generate-new-buffer-name "copilot-panel"))
                           :success-fn callback
-                          :error-fn (lambda (err)
-                                      (copilot--log 'error "%S" err))
                           :timeout-fn (lambda ()
                                         (copilot--log 'warning "Copilot server timeout."))))
 

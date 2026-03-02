@@ -57,6 +57,40 @@
         ;; params should be a hash table (serializes to {}), not nil
         (expect (hash-table-p sent-params) :to-be-truthy))))
 
+  (describe "copilot--async-request"
+    (it "uses a default error-fn that logs via copilot--log"
+      (let ((captured-error-fn nil))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn _method _params &rest args)
+                  (setq captured-error-fn (plist-get args :error-fn))
+                  (list 1)))
+        (copilot--async-request 'textDocument/inlineCompletion
+                                '(:textDocument (:uri "file:///test")))
+        (expect captured-error-fn :to-be-truthy)
+        ;; Call the error-fn and verify it logs
+        (spy-on 'copilot--log)
+        (funcall captured-error-fn '(:code -32600 :message "cancelled"))
+        (expect 'copilot--log :to-have-been-called)
+        (let ((args (spy-calls-args-for 'copilot--log 0)))
+          (expect (car args) :to-equal 'error)
+          (expect (apply #'format (cdr args)) :to-match "textDocument/inlineCompletion"))))
+
+    (it "uses caller-provided error-fn when supplied"
+      (let ((captured-error-fn nil)
+            (custom-called nil))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn _method _params &rest args)
+                  (setq captured-error-fn (plist-get args :error-fn))
+                  (list 1)))
+        (copilot--async-request 'test/method '(:foo "bar")
+                                :error-fn (lambda (_err)
+                                            (setq custom-called t)))
+        (expect captured-error-fn :to-be-truthy)
+        (funcall captured-error-fn '(:code -1 :message "test"))
+        (expect custom-called :to-be-truthy))))
+
   ;;
   ;; Utility functions
   ;;

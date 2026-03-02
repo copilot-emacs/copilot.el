@@ -675,8 +675,6 @@ on success, or an error/timeout message on failure."
                                 :context '(:triggerKind 1))
                           :success-fn (lambda (_)
                                         (copilot--log 'info "Copilot OK."))
-                          :error-fn (lambda (err)
-                                      (copilot--log 'error "%S" err))
                           :timeout-fn (lambda ()
                                         (copilot--log 'warning "Copilot server timeout."))))
 

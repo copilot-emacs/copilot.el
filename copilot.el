@@ -655,7 +655,11 @@ automatically, browse to %s." user-code verification-uri))
 ;;
 
 (defun copilot-diagnose ()
-  "Restart and diagnose copilot."
+  "Restart the Copilot server and send a test completion request.
+Shuts down any running server, starts a fresh one, and fires a
+`textDocument/inlineCompletion' request for the current buffer.
+The result is logged to *Messages*: look for \"Copilot: Copilot OK.\"
+on success, or an error/timeout message on failure."
   (interactive)
   (copilot--shutdown-server)
   ;; We are going to send a test request for the current buffer so we have to activate the mode

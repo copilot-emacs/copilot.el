@@ -833,11 +833,10 @@ Sends `$/cancelRequest' to the server and resets the stored request ID."
       (when (and buffer-file-name
                  (>= copilot-max-char 0)
                  (> pmax copilot-max-char))
-        (let ((msg (format "%s size exceeds 'copilot-max-char' (%s), copilot completions may not work"
-                           (current-buffer) copilot-max-char)))
-          (if copilot-max-char-warning-disable
-              (message msg)
-            (display-warning '(copilot copilot-exceeds-max-char) msg))))
+        (unless copilot-max-char-warning-disable
+          (display-warning '(copilot copilot-exceeds-max-char)
+                           (format "%s size exceeds 'copilot-max-char' (%s), copilot completions may not work"
+                                   (current-buffer) copilot-max-char))))
       (cond
        ;; using whole buffer
        ((or (< copilot-max-char 0) (< pmax copilot-max-char))

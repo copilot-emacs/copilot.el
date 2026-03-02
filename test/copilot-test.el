@@ -375,12 +375,9 @@
     (it "sends notification when connection is alive"
       (with-temp-buffer
         (add-to-list 'copilot--opened-buffers (current-buffer))
-        ;; copilot--connection-alivep is a defsubst (inlined when
-        ;; byte-compiled), so mock the underlying pieces instead.
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc-notify)
         (let ((copilot--connection t))
-          (spy-on 'jsonrpc--process :and-return-value t)
-          (spy-on 'process-exit-status :and-return-value 0)
-          (spy-on 'jsonrpc-notify)
           (copilot--on-doc-close)
           ;; Should send didClose notification
           (expect 'jsonrpc-notify :to-have-been-called)
@@ -923,8 +920,7 @@
       (with-temp-buffer
         (setq-local copilot--completion-request-id 42)
         (let ((copilot--connection t))
-          (spy-on 'jsonrpc--process :and-return-value t)
-          (spy-on 'process-exit-status :and-return-value 0)
+          (spy-on 'copilot--connection-alivep :and-return-value t)
           (spy-on 'jsonrpc-notify)
           (copilot--cancel-completion)
           (expect 'jsonrpc-notify :to-have-been-called-with
@@ -993,8 +989,7 @@
         (insert "(+ 1 2)")
         (let ((copilot--opened-buffers nil)
               (copilot--connection t))
-          (spy-on 'jsonrpc--process :and-return-value t)
-          (spy-on 'process-exit-status :and-return-value 0)
+          (spy-on 'copilot--connection-alivep :and-return-value t)
           (spy-on 'jsonrpc-notify)
           (copilot--ensure-doc-open)
           (expect (seq-contains-p copilot--opened-buffers (current-buffer))
@@ -1009,8 +1004,7 @@
       (with-temp-buffer
         (let ((copilot--opened-buffers (list (current-buffer)))
               (copilot--connection t))
-          (spy-on 'jsonrpc--process :and-return-value t)
-          (spy-on 'process-exit-status :and-return-value 0)
+          (spy-on 'copilot--connection-alivep :and-return-value t)
           (spy-on 'jsonrpc-notify)
           (copilot--ensure-doc-open)
           (expect 'jsonrpc-notify :not :to-have-been-called))))))

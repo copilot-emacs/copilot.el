@@ -316,7 +316,7 @@ recently updated session."
   `(cl-destructuring-bind (&key ,@pattern &allow-other-keys) ,source
      ,@body))
 
-(defsubst copilot--log (level format &rest args)
+(defun copilot--log (level format &rest args)
   "Log message with LEVEL, FORMAT and ARGS."
   (message "%s: %s" (propertize "Copilot" 'face
                                 (pcase level
@@ -459,7 +459,7 @@ recently updated session."
   (lambda (_))
   "Simply ignore the response.")
 
-(defsubst copilot--connection-alivep ()
+(defun copilot--connection-alivep ()
   "Non-nil if the `copilot--connection' is alive."
   (and copilot--connection
        (zerop (process-exit-status (jsonrpc--process copilot--connection)))))
@@ -976,7 +976,7 @@ TRIGGER-KIND is 1 for invoked, 2 for automatic (default)."
            (setq copilot--completion-idx (mod (+ copilot--completion-idx direction) len))
            (copilot--show-completion (nth copilot--completion-idx items))))))
 
-(defsubst copilot--overlay-visible ()
+(defun copilot--overlay-visible ()
   "Return whether the `copilot--overlay' is available."
   (and (overlayp copilot--overlay)
        (overlay-buffer copilot--overlay)))

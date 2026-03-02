@@ -11,6 +11,7 @@
 ### Bug Fixes
 
 - Fix chat `conversation/create` sending `allSkills` as a string array instead of a boolean, which caused a schema validation error on `copilot-language-server` v1.436.0+. ([#452](https://github.com/copilot-emacs/copilot.el/issues/452))
+- Fix `copilot-complete` being immediately cancelled when called from wrapper commands (lambdas, user-defined functions) whose name doesn't start with `copilot-`. ([#453](https://github.com/copilot-emacs/copilot.el/issues/453))
 
 ## 0.4.0 (2026-02-26)
 

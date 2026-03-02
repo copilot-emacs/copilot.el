@@ -733,6 +733,11 @@ automatically, browse to %s." user-code verification-uri))
 (defvar-local copilot--completion-request-id nil
   "Request ID of the in-flight completion request, or nil.")
 
+(defvar-local copilot--completion-initiated-p nil
+  "Non-nil when `copilot-complete' was called during the current command.
+Used to prevent `copilot--post-command' from immediately cancelling
+a request that was just initiated by a wrapper command.")
+
 (defun copilot--cancel-completion ()
   "Cancel the in-flight completion request, if any.
 Sends `$/cancelRequest' to the server and resets the stored request ID."
@@ -1442,6 +1447,7 @@ the buffer has not been registered yet.  Safe to call multiple times."
   (interactive)
   (copilot--ensure-doc-open)
   (setq copilot--last-doc-version copilot--doc-version)
+  (setq copilot--completion-initiated-p t)
 
   (setq copilot--completion-cache nil)
   (setq copilot--completion-idx 0)
@@ -1574,25 +1580,28 @@ consistently even when the overlay is visible."
 
 (defun copilot--post-command ()
   "Complete in `post-command-hook' hook."
-  (when (and this-command
-             (not (and (symbolp this-command)
-                       (or
-                        (string-prefix-p "copilot-" (symbol-name this-command))
-                        (member this-command copilot-clear-overlay-ignore-commands)
-                        ;; `this-original-command' captures remapped helpers like
-                        ;; `universal-argument-more' and `digit-argument'.
-                        (member this-original-command copilot-clear-overlay-ignore-commands)
-                        (member this-original-command copilot--hardcoded-clear-overlay-ignore-commands)
-                        (copilot--self-insert this-command)))))
-    (copilot-clear-overlay)
-    (when copilot--post-command-timer
-      (cancel-timer copilot--post-command-timer))
-    (when (numberp copilot-idle-delay)
-      (setq copilot--post-command-timer
-            (run-with-idle-timer copilot-idle-delay
-                                 nil
-                                 #'copilot--post-command-debounce
-                                 (current-buffer))))))
+  (let ((completion-initiated copilot--completion-initiated-p))
+    (setq copilot--completion-initiated-p nil)
+    (when (and this-command
+               (not completion-initiated)
+               (not (and (symbolp this-command)
+                         (or
+                          (string-prefix-p "copilot-" (symbol-name this-command))
+                          (member this-command copilot-clear-overlay-ignore-commands)
+                          ;; `this-original-command' captures remapped helpers like
+                          ;; `universal-argument-more' and `digit-argument'.
+                          (member this-original-command copilot-clear-overlay-ignore-commands)
+                          (member this-original-command copilot--hardcoded-clear-overlay-ignore-commands)
+                          (copilot--self-insert this-command)))))
+      (copilot-clear-overlay)
+      (when copilot--post-command-timer
+        (cancel-timer copilot--post-command-timer))
+      (when (numberp copilot-idle-delay)
+        (setq copilot--post-command-timer
+              (run-with-idle-timer copilot-idle-delay
+                                   nil
+                                   #'copilot--post-command-debounce
+                                   (current-buffer)))))))
 
 (defun copilot--self-insert (command)
   "Handle the case where the char just inserted is the start of the completion.

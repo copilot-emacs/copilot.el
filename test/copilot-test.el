@@ -921,6 +921,32 @@
         (copilot-clear-overlay)
         (expect 'copilot--cancel-completion :to-have-been-called))))
 
+  (describe "copilot--post-command"
+    (it "does not clear overlay when copilot--completion-initiated-p is set"
+      (with-temp-buffer
+        (setq-local copilot--completion-initiated-p t)
+        (let ((this-command 'my/copilot-wrapper))
+          (spy-on 'copilot-clear-overlay)
+          (copilot--post-command)
+          (expect 'copilot-clear-overlay :not :to-have-been-called)
+          (expect copilot--completion-initiated-p :to-be nil))))
+
+    (it "clears overlay for non-copilot commands without the flag"
+      (with-temp-buffer
+        (setq-local copilot--completion-initiated-p nil)
+        (let ((this-command 'my/random-command))
+          (spy-on 'copilot-clear-overlay)
+          (copilot--post-command)
+          (expect 'copilot-clear-overlay :to-have-been-called))))
+
+    (it "resets the flag even when command is a copilot- command"
+      (with-temp-buffer
+        (setq-local copilot--completion-initiated-p t)
+        (let ((this-command 'copilot-complete))
+          (spy-on 'copilot-clear-overlay)
+          (copilot--post-command)
+          (expect copilot--completion-initiated-p :to-be nil)))))
+
   (describe "copilot--path-to-uri"
     (it "creates a file URI for unix paths"
       (expect (copilot--path-to-uri "/home/user/project")

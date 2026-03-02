@@ -569,7 +569,8 @@ models available on your subscription. The selection is saved in
 ## Reporting Bugs
 
 - Make sure you have restarted your Emacs (and rebuild the plugin if necessary) after updating the plugin.
-- Please enable event logging by customize `copilot-log-max` (to e.g. 1000) and enable debug log `(setq copilot-server-args '("--stdio" "--debug"))`, then paste related logs in the `*copilot events*`, `*copilot stderr*` and `*copilot-language-server-log*` buffer.
+- Async request errors (e.g. cancelled completions) are logged to `*Messages*` automatically. Check there first for clues.
+- For deeper investigation, enable event logging by customizing `copilot-log-max` (to e.g. 1000) and enable debug log `(setq copilot-server-args '("--stdio" "--debug"))`, then paste related logs from the `*copilot events*`, `*copilot stderr*` and `*copilot-language-server-log*` buffers.
 - If an exception is thrown, please also paste the stack trace (use `M-x toggle-debug-on-error` to enable stack trace).
 
 ## Development

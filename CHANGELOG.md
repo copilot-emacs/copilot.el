@@ -8,6 +8,12 @@
 - Add Next Edit Suggestions (`copilot-nes-mode`) via `textDocument/copilotInlineEdit`. NES predicts edits anywhere in the file based on recent editing patterns. ([#447](https://github.com/copilot-emacs/copilot.el/pull/447))
 - Add Chat, NES, Panel Complete, Clear Overlay, Select Completion Model, and Reinstall Server entries to the Copilot mode menu.
 
+### Changes
+
+- Add a default error handler to `copilot--async-request` so async failures (e.g. cancelled completions) are logged to `*Messages*` instead of being silently swallowed.
+- Remove unused `copilot-server-log-level` defcustom (dead code — nothing read it).
+- Improve `copilot-log-max` docstring to explain the `*copilot events*` buffer.
+
 ### Bug Fixes
 
 - Fix chat `conversation/create` sending `allSkills` as a string array instead of a boolean, which caused a schema validation error on `copilot-language-server` v1.436.0+. ([#452](https://github.com/copilot-emacs/copilot.el/issues/452))

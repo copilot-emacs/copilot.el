@@ -230,7 +230,10 @@ EXPECTED-VERSION and the URI matches EXPECTED-URI."
              :position pos)
        :success-fn
        (lambda (response)
-         (copilot-nes--handle-response response uri version))))))
+         (copilot-nes--handle-response response uri version))
+       :timeout-fn
+       (lambda ()
+         (copilot--log 'warning "NES request timed out."))))))
 
 ;;
 ;; Accept

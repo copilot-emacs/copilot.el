@@ -1631,7 +1631,11 @@ in `post-command-hook'."
              (equal (current-buffer) buffer)
              copilot-mode
              (copilot--satisfy-trigger-predicates))
-    (copilot-complete)))
+    (copilot-complete)
+    ;; Clear the flag: idle timers don't trigger `post-command-hook', so the
+    ;; flag would otherwise persist and cause the next real command to skip
+    ;; overlay clearing.
+    (setq copilot--completion-initiated-p nil)))
 
 ;;
 ;; Minor mode definition

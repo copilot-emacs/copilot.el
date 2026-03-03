@@ -977,6 +977,16 @@
           (copilot--post-command)
           (expect copilot--completion-initiated-p :to-be nil)))))
 
+  (describe "copilot--post-command-debounce"
+    (it "clears completion-initiated flag after calling copilot-complete"
+      (with-temp-buffer
+        (setq-local copilot-mode t)
+        (spy-on 'copilot-complete)
+        (spy-on 'copilot--satisfy-trigger-predicates :and-return-value t)
+        (copilot--post-command-debounce (current-buffer))
+        (expect 'copilot-complete :to-have-been-called)
+        (expect copilot--completion-initiated-p :to-be nil))))
+
   (describe "copilot--path-to-uri"
     (it "creates a file URI for unix paths"
       (expect (copilot--path-to-uri "/home/user/project")

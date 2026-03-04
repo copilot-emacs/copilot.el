@@ -110,7 +110,8 @@ When nil, the server picks the default model."
 
 (defun copilot-chat--end-streaming ()
   "Reset streaming state in the current chat buffer."
-  (setq copilot-chat--streaming-p nil))
+  (setq copilot-chat--streaming-p nil)
+  (force-mode-line-update))
 
 (defun copilot-chat--handle-request-error (err label)
   "Handle error ERR from a chat request identified by LABEL.
@@ -138,7 +139,8 @@ and cleans up active tokens."
           (let ((kind (plist-get value :kind)))
             (cond
              ((equal kind "begin")
-              (setq copilot-chat--streaming-p t))
+              (setq copilot-chat--streaming-p t)
+              (force-mode-line-update))
              ((equal kind "report")
               (when-let* ((reply (plist-get value :reply)))
                 (let ((inhibit-read-only t))
@@ -311,11 +313,18 @@ CALLBACK is called with the response containing conversationId and turnId."
     ("^```.*$" 0 'font-lock-comment-face))
   "Font-lock keywords for `copilot-chat-mode'.")
 
+(defun copilot-chat--mode-line ()
+  "Return the mode-line lighter for `copilot-chat-mode'."
+  (if copilot-chat--streaming-p
+      " Copilot-Chat[Streaming]"
+    " Copilot-Chat"))
+
 (define-derived-mode copilot-chat-mode special-mode "Copilot-Chat"
   "Major mode for Copilot Chat.
 
 \\{copilot-chat-mode-map}"
   (setq-local font-lock-defaults '(copilot-chat--font-lock-keywords t))
+  (setq mode-name '(:eval (copilot-chat--mode-line)))
   (visual-line-mode 1)
   (setq word-wrap t))
 

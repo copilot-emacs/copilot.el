@@ -261,6 +261,24 @@
           (expect (buffer-string) :to-match "Copilot:")))))
 
   ;;
+  ;; Mode-line lighter
+  ;;
+
+  (describe "copilot-chat--mode-line"
+    (it "shows streaming status when active"
+      (with-temp-buffer
+        (copilot-chat-mode)
+        (setq copilot-chat--streaming-p t)
+        (expect (copilot-chat--mode-line) :to-match "Streaming")))
+
+    (it "shows plain name when idle"
+      (with-temp-buffer
+        (copilot-chat-mode)
+        (setq copilot-chat--streaming-p nil)
+        (expect (copilot-chat--mode-line) :to-equal " Copilot-Chat")
+        (expect (copilot-chat--mode-line) :not :to-match "Streaming"))))
+
+  ;;
   ;; Reset
   ;;
 

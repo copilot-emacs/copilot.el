@@ -236,6 +236,10 @@ Customization:
 
 For a more feature-rich chat experience, take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el).
 
+> [!WARNING]
+>
+> `copilot-chat.el` (the chep package) and `copilot.el` both provide an Emacs feature called `copilot-chat`, so they **cannot be installed at the same time**. Having both will cause autoload errors such as "failed to define function copilot-chat-display". If you want to use the chat built into `copilot.el`, make sure `chep/copilot-chat.el` is uninstalled, and vice versa.
+
 ### Next Edit Suggestions (NES)
 
 NES predicts the next edit you'll want to make anywhere in the file, based on your recent editing patterns. Unlike inline completions (ghost text at the cursor), NES suggestions can replace or delete existing text at any location.

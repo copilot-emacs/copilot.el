@@ -76,13 +76,18 @@ When nil, the server picks the default model."
   "Token for routing `$/progress' notifications.")
 
 (defvar-local copilot-chat--streaming-p nil
-  "Non-nil while a response is being streamed.")
+  "Non-nil while a response is being streamed.
+This is set when the first progress `begin' notification arrives,
+which may be slightly after `copilot-chat--request-id' is set.")
 
 (defvar-local copilot-chat--source-buffer nil
   "The code buffer providing context for this chat.")
 
 (defvar-local copilot-chat--follow-up nil
   "Follow-up suggestion from the last turn.")
+
+(defvar-local copilot-chat--request-id nil
+  "ID of the in-flight async request, used for cancellation.")
 
 ;;
 ;; Global state
@@ -111,6 +116,7 @@ When nil, the server picks the default model."
 (defun copilot-chat--end-streaming ()
   "Reset streaming state in the current chat buffer."
   (setq copilot-chat--streaming-p nil)
+  (setq copilot-chat--request-id nil)
   (force-mode-line-update))
 
 (defun copilot-chat--handle-request-error (err label)
@@ -215,22 +221,25 @@ CALLBACK is called with the response containing conversationId and turnId."
     (with-current-buffer (get-buffer copilot-chat--buffer-name)
       (setq copilot-chat--work-done-token token)
       (push (cons token (current-buffer)) copilot-chat--active-buffers))
-    (copilot--async-request
-     'conversation/create
-     (append
-      (list :workDoneToken token
-            :turns (vector
-                    (list :request message
-                          :response ""
-                          :turnId ""))
-            :capabilities (list :skills (vector "current-editor")
-                                :allSkills t)
-            :source "panel")
-      (when copilot-chat-model
-        (list :model copilot-chat-model)))
-     :success-fn callback
-     :error-fn (lambda (err)
-                 (copilot-chat--handle-request-error err "create")))))
+    (let ((req-id
+           (copilot--async-request
+            'conversation/create
+            (append
+             (list :workDoneToken token
+                   :turns (vector
+                           (list :request message
+                                 :response ""
+                                 :turnId ""))
+                   :capabilities (list :skills (vector "current-editor")
+                                       :allSkills t)
+                   :source "panel")
+             (when copilot-chat-model
+               (list :model copilot-chat-model)))
+            :success-fn callback
+            :error-fn (lambda (err)
+                        (copilot-chat--handle-request-error err "create")))))
+      (with-current-buffer (get-buffer copilot-chat--buffer-name)
+        (setq copilot-chat--request-id req-id)))))
 
 (defun copilot-chat--send-turn (message)
   "Send a follow-up MESSAGE in the current conversation."
@@ -241,21 +250,22 @@ CALLBACK is called with the response containing conversationId and turnId."
       (push (cons token chat-buf) copilot-chat--active-buffers)
       (let ((conv-id copilot-chat--conversation-id)
             (doc (copilot-chat--generate-context-doc)))
-        (copilot--async-request
-         'conversation/turn
-         (append
-          (list :workDoneToken token
-                :conversationId conv-id
-                :message message
-                :source "panel")
-          (when doc (list :doc doc)))
-         :success-fn (lambda (result)
-                       (when (buffer-live-p chat-buf)
-                         (with-current-buffer chat-buf
-                           (setq copilot-chat--current-turn-id
-                                 (plist-get result :turnId)))))
-         :error-fn (lambda (err)
-                     (copilot-chat--handle-request-error err "turn")))))))
+        (setq copilot-chat--request-id
+              (copilot--async-request
+               'conversation/turn
+               (append
+                (list :workDoneToken token
+                      :conversationId conv-id
+                      :message message
+                      :source "panel")
+                (when doc (list :doc doc)))
+               :success-fn (lambda (result)
+                             (when (buffer-live-p chat-buf)
+                               (with-current-buffer chat-buf
+                                 (setq copilot-chat--current-turn-id
+                                       (plist-get result :turnId)))))
+               :error-fn (lambda (err)
+                           (copilot-chat--handle-request-error err "turn"))))))))
 
 (defun copilot-chat--destroy ()
   "Destroy the current conversation."
@@ -300,7 +310,7 @@ CALLBACK is called with the response containing conversationId and turnId."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c RET") #'copilot-chat-send)
     (define-key map (kbd "C-c C-c") #'copilot-chat-send)
-    (define-key map (kbd "C-c C-k") #'copilot-chat-reset)
+    (define-key map (kbd "C-c C-k") #'copilot-chat-stop)
     map)
   "Keymap for `copilot-chat-mode'.")
 
@@ -406,6 +416,24 @@ When called interactively, prompt for the message."
                       (format "%s\n\n```%s\n%s\n```" prompt lang code)
                     (format "```%s\n%s\n```" lang code))))
     (copilot-chat message)))
+
+;;;###autoload
+(defun copilot-chat-stop ()
+  "Cancel the in-flight request and stop streaming.
+If not currently streaming, reset the conversation instead."
+  (interactive)
+  (let ((chat-buf (get-buffer copilot-chat--buffer-name)))
+    (if (and chat-buf
+             (buffer-local-value 'copilot-chat--streaming-p chat-buf))
+        (with-current-buffer chat-buf
+          (when (and copilot-chat--request-id (copilot--connection-alivep))
+            (jsonrpc-notify copilot--connection
+                            '$/cancelRequest
+                            (list :id copilot-chat--request-id)))
+          (copilot-chat--end-streaming)
+          (copilot-chat--insert-error "Cancelled")
+          (copilot-chat--remove-active-tokens chat-buf))
+      (copilot-chat-reset))))
 
 ;;;###autoload
 (defun copilot-chat-reset ()

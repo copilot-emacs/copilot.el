@@ -39,7 +39,7 @@
         (copilot-chat-mode)
         (expect buffer-read-only :to-be-truthy)))
 
-    (it "has keybindings for send and reset"
+    (it "has keybindings for send and stop"
       (with-temp-buffer
         (copilot-chat-mode)
         (expect (lookup-key copilot-chat-mode-map (kbd "C-c RET"))
@@ -47,7 +47,7 @@
         (expect (lookup-key copilot-chat-mode-map (kbd "C-c C-c"))
                 :to-equal #'copilot-chat-send)
         (expect (lookup-key copilot-chat-mode-map (kbd "C-c C-k"))
-                :to-equal #'copilot-chat-reset))))
+                :to-equal #'copilot-chat-stop))))
 
   ;;
   ;; Progress handler
@@ -407,6 +407,46 @@
                         (cons nil nil)))
               (copilot-chat--create "hello" #'ignore)
               (expect (plist-member captured-params :model) :not :to-be-truthy))
+          (kill-buffer buf)))))
+
+  ;;
+  ;; Streaming cancellation
+  ;;
+
+  (describe "copilot-chat-stop"
+    (it "cancels streaming and inserts cancelled marker"
+      (let ((buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p t)
+                (setq copilot-chat--request-id 42))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc-notify)
+              (copilot-chat-stop)
+              (with-current-buffer buf
+                (expect copilot-chat--streaming-p :not :to-be-truthy)
+                (expect copilot-chat--request-id :not :to-be-truthy)
+                (expect (buffer-string) :to-match "Cancelled"))
+              (expect 'jsonrpc-notify :to-have-been-called))
+          (kill-buffer buf))))
+
+    (it "falls back to reset when not streaming"
+      (let ((buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p nil)
+                (setq copilot-chat--conversation-id "conv-1")
+                (let ((inhibit-read-only t))
+                  (insert "some content")))
+              (spy-on 'copilot--connection-alivep :and-return-value nil)
+              (copilot-chat-stop)
+              (with-current-buffer buf
+                (expect copilot-chat--conversation-id :not :to-be-truthy)
+                (expect (buffer-string) :to-equal "")))
           (kill-buffer buf)))))
 
   (describe "copilot-chat-send-region"

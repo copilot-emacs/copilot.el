@@ -89,6 +89,16 @@ When nil, the server picks the default model."
   "Name of the Copilot Chat buffer.")
 
 ;;
+;; Internal helpers
+;;
+
+(defun copilot-chat--remove-active-tokens (buf)
+  "Remove all active-buffer entries for BUF."
+  (setq copilot-chat--active-buffers
+        (cl-remove-if (lambda (entry) (eq (cdr entry) buf))
+                      copilot-chat--active-buffers)))
+
+;;
 ;; Progress notification handler
 ;;
 
@@ -143,8 +153,7 @@ Return editor context for the requested skill."
 
 (defun copilot-chat--generate-context-doc ()
   "Generate context document from the source buffer."
-  (let ((buf (and (boundp 'copilot-chat--source-buffer)
-                  copilot-chat--source-buffer)))
+  (let ((buf copilot-chat--source-buffer))
     (when (and buf (buffer-live-p buf))
       (with-current-buffer buf
         (let ((doc (copilot--generate-doc)))
@@ -223,10 +232,7 @@ CALLBACK is called with the response containing conversationId and turnId."
           (setq copilot-chat--current-turn-id nil)
           (setq copilot-chat--streaming-p nil)
           (setq copilot-chat--follow-up nil)
-          ;; Clean up any active tokens for this buffer
-          (setq copilot-chat--active-buffers
-                (cl-remove-if (lambda (entry) (eq (cdr entry) chat-buf))
-                              copilot-chat--active-buffers)))))))
+          (copilot-chat--remove-active-tokens chat-buf))))))
 
 ;;
 ;; UI helpers

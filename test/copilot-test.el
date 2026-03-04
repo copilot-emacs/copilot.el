@@ -669,7 +669,15 @@
           (expect (plist-get copilot--status :kind) :to-equal "Warning")
           (expect (plist-get copilot--status :busy) :to-equal nil)
           (expect (plist-get copilot--status :message) :to-equal "something")
-          (expect 'force-mode-line-update :to-have-been-called-with t)))))
+          (expect 'force-mode-line-update :to-have-been-called-with t))))
+
+    (it "normalizes :json-false to nil for busy flag"
+      (let ((copilot--status nil))
+        (spy-on 'force-mode-line-update)
+        (let ((handlers (gethash 'didChangeStatus copilot--notification-handlers)))
+          (funcall (car handlers)
+                   '(:kind "Normal" :busy :json-false :message nil))
+          (expect (plist-get copilot--status :busy) :to-equal nil)))))
 
   ;;
   ;; window/showMessageRequest handler

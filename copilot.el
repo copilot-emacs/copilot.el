@@ -1071,7 +1071,7 @@ Each request METHOD can have only one HANDLER."
  'didChangeStatus
  (lambda (msg)
    (copilot--dbind (kind busy message) msg
-     (setq copilot--status (list :kind kind :busy busy :message message))
+     (setq copilot--status (list :kind kind :busy (eq busy t) :message message))
      (force-mode-line-update t))))
 
 (copilot-on-request

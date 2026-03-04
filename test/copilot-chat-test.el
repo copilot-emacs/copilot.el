@@ -225,6 +225,28 @@
               (expect (plist-get doc :languageId) :to-equal "emacs-lisp")))))))
 
   ;;
+  ;; Inline error display
+  ;;
+
+  (describe "copilot-chat--insert-error"
+    (it "inserts error message in chat buffer"
+      (let ((buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode))
+              (copilot-chat--insert-error "Something went wrong")
+              (with-current-buffer buf
+                (expect (buffer-string) :to-match "\\[Error: Something went wrong\\]")))
+          (kill-buffer buf))))
+
+    (it "does nothing when no chat buffer exists"
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name))
+      ;; Should not error
+      (copilot-chat--insert-error "test error")))
+
+  ;;
   ;; Insert prompt
   ;;
 

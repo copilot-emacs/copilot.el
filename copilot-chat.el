@@ -52,6 +52,11 @@ When nil, the server picks the default model."
   :group 'copilot-chat
   :package-version '(copilot . "0.5"))
 
+(defface copilot-chat-error-face
+  '((t :inherit error))
+  "Face for error messages in the chat buffer."
+  :group 'copilot-chat)
+
 (defface copilot-chat-follow-up-face
   '((t :inherit font-lock-comment-face :slant italic))
   "Face for follow-up suggestions in the chat buffer."
@@ -103,6 +108,22 @@ When nil, the server picks the default model."
         (cl-remove-if (lambda (entry) (eq (cdr entry) buf))
                       copilot-chat--active-buffers)))
 
+(defun copilot-chat--end-streaming ()
+  "Reset streaming state in the current chat buffer."
+  (setq copilot-chat--streaming-p nil))
+
+(defun copilot-chat--handle-request-error (err label)
+  "Handle error ERR from a chat request identified by LABEL.
+Resets streaming state, displays the error in the chat buffer,
+and cleans up active tokens."
+  (copilot--log 'error "Chat %s failed: %S" label err)
+  (when-let* ((buf (get-buffer copilot-chat--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (copilot-chat--end-streaming)
+        (copilot-chat--remove-active-tokens buf))))
+  (copilot-chat--insert-error (format "%s" err)))
+
 ;;
 ;; Progress notification handler
 ;;
@@ -125,7 +146,7 @@ When nil, the server picks the default model."
                   (insert reply))
                 (copilot-chat--scroll-to-bottom)))
              ((equal kind "end")
-              (setq copilot-chat--streaming-p nil)
+              (copilot-chat--end-streaming)
               (when-let* ((result (plist-get value :result)))
                 (setq copilot-chat--follow-up (plist-get result :followUp)))
               (let ((inhibit-read-only t))
@@ -171,6 +192,16 @@ Return editor context for the requested skill."
           (plist-put doc :source (copilot--get-source))
           doc)))))
 
+(defun copilot-chat--insert-error (error-msg)
+  "Insert ERROR-MSG into the chat buffer with error styling."
+  (when-let* ((buf (get-buffer copilot-chat--buffer-name)))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (goto-char (point-max))
+        (insert (propertize (format "\n[Error: %s]\n\n" error-msg)
+                            'face 'copilot-chat-error-face))
+        (copilot-chat--scroll-to-bottom)))))
+
 ;;
 ;; Protocol methods
 ;;
@@ -197,9 +228,7 @@ CALLBACK is called with the response containing conversationId and turnId."
         (list :model copilot-chat-model)))
      :success-fn callback
      :error-fn (lambda (err)
-                 (copilot--log 'error "Chat create failed: %S" err)
-                 (with-current-buffer (get-buffer copilot-chat--buffer-name)
-                   (setq copilot-chat--streaming-p nil))))))
+                 (copilot-chat--handle-request-error err "create")))))
 
 (defun copilot-chat--send-turn (message)
   "Send a follow-up MESSAGE in the current conversation."
@@ -224,10 +253,7 @@ CALLBACK is called with the response containing conversationId and turnId."
                            (setq copilot-chat--current-turn-id
                                  (plist-get result :turnId)))))
          :error-fn (lambda (err)
-                     (copilot--log 'error "Chat turn failed: %S" err)
-                     (when (buffer-live-p chat-buf)
-                       (with-current-buffer chat-buf
-                         (setq copilot-chat--streaming-p nil)))))))))
+                     (copilot-chat--handle-request-error err "turn")))))))
 
 (defun copilot-chat--destroy ()
   "Destroy the current conversation."
@@ -241,8 +267,8 @@ CALLBACK is called with the response containing conversationId and turnId."
              (list :conversationId copilot-chat--conversation-id)))
           (setq copilot-chat--conversation-id nil)
           (setq copilot-chat--current-turn-id nil)
-          (setq copilot-chat--streaming-p nil)
           (setq copilot-chat--follow-up nil)
+          (copilot-chat--end-streaming)
           (copilot-chat--remove-active-tokens chat-buf))))))
 
 ;;

@@ -317,17 +317,14 @@ CALLBACK is called with the response containing conversationId and turnId."
     (define-key map (kbd "C-c RET") #'copilot-chat-send)
     (define-key map (kbd "C-c C-c") #'copilot-chat-send)
     (define-key map (kbd "C-c C-k") #'copilot-chat-stop)
+    (define-key map (kbd "q") #'quit-window)
     map)
   "Keymap for `copilot-chat-mode'.")
 
 (defconst copilot-chat--font-lock-keywords
   `(("^\\(You:\\)" 1 'bold)
-    ("^\\(Copilot:\\)" 1 'bold)
-    ("^\\(##+ .*\\)" 1 'font-lock-keyword-face)
-    ("`\\([^`\n]+\\)`" 1 'font-lock-constant-face)
-    ("\\*\\*\\([^*\n]+\\)\\*\\*" 1 'bold)
-    ("^```.*$" 0 'font-lock-comment-face))
-  "Font-lock keywords for `copilot-chat-mode'.")
+    ("^\\(Copilot:\\)" 1 'bold))
+  "Extra font-lock keywords added on top of the parent mode's highlighting.")
 
 (defun copilot-chat--mode-line ()
   "Return the mode-line lighter for `copilot-chat-mode'."
@@ -335,14 +332,31 @@ CALLBACK is called with the response containing conversationId and turnId."
       " Copilot-Chat[Streaming]"
     " Copilot-Chat"))
 
-(define-derived-mode copilot-chat-mode special-mode "Copilot-Chat"
-  "Major mode for Copilot Chat.
+(declare-function gfm-mode "ext:markdown-mode" ())
 
-\\{copilot-chat-mode-map}"
-  (setq-local font-lock-defaults '(copilot-chat--font-lock-keywords t))
+(defun copilot-chat--setup-mode ()
+  "Set up font-lock, mode-line, and visual-line for `copilot-chat-mode'.
+When `markdown-mode' is available, enable GFM font-lock for full
+markdown rendering; otherwise use basic highlighting."
+  (when (require 'markdown-mode nil t)
+    (setq-local markdown-fontify-code-blocks-natively t)
+    (setq-local font-lock-defaults
+                (with-temp-buffer
+                  (gfm-mode)
+                  font-lock-defaults))
+    (font-lock-flush))
+  (font-lock-add-keywords nil copilot-chat--font-lock-keywords t)
   (setq mode-name '(:eval (copilot-chat--mode-line)))
   (visual-line-mode 1)
   (setq word-wrap t))
+
+(define-derived-mode copilot-chat-mode special-mode "Copilot-Chat"
+  "Major mode for Copilot Chat.
+When `markdown-mode' is installed, the buffer gets full GFM
+rendering; otherwise basic font-lock is used.
+
+\\{copilot-chat-mode-map}"
+  (copilot-chat--setup-mode))
 
 ;;
 ;; Interactive commands

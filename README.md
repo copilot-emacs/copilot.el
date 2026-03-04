@@ -234,6 +234,10 @@ Key bindings in the `*copilot-chat*` buffer:
 Customization:
 - **`copilot-chat-model`** — model to use for chat (default `nil`, meaning server default)
 
+> [!TIP]
+>
+> Install [`markdown-mode`](https://github.com/jrblevin/markdown-mode) for rich markdown rendering (headings, code blocks, emphasis, etc.) in the chat buffer. Without it, only basic highlighting is used.
+
 For a more feature-rich chat experience, take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el).
 
 > [!WARNING]

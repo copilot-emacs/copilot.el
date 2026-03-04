@@ -762,6 +762,23 @@
                 (expect (plist-get result :success) :to-equal t)))
           (delete-file temp-file))))
 
+    (it "does not treat external :json-false as external"
+      (let ((temp-file (make-temp-file "copilot-showdoc")))
+        (unwind-protect
+            (progn
+              (spy-on 'browse-url)
+              (spy-on 'find-file)
+              (let* ((handler (gethash 'window/showDocument
+                                        copilot--request-handlers))
+                     (uri (concat "file://" temp-file))
+                     (result (funcall handler
+                                      (list :uri uri :external :json-false
+                                            :takeFocus t))))
+                (expect 'browse-url :not :to-have-been-called)
+                (expect 'find-file :to-have-been-called)
+                (expect (plist-get result :success) :to-equal t)))
+          (delete-file temp-file))))
+
     (it "opens external URIs with browse-url"
       (spy-on 'browse-url)
       (let* ((handler (gethash 'window/showDocument

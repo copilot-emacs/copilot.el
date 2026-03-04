@@ -1098,7 +1098,7 @@ Each request METHOD can have only one HANDLER."
        (copilot--dbind (uri external takeFocus) msg
          (let ((focus (not (eq takeFocus :json-false))))
            (cond
-            ((or external (string-match-p "\\`https?://" uri))
+            ((or (eq external t) (string-match-p "\\`https?://" uri))
              (browse-url uri))
             ((string-prefix-p "file://" uri)
              (let* ((path (url-unhex-string

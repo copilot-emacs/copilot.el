@@ -229,7 +229,8 @@ M-x copilot-chat-send-region
 
 Key bindings in the `*copilot-chat*` buffer:
 - **C-c RET** or **C-c C-c** — send a follow-up message
-- **C-c C-k** — reset the conversation
+- **C-c C-k** — cancel streaming, or reset if idle
+- **q** — quit the chat window
 
 Customization:
 - **`copilot-chat-model`** — model to use for chat (default `nil`, meaning server default)
@@ -394,6 +395,7 @@ For example:
 | `copilot-chat` | Open Copilot Chat and send a message |
 | `copilot-chat-send` | Send a follow-up message in the current chat |
 | `copilot-chat-send-region` | Send the selected region as context with an optional prompt |
+| `copilot-chat-stop` | Cancel streaming, or reset the conversation if idle |
 | `copilot-chat-reset` | Destroy the current conversation and clear the chat buffer |
 | **Next Edit Suggestions** | |
 | `copilot-nes-mode` | Toggle NES in the current buffer |

@@ -234,7 +234,13 @@ CALLBACK is called with the response containing conversationId and turnId."
                                        :allSkills t)
                    :source "panel")
              (when copilot-chat-model
-               (list :model copilot-chat-model)))
+               (list :model copilot-chat-model))
+             (list :workspaceFolders
+                   (vconcat
+                    (when-let* ((root (copilot--workspace-root)))
+                      (list (list :uri (concat "file://" root)
+                                  :name (file-name-nondirectory
+                                         (directory-file-name root))))))))
             :success-fn callback
             :error-fn (lambda (err)
                         (copilot-chat--handle-request-error err "create")))))

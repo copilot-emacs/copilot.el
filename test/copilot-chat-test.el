@@ -129,6 +129,44 @@
           (kill-buffer buf)))))
 
   ;;
+  ;; Follow-up display
+  ;;
+
+  (describe "follow-up display in progress handler"
+    (it "inserts follow-up text on end when present"
+      (let ((buf (get-buffer-create "*copilot-chat-test-followup*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p t))
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "end"
+                                    :result (list :followUp "Try asking about X"))))
+                (with-current-buffer buf
+                  (expect (buffer-string) :to-match "Follow-up: Try asking about X"))))
+          (kill-buffer buf))))
+
+    (it "does not insert follow-up when nil"
+      (let ((buf (get-buffer-create "*copilot-chat-test-no-followup*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p t))
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "end")))
+                (with-current-buffer buf
+                  (expect (buffer-string) :not :to-match "Follow-up"))))
+          (kill-buffer buf)))))
+
+  ;;
   ;; Context handler
   ;;
 

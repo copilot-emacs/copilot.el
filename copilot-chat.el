@@ -52,6 +52,11 @@ When nil, the server picks the default model."
   :group 'copilot-chat
   :package-version '(copilot . "0.5"))
 
+(defface copilot-chat-follow-up-face
+  '((t :inherit font-lock-comment-face :slant italic))
+  "Face for follow-up suggestions in the chat buffer."
+  :group 'copilot-chat)
+
 ;;
 ;; Buffer-local state (in *copilot-chat* buffer)
 ;;
@@ -125,7 +130,13 @@ When nil, the server picks the default model."
                 (setq copilot-chat--follow-up (plist-get result :followUp)))
               (let ((inhibit-read-only t))
                 (goto-char (point-max))
-                (insert "\n\n"))
+                (insert "\n\n")
+                (when (and copilot-chat--follow-up
+                           (stringp copilot-chat--follow-up)
+                           (not (string-empty-p copilot-chat--follow-up)))
+                  (insert (propertize
+                           (format "Follow-up: %s\n\n" copilot-chat--follow-up)
+                           'face 'copilot-chat-follow-up-face))))
               (copilot-chat--scroll-to-bottom)
               (setq copilot-chat--active-buffers
                     (assoc-delete-all token copilot-chat--active-buffers))))))))))

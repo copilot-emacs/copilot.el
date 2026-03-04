@@ -35,6 +35,10 @@
 
 (require 'copilot)
 
+(declare-function flymake-diagnostics "flymake")
+(declare-function flymake-diagnostic-beg "flymake")
+(declare-function flymake-diagnostic-text "flymake")
+
 ;;
 ;; Customization
 ;;
@@ -51,6 +55,23 @@ When nil, the server picks the default model."
                  (string :tag "Model ID"))
   :group 'copilot-chat
   :package-version '(copilot . "0.5"))
+
+(defcustom copilot-chat-use-agent-mode nil
+  "When non-nil, use Agent mode for Copilot Chat conversations.
+Agent mode allows Copilot to execute tools such as shell commands
+and file edits."
+  :type 'boolean
+  :group 'copilot-chat)
+
+(defcustom copilot-chat-auto-approve-tools '("get_errors" "fetch_web_page")
+  "Tools that skip confirmation and execute automatically."
+  :type '(repeat string)
+  :group 'copilot-chat)
+
+(defface copilot-chat-tool-face
+  '((t :inherit font-lock-preprocessor-face))
+  "Face for tool invocation lines in the chat buffer."
+  :group 'copilot-chat)
 
 ;;
 ;; Buffer-local state (in *copilot-chat* buffer)
@@ -138,6 +159,148 @@ Return editor context for the requested skill."
 (copilot-on-request 'conversation/context #'copilot-chat--handle-context)
 
 ;;
+;; Tool invocation handlers
+;;
+
+(defun copilot-chat--insert-tool-status (name detail)
+  "Insert a tool status line for tool NAME with DETAIL in the chat buffer."
+  (when-let* ((buf (get-buffer copilot-chat--buffer-name)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (let ((inhibit-read-only t))
+          (goto-char (point-max))
+          (insert (propertize (format "[Tool: %s] %s\n" name detail)
+                              'face 'copilot-chat-tool-face))
+          (copilot-chat--scroll-to-bottom))))))
+
+(defun copilot-chat--handle-tool-confirmation (msg)
+  "Handle `conversation/invokeClientToolConfirmation' request MSG.
+Return \"Accept\" or \"Dismiss\" based on user confirmation."
+  (let ((name (plist-get msg :name))
+        (input (plist-get msg :input)))
+    (if (member name copilot-chat-auto-approve-tools)
+        "Accept"
+      (let ((approved (yes-or-no-p
+                       (format "Copilot wants to run tool '%s' with input: %S.  Allow? "
+                               name input))))
+        (if approved "Accept" "Dismiss")))))
+
+(copilot-on-request 'conversation/invokeClientToolConfirmation
+                    #'copilot-chat--handle-tool-confirmation)
+
+(defun copilot-chat--tool-result (status value)
+  "Build a LanguageModelToolResult with STATUS and text VALUE."
+  (list :status status
+        :content (vector (list :value value))))
+
+(defun copilot-chat--execute-run-in-terminal (input)
+  "Execute run_in_terminal tool with INPUT."
+  (let ((command (plist-get input :command)))
+    (copilot-chat--insert-tool-status "run_in_terminal" (format "Running: %s" command))
+    (condition-case err
+        (let ((output (shell-command-to-string command)))
+          (copilot-chat--insert-tool-status "run_in_terminal" "Done.")
+          (copilot-chat--tool-result "success" output))
+      (error
+       (copilot-chat--tool-result "error" (error-message-string err))))))
+
+(defun copilot-chat--execute-insert-edit (input)
+  "Execute insert_edit_into_file tool with INPUT."
+  (let ((file-path (plist-get input :filePath))
+        (code (plist-get input :code)))
+    (copilot-chat--insert-tool-status "insert_edit_into_file"
+                                      (format "Editing: %s" file-path))
+    (condition-case err
+        (let ((buf (find-file-noselect file-path)))
+          (with-current-buffer buf
+            (erase-buffer)
+            (insert code)
+            (save-buffer))
+          (copilot-chat--tool-result "success"
+                                    (format "File %s updated." file-path)))
+      (error
+       (copilot-chat--tool-result "error" (error-message-string err))))))
+
+(defun copilot-chat--execute-create-file (input)
+  "Execute create_file tool with INPUT."
+  (let ((file-path (plist-get input :filePath))
+        (content (plist-get input :content)))
+    (copilot-chat--insert-tool-status "create_file"
+                                      (format "Creating: %s" file-path))
+    (condition-case err
+        (progn
+          (let ((dir (file-name-directory file-path)))
+            (when dir (make-directory dir t)))
+          (with-temp-file file-path
+            (insert content))
+          (copilot-chat--tool-result "success"
+                                    (format "File %s created." file-path)))
+      (error
+       (copilot-chat--tool-result "error" (error-message-string err))))))
+
+(defun copilot-chat--execute-get-errors (input)
+  "Execute get_errors tool with INPUT."
+  (let ((file-paths (plist-get input :filePaths))
+        (results '()))
+    (copilot-chat--insert-tool-status "get_errors" "Collecting diagnostics...")
+    (dolist (path (append file-paths nil))
+      (let ((buf (find-buffer-visiting path)))
+        (if (and buf (buffer-live-p buf))
+            (with-current-buffer buf
+              (if (bound-and-true-p flymake-mode)
+                  (let ((diags (flymake-diagnostics)))
+                    (if diags
+                        (dolist (diag diags)
+                          (push (format "%s:%d: %s"
+                                        path
+                                        (line-number-at-pos
+                                         (flymake-diagnostic-beg diag))
+                                        (flymake-diagnostic-text diag))
+                                results))
+                      (push (format "%s: no errors" path) results)))
+                (push (format "%s: no diagnostics available" path) results)))
+          (push (format "%s: not open in editor" path) results))))
+    (copilot-chat--tool-result "success" (string-join (nreverse results) "\n"))))
+
+(defun copilot-chat--execute-fetch-web-page (input)
+  "Execute fetch_web_page tool with INPUT."
+  (let ((urls (plist-get input :urls))
+        (results '()))
+    (copilot-chat--insert-tool-status "fetch_web_page" "Fetching...")
+    (dolist (url (append urls nil))
+      (condition-case err
+          (let ((buf (url-retrieve-synchronously url t nil 30)))
+            (if buf
+                (with-current-buffer buf
+                  (goto-char (point-min))
+                  (when (re-search-forward "\n\n" nil t)
+                    (delete-region (point-min) (point)))
+                  (push (format "=== %s ===\n%s" url (buffer-string)) results)
+                  (kill-buffer))
+              (push (format "=== %s ===\nFailed to fetch" url) results)))
+        (error
+         (push (format "=== %s ===\nError: %s" url (error-message-string err))
+               results))))
+    (copilot-chat--tool-result "success" (string-join (nreverse results) "\n\n"))))
+
+(defun copilot-chat--handle-tool-invocation (msg)
+  "Handle `conversation/invokeClientTool' request MSG.
+Dispatch to the appropriate tool and return a LanguageModelToolResult."
+  (let ((name (plist-get msg :name))
+        (input (plist-get msg :input)))
+    (pcase name
+      ("run_in_terminal" (copilot-chat--execute-run-in-terminal input))
+      ("insert_edit_into_file" (copilot-chat--execute-insert-edit input))
+      ("create_file" (copilot-chat--execute-create-file input))
+      ("get_errors" (copilot-chat--execute-get-errors input))
+      ("fetch_web_page" (copilot-chat--execute-fetch-web-page input))
+      (_ (copilot-chat--tool-result "error"
+                                    (format "Unknown tool: %s" name))))))
+
+(copilot-on-request 'conversation/invokeClientTool
+                    #'copilot-chat--handle-tool-invocation)
+
+;;
 ;; Context doc generation
 ;;
 
@@ -150,6 +313,55 @@ Return editor context for the requested skill."
         (let ((doc (copilot--generate-doc)))
           (plist-put doc :source (copilot--get-source))
           doc)))))
+
+;;
+;; Tool registration
+;;
+
+(defun copilot-chat--tool-definitions ()
+  "Return the list of client tool definitions for agent mode."
+  (vector
+   (list :name "run_in_terminal"
+         :description "Run a shell command in the terminal."
+         :inputSchema (list :type "object"
+                            :properties (list :command (list :type "string")
+                                              :explanation (list :type "string"))
+                            :required ["command"]))
+   (list :name "insert_edit_into_file"
+         :description "Insert or edit code in a file."
+         :inputSchema (list :type "object"
+                            :properties (list :filePath (list :type "string")
+                                              :code (list :type "string")
+                                              :explanation (list :type "string"))
+                            :required ["filePath" "code"]))
+   (list :name "create_file"
+         :description "Create a new file with the given content."
+         :inputSchema (list :type "object"
+                            :properties (list :filePath (list :type "string")
+                                              :content (list :type "string"))
+                            :required ["filePath" "content"]))
+   (list :name "get_errors"
+         :description "Get diagnostics/errors for the given files."
+         :inputSchema (list :type "object"
+                            :properties (list :filePaths (list :type "array"
+                                                               :items (list :type "string")))
+                            :required ["filePaths"]))
+   (list :name "fetch_web_page"
+         :description "Fetch the content of web pages."
+         :inputSchema (list :type "object"
+                            :properties (list :urls (list :type "array"
+                                                          :items (list :type "string")))
+                            :required ["urls"]))))
+
+(defun copilot-chat--register-tools ()
+  "Register client tools with the server for agent mode."
+  (copilot--async-request
+   'conversation/registerTools
+   (list :tools (copilot-chat--tool-definitions))
+   :success-fn (lambda (_result)
+                 (copilot--log 'info "Agent tools registered"))
+   :error-fn (lambda (err)
+               (copilot--log 'error "Tool registration failed: %S" err))))
 
 ;;
 ;; Protocol methods
@@ -174,8 +386,20 @@ CALLBACK is called with the response containing conversationId and turnId."
                                 :allSkills t)
             :source "panel")
       (when copilot-chat-model
-        (list :model copilot-chat-model)))
-     :success-fn callback
+        (list :model copilot-chat-model))
+      (when copilot-chat-use-agent-mode
+        (list :chatMode "Agent"
+              :needToolCallConfirmation t
+              :workspaceFolders
+              (vconcat
+               (when-let* ((root (copilot--workspace-root)))
+                 (list (list :uri (concat "file://" root)
+                             :name (file-name-nondirectory
+                                    (directory-file-name root)))))))))
+     :success-fn (lambda (result)
+                   (when copilot-chat-use-agent-mode
+                     (copilot-chat--register-tools))
+                   (funcall callback result))
      :error-fn (lambda (err)
                  (copilot--log 'error "Chat create failed: %S" err)
                  (with-current-buffer (get-buffer copilot-chat--buffer-name)

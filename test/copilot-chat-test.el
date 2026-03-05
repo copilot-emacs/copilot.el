@@ -53,6 +53,28 @@
   ;; Progress handler
   ;;
 
+  (describe "copilot-chat--extract-reply"
+    (it "extracts reply from flat :reply field"
+      (expect (copilot-chat--extract-reply '(:reply "hello"))
+              :to-equal "hello"))
+
+    (it "extracts reply from :editAgentRounds"
+      (expect (copilot-chat--extract-reply
+               (list :editAgentRounds
+                     (vector (list :roundId 1 :reply "hello from agent"))))
+              :to-equal "hello from agent"))
+
+    (it "prefers flat :reply over :editAgentRounds"
+      (expect (copilot-chat--extract-reply
+               (list :reply "flat"
+                     :editAgentRounds
+                     (vector (list :roundId 1 :reply "nested"))))
+              :to-equal "flat"))
+
+    (it "returns nil when neither field is present"
+      (expect (copilot-chat--extract-reply '(:kind "report"))
+              :not :to-be-truthy)))
+
   (describe "copilot-chat--handle-progress"
     (it "ignores tokens not in active-buffers"
       (let ((copilot-chat--active-buffers nil))
@@ -93,6 +115,25 @@
                        :value (list :kind "report" :reply "world")))
                 (with-current-buffer buf
                   (expect (buffer-string) :to-match "Hello world"))))
+          (kill-buffer buf))))
+
+    (it "appends reply from editAgentRounds on report"
+      (let ((buf (get-buffer-create "*copilot-chat-test-agent*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p t))
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "report"
+                                    :editAgentRounds
+                                    (vector (list :roundId 1
+                                                  :reply "agent reply")))))
+                (with-current-buffer buf
+                  (expect (buffer-string) :to-match "agent reply"))))
           (kill-buffer buf))))
 
     (it "clears streaming-p on end"

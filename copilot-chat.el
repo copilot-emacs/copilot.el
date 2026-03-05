@@ -135,6 +135,15 @@ and cleans up active tokens."
 ;; Progress notification handler
 ;;
 
+(defun copilot-chat--extract-reply (value)
+  "Extract the reply text from a progress report VALUE.
+The server may provide the reply directly as `:reply' (older format)
+or nested inside `:editAgentRounds' (newer format)."
+  (or (plist-get value :reply)
+      (when-let* ((rounds (plist-get value :editAgentRounds))
+                  (last-round (aref rounds (1- (length rounds)))))
+        (plist-get last-round :reply))))
+
 (defun copilot-chat--handle-progress (msg)
   "Handle `$/progress' notification MSG for chat streaming."
   (copilot--dbind (token value) msg
@@ -148,7 +157,7 @@ and cleans up active tokens."
               (setq copilot-chat--streaming-p t)
               (force-mode-line-update))
              ((equal kind "report")
-              (when-let* ((reply (plist-get value :reply)))
+              (when-let* ((reply (copilot-chat--extract-reply value)))
                 (let ((inhibit-read-only t))
                   (goto-char (point-max))
                   (insert reply))

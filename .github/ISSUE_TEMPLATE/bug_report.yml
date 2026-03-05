@@ -1,0 +1,86 @@
+name: Bug Report
+description: Report a bug in copilot.el
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to reproduce the problem.
+      placeholder: |
+        1. Open a file of type ...
+        2. Trigger completion with ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: input
+    id: emacs-version
+    attributes:
+      label: Emacs version
+      description: Output of `M-x emacs-version`.
+      placeholder: "GNU Emacs 30.1"
+    validations:
+      required: true
+
+  - type: input
+    id: copilot-version
+    attributes:
+      label: copilot.el version
+      description: Commit hash or release tag.
+      placeholder: "fdea2fc or v0.20.0"
+    validations:
+      required: true
+
+  - type: input
+    id: server-version
+    attributes:
+      label: Copilot server version
+      description: Shown by `M-x copilot-diagnose`.
+      placeholder: "1.250.0"
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      description: Output of `node --version`.
+      placeholder: "v20.11.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-logs
+    attributes:
+      label: Error messages / logs
+      description: >
+        Relevant output from `*Messages*`, `*copilot stderr*`,
+        or `*copilot-language-server-log*` buffers.
+      render: text
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Anything else that might be relevant (config snippets, screenshots, etc.).

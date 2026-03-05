@@ -207,7 +207,7 @@ Run `M-x copilot-reinstall-server' to upgrade."
 Only display the suggestion when the document version matches
 EXPECTED-VERSION and the URI matches EXPECTED-URI."
   (copilot--dbind (edits) response
-    (when (and edits (> (length edits) 0))
+    (when (and edits (sequencep edits) (> (length edits) 0))
       (let* ((edit (if (vectorp edits) (aref edits 0) (car edits))))
         ;; Validate version matches
         (copilot--dbind (textDocument) edit

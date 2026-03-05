@@ -138,11 +138,15 @@ and cleans up active tokens."
 (defun copilot-chat--extract-reply (value)
   "Extract the reply text from a progress report VALUE.
 The server may provide the reply directly as `:reply' (older format)
-or nested inside `:editAgentRounds' (newer format)."
-  (or (plist-get value :reply)
-      (when-let* ((rounds (plist-get value :editAgentRounds))
-                  (last-round (aref rounds (1- (length rounds)))))
-        (plist-get last-round :reply))))
+or nested inside `:editAgentRounds' (newer format).
+Returns a string or nil."
+  (let ((reply (or (plist-get value :reply)
+                   (when-let* ((rounds (plist-get value :editAgentRounds))
+                               ((vectorp rounds))
+                               ((> (length rounds) 0))
+                               (last-round (aref rounds (1- (length rounds)))))
+                     (plist-get last-round :reply)))))
+    (and (stringp reply) reply)))
 
 (defun copilot-chat--handle-progress (msg)
   "Handle `$/progress' notification MSG for chat streaming."
@@ -164,7 +168,8 @@ or nested inside `:editAgentRounds' (newer format)."
                 (copilot-chat--scroll-to-bottom)))
              ((equal kind "end")
               (copilot-chat--end-streaming)
-              (when-let* ((result (plist-get value :result)))
+              (when-let* ((result (plist-get value :result))
+                          ((listp result)))
                 (setq copilot-chat--follow-up (plist-get result :followUp)))
               (let ((inhibit-read-only t))
                 (goto-char (point-max))

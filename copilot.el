@@ -286,8 +286,8 @@ recently updated session."
             (message (plist-get latest :message))
             (percentage (plist-get latest :percentage)))
         (cond
-         (message (format " [%s: %s]" title message))
-         (percentage (format " [%s: %d%%]" title percentage))
+         ((stringp message) (format " [%s: %s]" title message))
+         ((numberp percentage) (format " [%s: %d%%]" title percentage))
          (t (format " [%s]" title)))))))
 
 (defun copilot--status-lighter ()
@@ -1078,7 +1078,7 @@ Each request METHOD can have only one HANDLER."
  'window/showMessageRequest
  (lambda (msg)
    (copilot--dbind (type message actions) msg
-     (if actions
+     (if (and actions (vectorp actions) (> (length actions) 0))
          (let* ((titles (mapcar (lambda (a) (plist-get a :title))
                                 (append actions nil)))
                 (chosen (completing-read

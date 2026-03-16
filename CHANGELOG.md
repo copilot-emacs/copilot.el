@@ -4,7 +4,7 @@
 
 ### New Features
 
-- Add Copilot Chat support (`copilot-chat`, `copilot-chat-send`, `copilot-chat-send-region`, `copilot-chat-reset`) using the `conversation/*` LSP methods. ([#446](https://github.com/copilot-emacs/copilot.el/pull/446))
+- Add Copilot Chat support (`copilot-interactive`, `copilot-interactive-send`, `copilot-interactive-send-region`, `copilot-interactive-reset`) using the `conversation/*` LSP methods. ([#446](https://github.com/copilot-emacs/copilot.el/pull/446))
 - Add Next Edit Suggestions (`copilot-nes-mode`) via `textDocument/copilotInlineEdit`. NES predicts edits anywhere in the file based on recent editing patterns. ([#447](https://github.com/copilot-emacs/copilot.el/pull/447))
 - Add Chat, NES, Panel Complete, Clear Overlay, Select Completion Model, and Reinstall Server entries to the Copilot mode menu.
 

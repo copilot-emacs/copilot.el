@@ -17,11 +17,11 @@ The package is split into four files, each with a clear responsibility:
 | File | Role |
 |---|---|
 | `copilot.el` | Core — server lifecycle, document sync, inline completions, authentication, handler registries |
-| `copilot-chat.el` | Chat UI via `conversation/*` JSON-RPC methods |
+| `copilot-interactive.el` | Chat UI via `conversation/*` JSON-RPC methods |
 | `copilot-nes.el` | Next Edit Suggestions via `textDocument/copilotInlineEdit` |
 | `copilot-balancer.el` | Lisp parentheses post-processor for completions |
 
-`copilot-chat.el` and `copilot-nes.el` depend on the core for the server
+`copilot-interactive.el` and `copilot-nes.el` depend on the core for the server
 connection and the handler registries, but they are otherwise self-contained
 modules that can be enabled or disabled independently. `copilot-balancer.el` is
 fully standalone — it uses only Emacs built-ins (`parse-partial-sexp`, syntax
@@ -156,7 +156,7 @@ code) can use to react to server messages:
   notification method. Multiple handlers per method are allowed. Handlers
   receive the message params and return nothing.
 
-Both `copilot-chat.el` and `copilot-nes.el` use these registries to hook into
+Both `copilot-interactive.el` and `copilot-nes.el` use these registries to hook into
 the server's message stream without modifying the core dispatcher.
 
 Built-in handlers cover `window/showMessageRequest`,
@@ -168,13 +168,13 @@ Built-in handlers cover `window/showMessageRequest`,
 Chat and NES are self-contained modules that layer on top of the core's server
 connection and handler infrastructure.
 
-**Chat** (`copilot-chat.el`) manages conversations through three JSON-RPC
+**Chat** (`copilot-interactive.el`) manages conversations through three JSON-RPC
 methods: `conversation/create`, `conversation/turn`, and
 `conversation/destroy`. Responses stream in via `$/progress` notifications
 keyed by a work-done token. The module registers a `conversation/context`
 request handler so the server can pull editor context (current file, cursor
 position, source text) during a conversation. The chat UI lives in a dedicated
-`*copilot-chat*` buffer using a custom major mode.
+`*copilot-interactive*` buffer using a custom major mode.
 
 **Next Edit Suggestions** (`copilot-nes.el`) predicts edits based on recent
 editing history. It sends `textDocument/copilotInlineEdit` requests on an idle
@@ -185,5 +185,5 @@ anywhere in the file. Acceptance is a two-step process: the first TAB press
 jumps to the edit location, the second applies it.
 
 Both modules can be enabled or disabled independently via their respective minor
-modes (`copilot-chat` for ad-hoc use, `copilot-nes-mode` as a persistent minor
+modes (`copilot-interactive` for ad-hoc use, `copilot-nes-mode` as a persistent minor
 mode), and neither interferes with the core inline completion flow.

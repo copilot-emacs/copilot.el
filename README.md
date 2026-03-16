@@ -217,33 +217,29 @@ Alternatively, you can call `copilot-complete` manually and use `copilot-clear-o
 
 ### Chat
 
-`copilot-chat` opens an interactive chat with GitHub Copilot using the `conversation/*` LSP methods. The chat buffer streams responses in real time and automatically provides the current buffer as context.
+`copilot-interactive` opens an interactive chat with GitHub Copilot using the `conversation/*` LSP methods. The chat buffer streams responses in real time and automatically provides the current buffer as context.
 
 ```elisp
 ;; Start a chat (or send a follow-up if one is already open)
-M-x copilot-chat
+M-x copilot-interactive
 
 ;; Send selected code with an optional prompt
-M-x copilot-chat-send-region
+M-x copilot-interactive-send-region
 ```
 
-Key bindings in the `*copilot-chat*` buffer:
+Key bindings in the `*copilot-interactive*` buffer:
 - **C-c RET** or **C-c C-c** — send a follow-up message
 - **C-c C-k** — cancel streaming, or reset if idle
 - **q** — quit the chat window
 
 Customization:
-- **`copilot-chat-model`** — model to use for chat (default `nil`, meaning server default)
+- **`copilot-interactive-model`** — model to use for chat (default `nil`, meaning server default)
 
 > [!TIP]
 >
 > Install [`markdown-mode`](https://github.com/jrblevin/markdown-mode) for rich markdown rendering (headings, code blocks, emphasis, etc.) in the chat buffer. Without it, only basic highlighting is used.
 
 For a more feature-rich chat experience, take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el).
-
-> [!WARNING]
->
-> `copilot-chat.el` (the chep package) and `copilot.el` both provide an Emacs feature called `copilot-chat`, so they **cannot be installed at the same time**. Having both will cause autoload errors such as "failed to define function copilot-chat-display". If you want to use the chat built into `copilot.el`, make sure `chep/copilot-chat.el` is uninstalled, and vice versa.
 
 ### Next Edit Suggestions (NES)
 
@@ -392,11 +388,11 @@ For example:
 | `copilot-next-completion` | Cycle to the next completion |
 | `copilot-previous-completion` | Cycle to the previous completion |
 | **Chat** | |
-| `copilot-chat` | Open Copilot Chat and send a message |
-| `copilot-chat-send` | Send a follow-up message in the current chat |
-| `copilot-chat-send-region` | Send the selected region as context with an optional prompt |
-| `copilot-chat-stop` | Cancel streaming, or reset the conversation if idle |
-| `copilot-chat-reset` | Destroy the current conversation and clear the chat buffer |
+| `copilot-interactive` | Open Copilot Chat and send a message |
+| `copilot-interactive-send` | Send a follow-up message in the current chat |
+| `copilot-interactive-send-region` | Send the selected region as context with an optional prompt |
+| `copilot-interactive-stop` | Cancel streaming, or reset the conversation if idle |
+| `copilot-interactive-reset` | Destroy the current conversation and clear the chat buffer |
 | **Next Edit Suggestions** | |
 | `copilot-nes-mode` | Toggle NES in the current buffer |
 | `copilot-nes-accept` | Accept (or jump to) the current NES suggestion |

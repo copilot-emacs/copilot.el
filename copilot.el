@@ -1657,9 +1657,9 @@ Use this for custom bindings in `copilot-mode'.")
     ["Previous Completion" copilot-previous-completion]
     ["Panel Complete" copilot-panel-complete]
     "--"
-    ["Chat" copilot-chat]
-    ["Chat Send Region" copilot-chat-send-region]
-    ["Chat Reset" copilot-chat-reset]
+    ["Chat" copilot-interactive]
+    ["Chat Send Region" copilot-interactive-send-region]
+    ["Chat Reset" copilot-interactive-reset]
     "--"
     ["Toggle NES Mode" copilot-nes-mode]
     "--"

@@ -1558,14 +1558,14 @@ Copilot will show completions only if all predicates return t."
   :group 'copilot
   :package-version '(copilot . "0.1"))
 
-(defmacro copilot--satisfy-predicates (enable disable)
-  "Return t if satisfy all predicates in ENABLE and none in DISABLE."
-  `(and (cl-every (lambda (pred)
-                    (if (functionp pred) (funcall pred) t))
-                  ,enable)
-        (cl-notany (lambda (pred)
-                     (if (functionp pred) (funcall pred) nil))
-                   ,disable)))
+(defun copilot--satisfy-predicates (enable disable)
+  "Return t if all predicates in ENABLE return t and none in DISABLE do."
+  (and (cl-every (lambda (pred)
+                   (if (functionp pred) (funcall pred) t))
+                 enable)
+       (cl-notany (lambda (pred)
+                    (if (functionp pred) (funcall pred) nil))
+                  disable)))
 
 (defun copilot--pre-command ()
   "Handle `pre-command-hook' for Copilot.

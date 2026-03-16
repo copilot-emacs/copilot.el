@@ -2,22 +2,37 @@
 
 ## master (unreleased)
 
+## 0.5.0 (2026-03-16)
+
 ### New Features
 
 - Add Copilot Chat support (`copilot-chat`, `copilot-chat-send`, `copilot-chat-send-region`, `copilot-chat-reset`) using the `conversation/*` LSP methods. ([#446](https://github.com/copilot-emacs/copilot.el/pull/446))
 - Add Next Edit Suggestions (`copilot-nes-mode`) via `textDocument/copilotInlineEdit`. NES predicts edits anywhere in the file based on recent editing patterns. ([#447](https://github.com/copilot-emacs/copilot.el/pull/447))
+- Add `copilot-chat-stop` command to cancel in-flight streaming.
+- Show mode-line streaming status indicator for chat.
+- Display follow-up suggestions after chat responses.
+- Show errors inline in the chat buffer.
+- Use `markdown-mode` GFM font-lock in the chat buffer when available.
 - Add Chat, NES, Panel Complete, Clear Overlay, Select Completion Model, and Reinstall Server entries to the Copilot mode menu.
+- Add GitHub issue templates for bug reports and feature requests.
 
 ### Changes
 
 - Add a default error handler to `copilot--async-request` so async failures (e.g. cancelled completions) are logged to `*Messages*` instead of being silently swallowed.
 - Remove unused `copilot-server-log-level` defcustom (dead code — nothing read it).
 - Improve `copilot-log-max` docstring to explain the `*copilot events*` buffer.
+- Convert `copilot--satisfy-predicates` from macro to function for simplicity.
 
 ### Bug Fixes
 
 - Fix chat `conversation/create` sending `allSkills` as a string array instead of a boolean, which caused a schema validation error on `copilot-language-server` v1.436.0+. ([#452](https://github.com/copilot-emacs/copilot.el/issues/452))
 - Fix `copilot-complete` being immediately cancelled when called from wrapper commands (lambdas, user-defined functions) whose name doesn't start with `copilot-`. ([#453](https://github.com/copilot-emacs/copilot.el/issues/453))
+- Fix chat not displaying replies from newer server versions. ([#459](https://github.com/copilot-emacs/copilot.el/issues/459))
+- Fix `:json-false` treated as truthy for `external` in `window/showDocument` handler.
+- Normalize `:json-false` busy flag in `didChangeStatus` handler. ([#457](https://github.com/copilot-emacs/copilot.el/issues/457))
+- Guard against `:json-null` in server responses.
+- Clear `copilot--completion-initiated-p` flag in idle timer path to prevent stale state. ([#454](https://github.com/copilot-emacs/copilot.el/issues/454))
+- Suppress `copilot-max-char` warning when `copilot-max-char-warning-disable` is non-nil.
 
 ## 0.4.0 (2026-02-26)
 

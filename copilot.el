@@ -923,17 +923,18 @@ POS defaults to point.  Character offset is in UTF-16 code units."
   "Generate doc parameters for completion request."
   (save-restriction
     (widen)
-    (list :version copilot--doc-version
-          :tabSize (copilot--infer-indentation-offset)
-          ;; indentSize doesn't not appear to be used, but has been in this code
-          ;; base from the start. For now leave it as is.
-          :indentSize (copilot--infer-indentation-offset)
-          :insertSpaces (if indent-tabs-mode :json-false t)
-          :path (buffer-file-name)
-          :uri (copilot--get-uri)
-          :relativePath (copilot--get-relative-path)
-          :languageId (copilot--get-language-id)
-          :position (copilot--lsp-pos))))
+    (let ((indent (copilot--infer-indentation-offset)))
+      (list :version copilot--doc-version
+            :tabSize indent
+            ;; indentSize doesn't not appear to be used, but has been in this code
+            ;; base from the start. For now leave it as is.
+            :indentSize indent
+            :insertSpaces (if indent-tabs-mode :json-false t)
+            :path (buffer-file-name)
+            :uri (copilot--get-uri)
+            :relativePath (copilot--get-relative-path)
+            :languageId (copilot--get-language-id)
+            :position (copilot--lsp-pos)))))
 
 (defun copilot--inline-completion-params (trigger-kind)
   "Build parameters for textDocument/inlineCompletion.

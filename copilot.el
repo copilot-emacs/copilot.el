@@ -182,7 +182,7 @@ Set to nil to use completions from the server verbatim."
 The default value is the preferred version and ensures functionality.
 You may adjust this variable at your own risk."
   :type '(choice (const :tag "Latest" nil)
-                 (string :tag "Specific Version"))
+          (string :tag "Specific Version"))
   :group 'copilot
   :package-version '(copilot . "0.1"))
 
@@ -229,7 +229,7 @@ When nil, the server's default model is used.
 Use `M-x copilot-select-completion-model' to interactively choose
 from available models."
   :type '(choice (const :tag "Default" nil)
-                 (string :tag "Model ID"))
+          (string :tag "Model ID"))
   :group 'copilot
   :package-version '(copilot . "0.4"))
 
@@ -481,10 +481,10 @@ reject the request with a schema-validation error."
      (jsonrpc-notify copilot--connection ,@args)))
 
 (cl-defmacro copilot--async-request (method params &rest args
-                                    &key
-                                    (success-fn #'copilot--ignore-response)
-                                    (error-fn nil error-fn-supplied-p)
-                                    &allow-other-keys)
+                                            &key
+                                            (success-fn #'copilot--ignore-response)
+                                            (error-fn nil error-fn-supplied-p)
+                                            &allow-other-keys)
   "Send an asynchronous request to the copilot server.
 
 Arguments METHOD, PARAMS and ARGS are used in function `jsonrpc-async-request'.
@@ -1156,7 +1156,117 @@ Each request METHOD can have only one HANDLER."
      (copilot--log 'info "Synthesizing %d solutions..." solutionCountTarget)))
   (with-current-buffer (get-buffer-create "*copilot-panel*")
     (org-mode)
-    (erase-buffer)))
+    (erase-buffer)
+    (copilot--setup-panel-keybindings)))
+
+(defun copilot--setup-panel-keybindings ()
+  "Setup keybindings for the copilot panel buffer."
+  (local-set-key (kbd "C-c C-c") 'copilot-insert-suggestion-at-point)
+  (local-set-key (kbd "C-c C-y") 'copilot-copy-suggestion-at-point)
+  (local-set-key (kbd "C-c C-s") 'copilot-select-and-copy-suggestion)
+  (local-set-key (kbd "C-c C-g") 'copilot-kill-panel-buffer))
+
+(defun copilot-select-and-copy-suggestion ()
+  "Prompt user to select a suggestion from the panel and copy it."
+  (interactive)
+  (let ((solutions (copilot--get-all-solutions)))
+    (if solutions
+        (let* ((solution-titles (mapcar (lambda (s) (plist-get s :title)) solutions))
+               (selected-title (completing-read "Select a solution: " solution-titles nil t))
+               (selected-solution (cl-find selected-title solutions
+                                           :key (lambda (s) (plist-get s :title))
+                                           :test 'string=)))
+          (when selected-solution
+            (let ((solution-text (plist-get selected-solution :text)))
+              (kill-new solution-text)
+              (message "Solution copied to clipboard"))))
+      (message "No solutions found"))))
+
+(defun copilot-copy-suggestion-at-point ()
+  "Copy the suggestion at point from the copilot panel."
+  (interactive)
+  (let ((solution-text (copilot--get-current-solution-text)))
+    (when solution-text
+      (kill-new solution-text)
+      (message "Solution copied to clipboard"))))
+
+(defun copilot-insert-suggestion-at-point ()
+  "Insert the suggesetion at point from the copilot panel to the original buffer."
+  (interactive)
+  (let ((solution-text (copilot--get-current-solution-text)))
+    (when solution-text
+      (kill-new solution-text)
+      (other-window 1)  ; Switch to previous window (original buffer)
+      (yank)            ; Insert the solution
+      (message "Solution inserted and copied to clipboard"))))
+
+(defun copilot-kill-panel-buffer ()
+  "Kill the copilot panel buffer."
+  (interactive)
+  (kill-buffer-and-window))
+
+(defun copilot--get-all-solutions ()
+  "Extract all solutions from the copilot panel buffer."
+  (with-current-buffer "*copilot-panel*"
+    (save-excursion
+      (goto-char (point-min))
+      (let ((solutions '()))
+        (while (re-search-forward "^\\* Solution" nil t)
+          (let ((heading-start (match-beginning 0))
+                (solution-text (copilot--get-current-solution-text-at-pos (point))))
+            (when solution-text
+              (push (list :title (format "Solution at line %d" (line-number-at-pos heading-start))
+                          :text solution-text)
+                    solutions))))
+        (nreverse solutions)))))
+
+(defun copilot--get-current-solution-text-at-pos (pos)
+  "Extract the solution text from the org-mode entry at POS."
+  (save-excursion
+    (goto-char pos)
+    (when (not (org-at-heading-p))
+      (outline-previous-heading))
+    (when (org-at-heading-p)
+      (let ((start (point))
+            end)
+        (forward-line 1)
+        ;; Look for the beginning of a source block
+        (while (and (not (eobp))
+                    (not (looking-at "^#\\+BEGIN_SRC")))
+          (forward-line 1))
+        (when (looking-at "^#\\+BEGIN_SRC")
+          (forward-line 1)  ; Move past the BEGIN_SRC line
+          (setq start (point))
+          ;; Find the end of the source block
+          (while (and (not (eobp))
+                      (not (looking-at "^#\\+END_SRC")))
+            (forward-line 1))
+          (setq end (point))
+          (buffer-substring-no-properties start (line-beginning-position)))))))
+
+(defun copilot--get-current-solution-text ()
+  "Extract the solution text from the current org-mode entry."
+  (save-excursion
+    (when (not (org-at-heading-p))
+      (outline-previous-heading))
+    (when (org-at-heading-p)
+      (let ((start (point))
+            end
+            solution-content)
+        (forward-line 1)
+        ;; Look for the beginning of a source block
+        (while (and (not (eobp))
+                    (not (looking-at "^#\\+BEGIN_SRC")))
+          (forward-line 1))
+        (when (looking-at "^#\\+BEGIN_SRC")
+          (forward-line 1)  ; Move past the BEGIN_SRC line
+          (setq start (point))
+          ;; Find the end of the source block
+          (while (and (not (eobp))
+                      (not (looking-at "^#\\+END_SRC")))
+            (forward-line 1))
+          (setq end (point))
+          (buffer-substring-no-properties start (line-beginning-position)))))))
 
 ;;
 ;; UI

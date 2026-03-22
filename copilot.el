@@ -1161,10 +1161,10 @@ Each request METHOD can have only one HANDLER."
 
 (defvar copilot-panel-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-c") 'copilot-panel-insert-suggestion)
-    (define-key map (kbd "C-c C-y") 'copilot-panel-copy-suggestion)
-    (define-key map (kbd "C-c C-s") 'copilot-panel-select-suggestion)
-    (define-key map (kbd "C-c C-g") 'copilot-panel-kill)
+    (define-key map (kbd "C-c i") 'copilot-panel-insert-suggestion)
+    (define-key map (kbd "C-c y") 'copilot-panel-copy-suggestion)
+    (define-key map (kbd "C-c s") 'copilot-panel-select-suggestion)
+    (define-key map (kbd "C-c g") 'copilot-panel-kill)
     map)
   "Keymap for `copilot-panel-mode'.")
 
@@ -1274,24 +1274,26 @@ needs to run the command again to select a solution)."
   "Extract the solution text from the org-mode entry at POS."
   (save-excursion
     (goto-char pos)
-    (when (not (org-at-heading-p))
-      (outline-previous-heading))
-    (when (org-at-heading-p)
-      (let ((search-invisible t) ; Allow looking through folded text
-            start)
-        (forward-line 1)
-        ;; Look for the beginning of a source block
-        (while (and (not (eobp))
-                    (not (looking-at-p "^[ \t]*#\\+BEGIN_SRC")))
-          (forward-line 1))
-        (when (looking-at-p "^[ \t]*#\\+BEGIN_SRC")
+    (let ((heading-found (or (org-at-heading-p)
+                             (ignore-errors
+                               (outline-previous-heading)
+                               (org-at-heading-p)))))
+      (when heading-found
+        (let ((search-invisible t) ; Allow looking through folded text
+              start)
           (forward-line 1)
-          (setq start (point))
-          ;; Find the end of the source block
+          ;; Look for the beginning of a source block
           (while (and (not (eobp))
-                      (not (looking-at-p "^[ \t]*#\\+END_SRC")))
+                      (not (looking-at-p "^[ \t]*#\\+BEGIN_SRC")))
             (forward-line 1))
-          (buffer-substring-no-properties start (line-beginning-position)))))))
+          (when (looking-at-p "^[ \t]*#\\+BEGIN_SRC")
+            (forward-line 1)
+            (setq start (point))
+            ;; Find the end of the source block
+            (while (and (not (eobp))
+                        (not (looking-at-p "^[ \t]*#\\+END_SRC")))
+              (forward-line 1))
+            (buffer-substring-no-properties start (line-beginning-position))))))))
 
 (defun copilot--get-current-solution-text ()
   "Extract the solution text from the current org-mode entry."

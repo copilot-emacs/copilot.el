@@ -4,7 +4,7 @@
 
 ### New Features
 
-- Make copilot-panel interactive. This helps the user to select from multiple suggestions and directly insert it in the source buffer.
+- Make copilot-panel interactive. This helps the user to select from multiple suggestions and directly insert one into the source buffer.
 
 ## 0.5.0 (2026-03-16)
 

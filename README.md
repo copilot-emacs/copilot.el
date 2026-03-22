@@ -162,8 +162,6 @@ If you would love to configure indentation here, this is an example config that 
               ("C-<tab>" . 'copilot-accept-completion-by-word)
               ("C-n" . 'copilot-next-completion)
               ("C-p" . 'copilot-previous-completion)
-              ("C-n" . copilot-next-completion)
-              ("C-p" . copilot-previous-completion)
               ("C-c s" . copilot-panel-select-suggestion)
               ("C-c p" . copilot-panel-complete))
 
@@ -417,7 +415,7 @@ For example:
 | `copilot-nes-dismiss` | Dismiss the current NES suggestion |
 | `copilot-panel-insert-suggestion` | Insert suggestion at point |
 | `copilot-panel-copy-suggestion` | Copy suggestion at point |
-| `copilot-panel-select-suggestion` | Prompt user to select a suggestion from the panel and insert it. If the If the panel is absent or hasn't generated solutions yet, start the panel (user
+| `copilot-panel-select-suggestion` | Prompt user to select a suggestion from the panel and insert it. If the panel is absent or hasn't generated solutions yet, start the panel (user
 needs to run the command again to select a solution). |
 | `copilot-panel-kill` | A quick helper to cleanly kill the panel buffer |
 

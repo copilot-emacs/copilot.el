@@ -46,7 +46,7 @@ single global server is shared across all buffers and projects. See
               ("C-TAB" . copilot-accept-completion-by-word)
               ("C-n" . copilot-next-completion)
               ("C-p" . copilot-previous-completion)
-              ("C-c i" . copilot-panel-insert-suggestion)
+              ("C-c s" . copilot-panel-select-suggestion)
               ("C-c p" . copilot-panel-complete)))
 ```
 
@@ -127,7 +127,7 @@ Configure copilot in `~/.doom.d/config.el`:
               ("C-<tab>" . 'copilot-accept-completion-by-word)
               ("C-n" . copilot-next-completion)
               ("C-p" . copilot-previous-completion)
-              ("C-c i" . copilot-panel-insert-suggestion)
+              ("C-c s" . copilot-panel-select-suggestion)
               ("C-c p" . copilot-panel-complete)))
 ```
 
@@ -164,7 +164,7 @@ If you would love to configure indentation here, this is an example config that 
               ("C-p" . 'copilot-previous-completion)
               ("C-n" . copilot-next-completion)
               ("C-p" . copilot-previous-completion)
-              ("C-c i" . copilot-panel-insert-suggestion)
+              ("C-c s" . copilot-panel-select-suggestion)
               ("C-c p" . copilot-panel-complete))
 
   :config
@@ -289,7 +289,7 @@ Customization variables:
 (keymap-set copilot-completion-map "C-TAB" #'copilot-accept-completion-by-word)
 (keymap-set copilot-completion-map "M-n" #'copilot-next-completion)
 (keymap-set copilot-completion-map "M-p" #'copilot-previous-completion)
-(keymap-set copilot-completion-map "C-c i" #'copilot-panel-insert-suggestion)
+(keymap-set copilot-completion-map "C-c s" #'copilot-panel-select-suggestion)
 (keymap-set copilot-completion-map "C-c p" #'copilot-panel-complete)
 ```
 
@@ -306,7 +306,7 @@ If you use `company-mode` or `corfu`, TAB is already taken. An alternative inspi
 (keymap-set copilot-completion-map "<end>" #'copilot-accept-completion-by-line)
 (keymap-set copilot-completion-map "M-n" #'copilot-next-completion)
 (keymap-set copilot-completion-map "M-p" #'copilot-previous-completion)
-(keymap-set copilot-completion-map "C-c i" #'copilot-panel-insert-suggestion)
+(keymap-set copilot-completion-map "C-c s" #'copilot-panel-select-suggestion)
 (keymap-set copilot-completion-map "C-c p" #'copilot-panel-complete)
 ```
 
@@ -415,10 +415,11 @@ For example:
 | `copilot-nes-mode` | Toggle NES in the current buffer |
 | `copilot-nes-accept` | Accept (or jump to) the current NES suggestion |
 | `copilot-nes-dismiss` | Dismiss the current NES suggestion |
-| `copilot-panel-insert-suggestion` | insert suggestion at point |
-| `copilot-panel-copy-suggestion` | copy suggestion at point |
-| `copilot-panel-select-suggestion` | prompt user to select a suggestion from the panel and insert it |
-| `copilot-panel-kill-buffer` | A quick helper to cleanly kill the panel buffer |
+| `copilot-panel-insert-suggestion` | Insert suggestion at point |
+| `copilot-panel-copy-suggestion` | Copy suggestion at point |
+| `copilot-panel-select-suggestion` | Prompt user to select a suggestion from the panel and insert it. If the If the panel is absent or hasn't generated solutions yet, start the panel (user
+needs to run the command again to select a solution). |
+| `copilot-panel-kill` | A quick helper to cleanly kill the panel buffer |
 
 ## Customization
 

@@ -197,8 +197,10 @@ will not be called."
   (let ((was-bound (boundp symbol)))
     (set-default symbol value)
     (when (and was-bound (copilot--connection-alivep))
-      (copilot--notify 'workspace/didChangeConfiguration
-                       `(:settings ,(copilot--effective-lsp-settings))))))
+      ;; Call jsonrpc-notify directly to avoid macro definition order issues
+      (jsonrpc-notify copilot--connection
+                      'workspace/didChangeConfiguration
+                      `(:settings ,(copilot--effective-lsp-settings))))))
 
 (defcustom copilot-lsp-settings nil
   "Settings for the Copilot LSP server.
@@ -1011,6 +1013,9 @@ Each request METHOD can have only one HANDLER."
     (when handler
       (funcall handler msg))))
 
+;; Safely clear old handlers from memory to prevent duplicate firing / timer errors
+(setq copilot--notification-handlers (make-hash-table :test 'equal))
+
 (defvar copilot--notification-handlers (make-hash-table :test 'equal)
   "Hash table storing lists of notification handlers.")
 
@@ -1043,20 +1048,19 @@ Each request METHOD can have only one HANDLER."
  'PanelSolution
  (lambda (msg)
    (copilot--dbind (((:completionText completion-text)) ((:score completion-score))) msg
-                   (with-current-buffer "*copilot-panel*"
-                     (unless (member (secure-hash 'sha256 completion-text)
-                                     (org-map-entries (lambda () (org-entry-get nil "SHA"))))
-                       (save-excursion
-                         (goto-char (point-max))
-                         (insert "* Solution\n"
-                                 "  :PROPERTIES:\n"
-                                 "  :SCORE: " (number-to-string completion-score) "\n"
-                                 "  :SHA: " (secure-hash 'sha256 completion-text) "\n"
-                                 "  :END:\n"
-                                 "#+BEGIN_SRC " copilot--panel-lang "\n"
-                                 completion-text "\n#+END_SRC\n\n")
-                         (goto-char (point-min))
-                         (org-sort-entries nil ?R nil nil "SCORE")))))))
+                   (with-current-buffer (get-buffer-create "*copilot-panel*")
+                     (let ((inhibit-read-only t))
+                       (unless (member (secure-hash 'sha256 completion-text)
+                                       (org-map-entries (lambda () (org-entry-get nil "SHA"))))
+                         (save-excursion
+                           (goto-char (point-max))
+                           (insert "* Solution\n"
+                                   "  :PROPERTIES:\n"
+                                   "  :SCORE: " (number-to-string completion-score) "\n"
+                                   "  :SHA: " (secure-hash 'sha256 completion-text) "\n"
+                                   "  :END:\n"
+                                   "#+BEGIN_SRC " (or copilot--panel-lang "text") "\n"
+                                   completion-text "\n#+END_SRC\n\n"))))))))
 
 (copilot-on-notification
  'PanelSolutionsDone
@@ -1065,8 +1069,26 @@ Each request METHOD can have only one HANDLER."
    (display-buffer "*copilot-panel*")
    (with-current-buffer "*copilot-panel*"
      (save-excursion
-       (goto-char (point-max))
-       (insert "End of solutions.\n")))))
+       (let ((inhibit-read-only t))
+         (goto-char (point-min))
+
+         ;; Find the very first heading so org-sort-entries knows exactly what to sort
+         (when (re-search-forward "^\\*+ Solution" nil t)
+           (goto-char (match-beginning 0))
+           ;; Sort all entries safely. Ignore errors if there's somehow only 1.
+           (ignore-errors (org-sort-entries nil ?R nil nil "SCORE")))
+
+         ;; Now safely apply sequence numbers top to bottom
+         (let ((count 1))
+           (org-map-entries
+            (lambda ()
+              (when (looking-at "^\\*+ \\(.*\\)")
+                (replace-match (format "Solution %d" count) t t nil 1)
+                (setq count (1+ count))))))
+
+         ;; Append the final marker
+         (goto-char (point-max))
+         (insert "End of solutions.\n"))))))
 
 (copilot-on-notification
  'didChangeStatus
@@ -1134,6 +1156,18 @@ Each request METHOD can have only one HANDLER."
                        (remhash token copilot--progress-sessions)))
                      (force-mode-line-update t)))))
 
+(defvar-local copilot-panel--source-buffer nil
+  "The source buffer from which the Copilot panel was invoked.")
+
+(defvar copilot-panel-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") 'copilot-panel-insert-suggestion)
+    (define-key map (kbd "C-c C-y") 'copilot-panel-copy-suggestion)
+    (define-key map (kbd "C-c C-s") 'copilot-panel-select-suggestion)
+    (define-key map (kbd "C-c C-g") 'copilot-panel-kill)
+    map)
+  "Keymap for `copilot-panel-mode'.")
+
 (defun copilot--get-panel-completions (callback)
   "Get panel completions with CALLBACK."
   (copilot--async-request 'getPanelCompletions
@@ -1142,24 +1176,6 @@ Each request METHOD can have only one HANDLER."
                           :success-fn callback
                           :timeout-fn (lambda ()
                                         (copilot--log 'warning "Copilot server timeout."))))
-
-(defvar-local copilot-panel--source-buffer nil
-  "The source buffer from which the Copilot panel was invoked.")
-
-(defvar copilot-panel-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-c") 'copilot-panel-insert-suggestion)
-    (define-key map (kbd "C-c C-y") 'copilot-panel-copy-suggestion)
-    (define-key map (kbd "C-c C-s") 'copilot-panel-select-and-copy-suggestion)
-    (define-key map (kbd "C-c C-g") 'copilot-panel-kill-buffer)
-    map)
-  "Keymap for `copilot-panel-mode'.")
-
-(define-minor-mode copilot-panel-mode
-  "Minor mode for the Copilot panel buffer to provide custom keybindings."
-  :init-value nil
-  :lighter " CopilotPanel"
-  :keymap copilot-panel-mode-map)
 
 (defun copilot-panel-complete ()
   "Pop a buffer with a list of suggested completions based on the current file."
@@ -1179,21 +1195,35 @@ Each request METHOD can have only one HANDLER."
       (copilot-panel-mode 1) ; Activate our custom keybindings safely
       (setq copilot-panel--source-buffer source-buffer))))
 
-(defun copilot-panel-select-and-copy-suggestion ()
-  "Prompt user to select a suggestion from the panel and copy it."
+
+(defun copilot-panel-select-suggestion ()
+  "Prompt user to select a suggestion from the panel and insert it at point.
+If the panel is absent or hasn't generated solutions yet, start the panel (user
+needs to run the command again to select a solution)."
   (interactive)
-  (let ((solutions (copilot--get-all-solutions)))
-    (if solutions
-        (let* ((solution-titles (mapcar (lambda (s) (plist-get s :title)) solutions))
-               (selected-title (completing-read "Select a solution: " solution-titles nil t))
-               (selected-solution (cl-find selected-title solutions
-                                           :key (lambda (s) (plist-get s :title))
-                                           :test 'string=)))
-          (when selected-solution
-            (let ((solution-text (plist-get selected-solution :text)))
-              (kill-new solution-text)
-              (message "Solution copied to clipboard"))))
-      (message "No solutions found"))))
+  (let ((panel-buf (get-buffer "*copilot-panel*")))
+    (if (not panel-buf)
+        (progn
+          (message "Starting Copilot panel... Wait for solutions to generate, then run this command again.")
+          (copilot-panel-complete))
+      (let ((solutions (copilot--get-all-solutions)))
+        (if (not solutions)
+            (message "Solutions are still generating or none found. Please wait.")
+          (let* ((solution-titles (mapcar (lambda (s) (plist-get s :title)) solutions))
+                 (selected-title (completing-read "Select a solution: " solution-titles nil t))
+                 (selected-solution (cl-find selected-title solutions
+                                             :key (lambda (s) (plist-get s :title))
+                                             :test 'string=)))
+            (when selected-solution
+              (let ((solution-text (plist-get selected-solution :text))
+                    (source-buffer (buffer-local-value 'copilot-panel--source-buffer panel-buf)))
+
+                (when (and source-buffer (buffer-live-p source-buffer)
+                           (not (eq (current-buffer) source-buffer)))
+                  (pop-to-buffer source-buffer))
+
+                (insert solution-text)
+                (message "Solution inserted.")))))))))
 
 (defun copilot-panel-copy-suggestion ()
   "Copy the suggestion at point from the copilot panel."
@@ -1213,11 +1243,11 @@ Each request METHOD can have only one HANDLER."
           (progn
             (kill-new solution-text)
             (pop-to-buffer source-buffer)
-            (yank)            ; Insert the solution
+            (yank)
             (message "Solution inserted and copied to clipboard"))
         (message "Source buffer is no longer alive")))))
 
-(defun copilot-panel-kill-buffer ()
+(defun copilot-panel-kill ()
   "Kill the copilot panel buffer."
   (interactive)
   (kill-buffer-and-window))
@@ -1225,17 +1255,20 @@ Each request METHOD can have only one HANDLER."
 (defun copilot--get-all-solutions ()
   "Extract all solutions from the copilot panel buffer."
   (with-current-buffer "*copilot-panel*"
-    (save-excursion
-      (goto-char (point-min))
-      (let ((solutions '()))
-        (while (re-search-forward "^\\* Solution" nil t)
-          (let ((heading-start (match-beginning 0))
-                (solution-text (copilot--get-current-solution-text-at-pos (point))))
+    (let ((solutions '())
+          ;; Guarantee we can read the folded headings
+          (search-invisible t))
+      (save-excursion
+        (goto-char (point-min))
+        ;; Match "* Solution 1", "* Solution 2", etc.
+        (while (re-search-forward "^\\*+ \\(Solution [0-9]+\\)" nil t)
+          (let* ((heading-text (match-string-no-properties 1))
+                 (solution-text (copilot--get-current-solution-text-at-pos (line-beginning-position))))
             (when solution-text
-              (push (list :title (format "Solution at line %d" (line-number-at-pos heading-start))
+              (push (list :title heading-text
                           :text solution-text)
-                    solutions))))
-        (nreverse solutions)))))
+                    solutions)))))
+      (nreverse solutions))))
 
 (defun copilot--get-current-solution-text-at-pos (pos)
   "Extract the solution text from the org-mode entry at POS."
@@ -1244,18 +1277,19 @@ Each request METHOD can have only one HANDLER."
     (when (not (org-at-heading-p))
       (outline-previous-heading))
     (when (org-at-heading-p)
-      (let (start)
+      (let ((search-invisible t) ; Allow looking through folded text
+            start)
         (forward-line 1)
         ;; Look for the beginning of a source block
         (while (and (not (eobp))
-                    (not (looking-at "^#\\+BEGIN_SRC")))
+                    (not (looking-at-p "^[ \t]*#\\+BEGIN_SRC")))
           (forward-line 1))
-        (when (looking-at "^#\\+BEGIN_SRC")
-          (forward-line 1)  ; Move past the BEGIN_SRC line
+        (when (looking-at-p "^[ \t]*#\\+BEGIN_SRC")
+          (forward-line 1)
           (setq start (point))
           ;; Find the end of the source block
           (while (and (not (eobp))
-                      (not (looking-at "^#\\+END_SRC")))
+                      (not (looking-at-p "^[ \t]*#\\+END_SRC")))
             (forward-line 1))
           (buffer-substring-no-properties start (line-beginning-position)))))))
 

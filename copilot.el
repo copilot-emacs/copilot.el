@@ -197,8 +197,10 @@ will not be called."
   (let ((was-bound (boundp symbol)))
     (set-default symbol value)
     (when (and was-bound (copilot--connection-alivep))
-      (copilot--notify 'workspace/didChangeConfiguration
-                       `(:settings ,(copilot--effective-lsp-settings))))))
+      ;; Call jsonrpc-notify directly to avoid macro definition order issues
+      (jsonrpc-notify copilot--connection
+                      'workspace/didChangeConfiguration
+                      `(:settings ,(copilot--effective-lsp-settings))))))
 
 (defcustom copilot-lsp-settings nil
   "Settings for the Copilot LSP server.
@@ -622,27 +624,27 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
   "Login to Copilot."
   (interactive)
   (copilot--dbind
-      (status user ((:userCode user-code)) ((:verificationUri verification-uri)))
-      (copilot--request 'signInInitiate nil)
-    (when (string-equal status "AlreadySignedIn")
-      (user-error "Already signed in as %s" user))
-    (if (display-graphic-p)
-        (progn
-          (gui-set-selection 'CLIPBOARD user-code)
-          (read-from-minibuffer (format "Your one-time code %s is copied. Press \
+   (status user ((:userCode user-code)) ((:verificationUri verification-uri)))
+   (copilot--request 'signInInitiate nil)
+   (when (string-equal status "AlreadySignedIn")
+     (user-error "Already signed in as %s" user))
+   (if (display-graphic-p)
+       (progn
+         (gui-set-selection 'CLIPBOARD user-code)
+         (read-from-minibuffer (format "Your one-time code %s is copied. Press \
 ENTER to open GitHub in your browser. If your browser does not open \
 automatically, browse to %s." user-code verification-uri))
-          (browse-url verification-uri)
-          (read-from-minibuffer "Press ENTER if you finish authorizing."))
-      (read-from-minibuffer (format "First copy your one-time code: %s. Press ENTER to continue." user-code))
-      (read-from-minibuffer (format "Please open %s in your browser. Press ENTER if you finish authorizing." verification-uri)))
-    (copilot--log 'info "Verifying...")
-    (condition-case err
-        (copilot--request 'signInConfirm (list :userCode user-code))
-      (jsonrpc-error
-       (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
-    (copilot--dbind (user) (copilot--request 'checkStatus nil)
-      (copilot--log 'info "Authenticated as GitHub user %s." user))))
+         (browse-url verification-uri)
+         (read-from-minibuffer "Press ENTER if you finish authorizing."))
+     (read-from-minibuffer (format "First copy your one-time code: %s. Press ENTER to continue." user-code))
+     (read-from-minibuffer (format "Please open %s in your browser. Press ENTER if you finish authorizing." verification-uri)))
+   (copilot--log 'info "Verifying...")
+   (condition-case err
+       (copilot--request 'signInConfirm (list :userCode user-code))
+     (jsonrpc-error
+      (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
+   (copilot--dbind (user) (copilot--request 'checkStatus nil)
+                   (copilot--log 'info "Authenticated as GitHub user %s." user))))
 
 (defun copilot-logout ()
   "Logout from Copilot."
@@ -1011,6 +1013,9 @@ Each request METHOD can have only one HANDLER."
     (when handler
       (funcall handler msg))))
 
+;; Safely clear old handlers from memory to prevent duplicate firing / timer errors
+(setq copilot--notification-handlers (make-hash-table :test 'equal))
+
 (defvar copilot--notification-handlers (make-hash-table :test 'equal)
   "Hash table storing lists of notification handlers.")
 
@@ -1029,34 +1034,33 @@ Each request METHOD can have only one HANDLER."
  'window/logMessage
  (lambda (msg)
    (copilot--dbind (((:type log-level)) ((:message log-msg))) msg
-     (with-current-buffer (get-buffer-create "*copilot-language-server-log*")
-       (save-excursion
-         (goto-char (point-max))
-         (insert (propertize (concat log-msg "\n")
-                             'face (pcase log-level
-                                     (4 'shadow)
-                                     (3 'success)
-                                     (2 'warning)
-                                     (1 'error)))))))))
+                   (with-current-buffer (get-buffer-create "*copilot-language-server-log*")
+                     (save-excursion
+                       (goto-char (point-max))
+                       (insert (propertize (concat log-msg "\n")
+                                           'face (pcase log-level
+                                                   (4 'shadow)
+                                                   (3 'success)
+                                                   (2 'warning)
+                                                   (1 'error)))))))))
 
 (copilot-on-notification
  'PanelSolution
  (lambda (msg)
    (copilot--dbind (((:completionText completion-text)) ((:score completion-score))) msg
-     (with-current-buffer "*copilot-panel*"
-       (unless (member (secure-hash 'sha256 completion-text)
-                       (org-map-entries (lambda () (org-entry-get nil "SHA"))))
-         (save-excursion
-           (goto-char (point-max))
-           (insert "* Solution\n"
-                   "  :PROPERTIES:\n"
-                   "  :SCORE: " (number-to-string completion-score) "\n"
-                   "  :SHA: " (secure-hash 'sha256 completion-text) "\n"
-                   "  :END:\n"
-                   "#+BEGIN_SRC " copilot--panel-lang "\n"
-                   completion-text "\n#+END_SRC\n\n")
-           (goto-char (point-min))
-           (org-sort-entries nil ?R nil nil "SCORE")))))))
+                   (with-current-buffer (get-buffer-create "*copilot-panel*")
+                     (let ((inhibit-read-only t))
+                       (unless (member (secure-hash 'sha256 completion-text)
+                                       (org-map-entries (lambda () (org-entry-get nil "SHA"))))
+                         (save-excursion
+                           (goto-char (point-max))
+                           (insert "* Solution\n"
+                                   "  :PROPERTIES:\n"
+                                   "  :SCORE: " (number-to-string completion-score) "\n"
+                                   "  :SHA: " (secure-hash 'sha256 completion-text) "\n"
+                                   "  :END:\n"
+                                   "#+BEGIN_SRC " (or copilot--panel-lang "text") "\n"
+                                   completion-text "\n#+END_SRC\n\n"))))))))
 
 (copilot-on-notification
  'PanelSolutionsDone
@@ -1065,74 +1069,104 @@ Each request METHOD can have only one HANDLER."
    (display-buffer "*copilot-panel*")
    (with-current-buffer "*copilot-panel*"
      (save-excursion
-       (goto-char (point-max))
-       (insert "End of solutions.\n")))))
+       (let ((inhibit-read-only t))
+         (goto-char (point-min))
+
+         ;; Find the very first heading so org-sort-entries knows exactly what to sort
+         (when (re-search-forward "^\\*+ Solution" nil t)
+           (goto-char (match-beginning 0))
+           ;; Sort all entries safely. Ignore errors if there's somehow only 1.
+           (ignore-errors (org-sort-entries nil ?R nil nil "SCORE")))
+
+         ;; Now safely apply sequence numbers top to bottom
+         (let ((count 1))
+           (org-map-entries
+            (lambda ()
+              (when (looking-at "^\\*+ \\(.*\\)")
+                (replace-match (format "Solution %d" count) t t nil 1)
+                (setq count (1+ count))))))
+
+         ;; Append the final marker
+         (goto-char (point-max))
+         (insert "End of solutions.\n"))))))
 
 (copilot-on-notification
  'didChangeStatus
  (lambda (msg)
    (copilot--dbind (kind busy message) msg
-     (setq copilot--status (list :kind kind :busy (eq busy t) :message message))
-     (force-mode-line-update t))))
+                   (setq copilot--status (list :kind kind :busy (eq busy t) :message message))
+                   (force-mode-line-update t))))
 
 (copilot-on-request
  'window/showMessageRequest
  (lambda (msg)
    (copilot--dbind (type message actions) msg
-     (if (and actions (vectorp actions) (> (length actions) 0))
-         (let* ((titles (mapcar (lambda (a) (plist-get a :title))
-                                (append actions nil)))
-                (chosen (completing-read
-                         (format "Copilot (%s): "
-                                 (pcase type (1 "Error") (2 "Warning")
-                                        (3 "Info") (_ "Log")))
-                         titles nil t)))
-           (list :title chosen))
-       (copilot--log (pcase type (1 'error) (2 'warning) (_ 'info))
-                     "%s" message)
-       :json-null))))
+                   (if (and actions (vectorp actions) (> (length actions) 0))
+                       (let* ((titles (mapcar (lambda (a) (plist-get a :title))
+                                              (append actions nil)))
+                              (chosen (completing-read
+                                       (format "Copilot (%s): "
+                                               (pcase type (1 "Error") (2 "Warning")
+                                                      (3 "Info") (_ "Log")))
+                                       titles nil t)))
+                         (list :title chosen))
+                     (copilot--log (pcase type (1 'error) (2 'warning) (_ 'info))
+                                   "%s" message)
+                     :json-null))))
 
 (copilot-on-request
  'window/showDocument
  (lambda (msg)
    (condition-case _err
        (copilot--dbind (uri external takeFocus) msg
-         (let ((focus (not (eq takeFocus :json-false))))
-           (cond
-            ((or (eq external t) (string-match-p "\\`https?://" uri))
-             (browse-url uri))
-            ((string-prefix-p "file://" uri)
-             (let* ((path (url-unhex-string
-                           (string-remove-prefix "file://" uri)))
-                    (buf (find-file-noselect path)))
-               (if focus
-                   (find-file path)
-                 (display-buffer buf)))))
-           (list :success t)))
+                       (let ((focus (not (eq takeFocus :json-false))))
+                         (cond
+                          ((or (eq external t) (string-match-p "\\`https?://" uri))
+                           (browse-url uri))
+                          ((string-prefix-p "file://" uri)
+                           (let* ((path (url-unhex-string
+                                         (string-remove-prefix "file://" uri)))
+                                  (buf (find-file-noselect path)))
+                             (if focus
+                                 (find-file path)
+                               (display-buffer buf)))))
+                         (list :success t)))
      (error (list :success :json-false)))))
 
 (copilot-on-notification
  '$/progress
  (lambda (msg)
    (copilot--dbind (token value) msg
-     (let ((kind (plist-get value :kind)))
-       (cond
-        ((equal kind "begin")
-         (puthash token
-                  (list :title (plist-get value :title)
-                        :message (plist-get value :message)
-                        :percentage (plist-get value :percentage))
-                  copilot--progress-sessions))
-        ((equal kind "report")
-         (let ((session (gethash token copilot--progress-sessions)))
-           (when session
-             (when (plist-member value :message)
-               (plist-put session :message (plist-get value :message)))
-             (when (plist-member value :percentage)
-               (plist-put session :percentage (plist-get value :percentage))))))
-        ((equal kind "end")
-         (remhash token copilot--progress-sessions)))
-       (force-mode-line-update t)))))
+                   (let ((kind (plist-get value :kind)))
+                     (cond
+                      ((equal kind "begin")
+                       (puthash token
+                                (list :title (plist-get value :title)
+                                      :message (plist-get value :message)
+                                      :percentage (plist-get value :percentage))
+                                copilot--progress-sessions))
+                      ((equal kind "report")
+                       (let ((session (gethash token copilot--progress-sessions)))
+                         (when session
+                           (when (plist-member value :message)
+                             (plist-put session :message (plist-get value :message)))
+                           (when (plist-member value :percentage)
+                             (plist-put session :percentage (plist-get value :percentage))))))
+                      ((equal kind "end")
+                       (remhash token copilot--progress-sessions)))
+                     (force-mode-line-update t)))))
+
+(defvar-local copilot-panel--source-buffer nil
+  "The source buffer from which the Copilot panel was invoked.")
+
+(defvar copilot-panel-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c i") 'copilot-panel-insert-suggestion)
+    (define-key map (kbd "C-c y") 'copilot-panel-copy-suggestion)
+    (define-key map (kbd "C-c s") 'copilot-panel-select-suggestion)
+    (define-key map (kbd "C-c g") 'copilot-panel-kill)
+    map)
+  "Keymap for `copilot-panel-mode'.")
 
 (defun copilot--get-panel-completions (callback)
   "Get panel completions with CALLBACK."
@@ -1143,20 +1177,127 @@ Each request METHOD can have only one HANDLER."
                           :timeout-fn (lambda ()
                                         (copilot--log 'warning "Copilot server timeout."))))
 
-
 (defun copilot-panel-complete ()
-  "Pop a buffer with a list of suggested completions based on the current file ."
+  "Pop a buffer with a list of suggested completions based on the current file."
   (interactive)
   (require 'org)
   (setq copilot--last-doc-version copilot--doc-version)
   (setq copilot--panel-lang (copilot--get-language-id))
 
-  (copilot--get-panel-completions
-   (jsonrpc-lambda (&key solutionCountTarget)
-     (copilot--log 'info "Synthesizing %d solutions..." solutionCountTarget)))
-  (with-current-buffer (get-buffer-create "*copilot-panel*")
-    (org-mode)
-    (erase-buffer)))
+  (let ((source-buffer (current-buffer)))
+    (copilot--get-panel-completions
+     (jsonrpc-lambda (&key solutionCountTarget)
+                     (copilot--log 'info "Synthesizing %d solutions..." solutionCountTarget)))
+    (with-current-buffer (get-buffer-create "*copilot-panel*")
+      (let ((inhibit-read-only t))
+        (erase-buffer))
+      (org-mode)             ; Keep org-mode as the true major mode
+      (copilot-panel-mode 1) ; Activate our custom keybindings safely
+      (setq copilot-panel--source-buffer source-buffer))))
+
+
+(defun copilot-panel-select-suggestion ()
+  "Prompt user to select a suggestion from the panel and insert it at point.
+If the panel is absent or hasn't generated solutions yet, start the panel (user
+needs to run the command again to select a solution)."
+  (interactive)
+  (let ((panel-buf (get-buffer "*copilot-panel*")))
+    (if (not panel-buf)
+        (progn
+          (message "Starting Copilot panel... Wait for solutions to generate, then run this command again.")
+          (copilot-panel-complete))
+      (let ((solutions (copilot--get-all-solutions)))
+        (if (not solutions)
+            (message "Solutions are still generating or none found. Please wait.")
+          (let* ((solution-titles (mapcar (lambda (s) (plist-get s :title)) solutions))
+                 (selected-title (completing-read "Select a solution: " solution-titles nil t))
+                 (selected-solution (cl-find selected-title solutions
+                                             :key (lambda (s) (plist-get s :title))
+                                             :test 'string=)))
+            (when selected-solution
+              (let ((solution-text (plist-get selected-solution :text))
+                    (source-buffer (buffer-local-value 'copilot-panel--source-buffer panel-buf)))
+
+                (when (and source-buffer (buffer-live-p source-buffer)
+                           (not (eq (current-buffer) source-buffer)))
+                  (pop-to-buffer source-buffer))
+
+                (insert solution-text)
+                (message "Solution inserted.")))))))))
+
+(defun copilot-panel-copy-suggestion ()
+  "Copy the suggestion at point from the copilot panel."
+  (interactive)
+  (let ((solution-text (copilot--get-current-solution-text)))
+    (when solution-text
+      (kill-new solution-text)
+      (message "Solution copied to clipboard"))))
+
+(defun copilot-panel-insert-suggestion ()
+  "Insert the suggesetion at point from the copilot panel to the original buffer."
+  (interactive)
+  (let ((solution-text (copilot--get-current-solution-text))
+        (source-buffer copilot-panel--source-buffer))
+    (when solution-text
+      (if (buffer-live-p source-buffer)
+          (progn
+            (kill-new solution-text)
+            (pop-to-buffer source-buffer)
+            (yank)
+            (message "Solution inserted and copied to clipboard"))
+        (message "Source buffer is no longer alive")))))
+
+(defun copilot-panel-kill ()
+  "Kill the copilot panel buffer."
+  (interactive)
+  (kill-buffer-and-window))
+
+(defun copilot--get-all-solutions ()
+  "Extract all solutions from the copilot panel buffer."
+  (with-current-buffer "*copilot-panel*"
+    (let ((solutions '())
+          ;; Guarantee we can read the folded headings
+          (search-invisible t))
+      (save-excursion
+        (goto-char (point-min))
+        ;; Match "* Solution 1", "* Solution 2", etc.
+        (while (re-search-forward "^\\*+ \\(Solution [0-9]+\\)" nil t)
+          (let* ((heading-text (match-string-no-properties 1))
+                 (solution-text (copilot--get-current-solution-text-at-pos (line-beginning-position))))
+            (when solution-text
+              (push (list :title heading-text
+                          :text solution-text)
+                    solutions)))))
+      (nreverse solutions))))
+
+(defun copilot--get-current-solution-text-at-pos (pos)
+  "Extract the solution text from the org-mode entry at POS."
+  (save-excursion
+    (goto-char pos)
+    (let ((heading-found (or (org-at-heading-p)
+                             (ignore-errors
+                               (outline-previous-heading)
+                               (org-at-heading-p)))))
+      (when heading-found
+        (let ((search-invisible t) ; Allow looking through folded text
+              start)
+          (forward-line 1)
+          ;; Look for the beginning of a source block
+          (while (and (not (eobp))
+                      (not (looking-at-p "^[ \t]*#\\+BEGIN_SRC")))
+            (forward-line 1))
+          (when (looking-at-p "^[ \t]*#\\+BEGIN_SRC")
+            (forward-line 1)
+            (setq start (point))
+            ;; Find the end of the source block
+            (while (and (not (eobp))
+                        (not (looking-at-p "^[ \t]*#\\+END_SRC")))
+              (forward-line 1))
+            (buffer-substring-no-properties start (line-beginning-position))))))))
+
+(defun copilot--get-current-solution-text ()
+  "Extract the solution text from the current org-mode entry."
+  (copilot--get-current-solution-text-at-pos (point)))
 
 ;;
 ;; UI
@@ -1376,35 +1517,35 @@ Uppercase CHAR disables `case-fold-search', mirroring `zap-to-char'."
   "Show COMPLETION-DATA."
   (when (copilot--satisfy-display-predicates)
     (copilot--dbind
-        (((:insertText insert-text)) command range)
-        completion-data
-      (save-excursion
-        (save-restriction
-          (widen)
-          (let* ((p (point))
-                 (full-insert-text insert-text)
-                 (line (map-nested-elt range '(:start :line)))
-                 (start-char (map-nested-elt range '(:start :character)))
-                 (end-char (map-nested-elt range '(:end :character)))
-                 (goto-line! (lambda ()
-                               (goto-char (point-min))
-                               (forward-line (1- (+ line copilot--line-bias)))))
-                 (start (progn
-                          (funcall goto-line!)
-                          (copilot--goto-utf16-offset start-char)
-                          (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
-                                 (common-prefix-len (length (copilot--string-common-prefix insert-text cur-line))))
-                            (setq insert-text (substring insert-text common-prefix-len))
-                            (forward-char common-prefix-len)
-                            (point))))
-                 (end (progn
-                        (funcall goto-line!)
-                        (copilot--goto-utf16-offset end-char)
-                        (point)))
-                 (fixed-completion (copilot-balancer-fix-completion start end insert-text)))
-            (goto-char p)
-            (pcase-let ((`(,start ,end ,balanced-text) fixed-completion))
-              (copilot--display-overlay-completion balanced-text command full-insert-text start end))))))))
+     (((:insertText insert-text)) command range)
+     completion-data
+     (save-excursion
+       (save-restriction
+         (widen)
+         (let* ((p (point))
+                (full-insert-text insert-text)
+                (line (map-nested-elt range '(:start :line)))
+                (start-char (map-nested-elt range '(:start :character)))
+                (end-char (map-nested-elt range '(:end :character)))
+                (goto-line! (lambda ()
+                              (goto-char (point-min))
+                              (forward-line (1- (+ line copilot--line-bias)))))
+                (start (progn
+                         (funcall goto-line!)
+                         (copilot--goto-utf16-offset start-char)
+                         (let* ((cur-line (buffer-substring-no-properties (point) (line-end-position)))
+                                (common-prefix-len (length (copilot--string-common-prefix insert-text cur-line))))
+                           (setq insert-text (substring insert-text common-prefix-len))
+                           (forward-char common-prefix-len)
+                           (point))))
+                (end (progn
+                       (funcall goto-line!)
+                       (copilot--goto-utf16-offset end-char)
+                       (point)))
+                (fixed-completion (copilot-balancer-fix-completion start end insert-text)))
+           (goto-char p)
+           (pcase-let ((`(,start ,end ,balanced-text) fixed-completion))
+             (copilot--display-overlay-completion balanced-text command full-insert-text start end))))))))
 
 (defun copilot--ensure-doc-open ()
   "Ensure the current buffer has been opened with the Copilot server.

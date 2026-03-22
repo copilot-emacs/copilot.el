@@ -45,7 +45,9 @@ single global server is shared across all buffers and projects. See
               ("C-<tab>" . copilot-accept-completion-by-word)
               ("C-TAB" . copilot-accept-completion-by-word)
               ("C-n" . copilot-next-completion)
-              ("C-p" . copilot-previous-completion)))
+              ("C-p" . copilot-previous-completion)
+              ("C-c s" . copilot-panel-select-suggestion)
+              ("C-c p" . copilot-panel-complete)))
 ```
 
 Then run `M-x copilot-install-server` and `M-x copilot-login`. That's it!
@@ -122,7 +124,11 @@ Configure copilot in `~/.doom.d/config.el`:
               ("<tab>" . 'copilot-accept-completion)
               ("TAB" . 'copilot-accept-completion)
               ("C-TAB" . 'copilot-accept-completion-by-word)
-              ("C-<tab>" . 'copilot-accept-completion-by-word)))
+              ("C-<tab>" . 'copilot-accept-completion-by-word)
+              ("C-n" . copilot-next-completion)
+              ("C-p" . copilot-previous-completion)
+              ("C-c s" . copilot-panel-select-suggestion)
+              ("C-c p" . copilot-panel-complete)))
 ```
 
 Strongly recommend to enable `childframe` option in `company` module (`(company +childframe)`) to prevent overlay conflict.
@@ -155,7 +161,9 @@ If you would love to configure indentation here, this is an example config that 
               ("C-TAB" . 'copilot-accept-completion-by-word)
               ("C-<tab>" . 'copilot-accept-completion-by-word)
               ("C-n" . 'copilot-next-completion)
-              ("C-p" . 'copilot-previous-completion))
+              ("C-p" . 'copilot-previous-completion)
+              ("C-c s" . copilot-panel-select-suggestion)
+              ("C-c p" . copilot-panel-complete))
 
   :config
   (add-to-list 'copilot-indentation-alist '(prog-mode 2))
@@ -279,6 +287,8 @@ Customization variables:
 (keymap-set copilot-completion-map "C-TAB" #'copilot-accept-completion-by-word)
 (keymap-set copilot-completion-map "M-n" #'copilot-next-completion)
 (keymap-set copilot-completion-map "M-p" #'copilot-previous-completion)
+(keymap-set copilot-completion-map "C-c s" #'copilot-panel-select-suggestion)
+(keymap-set copilot-completion-map "C-c p" #'copilot-panel-complete)
 ```
 
 #### Fish-style keybindings
@@ -294,6 +304,8 @@ If you use `company-mode` or `corfu`, TAB is already taken. An alternative inspi
 (keymap-set copilot-completion-map "<end>" #'copilot-accept-completion-by-line)
 (keymap-set copilot-completion-map "M-n" #'copilot-next-completion)
 (keymap-set copilot-completion-map "M-p" #'copilot-previous-completion)
+(keymap-set copilot-completion-map "C-c s" #'copilot-panel-select-suggestion)
+(keymap-set copilot-completion-map "C-c p" #'copilot-panel-complete)
 ```
 
 #### Zap-style partial acceptance
@@ -401,6 +413,11 @@ For example:
 | `copilot-nes-mode` | Toggle NES in the current buffer |
 | `copilot-nes-accept` | Accept (or jump to) the current NES suggestion |
 | `copilot-nes-dismiss` | Dismiss the current NES suggestion |
+| `copilot-panel-insert-suggestion` | Insert suggestion at point |
+| `copilot-panel-copy-suggestion` | Copy suggestion at point |
+| `copilot-panel-select-suggestion` | Prompt user to select a suggestion from the panel and insert it. If the panel is absent or hasn't generated solutions yet, start the panel (user
+needs to run the command again to select a solution). |
+| `copilot-panel-kill` | A quick helper to cleanly kill the panel buffer |
 
 ## Customization
 

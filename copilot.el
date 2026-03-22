@@ -1143,30 +1143,43 @@ Each request METHOD can have only one HANDLER."
                           :timeout-fn (lambda ()
                                         (copilot--log 'warning "Copilot server timeout."))))
 
+(defvar-local copilot-panel--source-buffer nil
+  "The source buffer from which the Copilot panel was invoked.")
+
+(defvar copilot-panel-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") 'copilot-panel-insert-suggestion)
+    (define-key map (kbd "C-c C-y") 'copilot-panel-copy-suggestion)
+    (define-key map (kbd "C-c C-s") 'copilot-panel-select-and-copy-suggestion)
+    (define-key map (kbd "C-c C-g") 'copilot-panel-kill-buffer)
+    map)
+  "Keymap for `copilot-panel-mode'.")
+
+(define-minor-mode copilot-panel-mode
+  "Minor mode for the Copilot panel buffer to provide custom keybindings."
+  :init-value nil
+  :lighter " CopilotPanel"
+  :keymap copilot-panel-mode-map)
 
 (defun copilot-panel-complete ()
-  "Pop a buffer with a list of suggested completions based on the current file ."
+  "Pop a buffer with a list of suggested completions based on the current file."
   (interactive)
   (require 'org)
   (setq copilot--last-doc-version copilot--doc-version)
   (setq copilot--panel-lang (copilot--get-language-id))
 
-  (copilot--get-panel-completions
-   (jsonrpc-lambda (&key solutionCountTarget)
-                   (copilot--log 'info "Synthesizing %d solutions..." solutionCountTarget)))
-  (with-current-buffer (get-buffer-create "*copilot-panel*")
-    (org-mode)
-    (erase-buffer)
-    (copilot--setup-panel-keybindings)))
+  (let ((source-buffer (current-buffer)))
+    (copilot--get-panel-completions
+     (jsonrpc-lambda (&key solutionCountTarget)
+                     (copilot--log 'info "Synthesizing %d solutions..." solutionCountTarget)))
+    (with-current-buffer (get-buffer-create "*copilot-panel*")
+      (let ((inhibit-read-only t))
+        (erase-buffer))
+      (org-mode)             ; Keep org-mode as the true major mode
+      (copilot-panel-mode 1) ; Activate our custom keybindings safely
+      (setq copilot-panel--source-buffer source-buffer))))
 
-(defun copilot--setup-panel-keybindings ()
-  "Setup keybindings for the copilot panel buffer."
-  (local-set-key (kbd "C-c C-c") 'copilot-insert-suggestion-at-point)
-  (local-set-key (kbd "C-c C-y") 'copilot-copy-suggestion-at-point)
-  (local-set-key (kbd "C-c C-s") 'copilot-select-and-copy-suggestion)
-  (local-set-key (kbd "C-c C-g") 'copilot-kill-panel-buffer))
-
-(defun copilot-select-and-copy-suggestion ()
+(defun copilot-panel-select-and-copy-suggestion ()
   "Prompt user to select a suggestion from the panel and copy it."
   (interactive)
   (let ((solutions (copilot--get-all-solutions)))
@@ -1182,7 +1195,7 @@ Each request METHOD can have only one HANDLER."
               (message "Solution copied to clipboard"))))
       (message "No solutions found"))))
 
-(defun copilot-copy-suggestion-at-point ()
+(defun copilot-panel-copy-suggestion ()
   "Copy the suggestion at point from the copilot panel."
   (interactive)
   (let ((solution-text (copilot--get-current-solution-text)))
@@ -1190,17 +1203,21 @@ Each request METHOD can have only one HANDLER."
       (kill-new solution-text)
       (message "Solution copied to clipboard"))))
 
-(defun copilot-insert-suggestion-at-point ()
+(defun copilot-panel-insert-suggestion ()
   "Insert the suggesetion at point from the copilot panel to the original buffer."
   (interactive)
-  (let ((solution-text (copilot--get-current-solution-text)))
+  (let ((solution-text (copilot--get-current-solution-text))
+        (source-buffer copilot-panel--source-buffer))
     (when solution-text
-      (kill-new solution-text)
-      (other-window 1)  ; Switch to previous window (original buffer)
-      (yank)            ; Insert the solution
-      (message "Solution inserted and copied to clipboard"))))
+      (if (buffer-live-p source-buffer)
+          (progn
+            (kill-new solution-text)
+            (pop-to-buffer source-buffer)
+            (yank)            ; Insert the solution
+            (message "Solution inserted and copied to clipboard"))
+        (message "Source buffer is no longer alive")))))
 
-(defun copilot-kill-panel-buffer ()
+(defun copilot-panel-kill-buffer ()
   "Kill the copilot panel buffer."
   (interactive)
   (kill-buffer-and-window))
@@ -1227,8 +1244,7 @@ Each request METHOD can have only one HANDLER."
     (when (not (org-at-heading-p))
       (outline-previous-heading))
     (when (org-at-heading-p)
-      (let ((start (point))
-            end)
+      (let (start)
         (forward-line 1)
         ;; Look for the beginning of a source block
         (while (and (not (eobp))
@@ -1241,32 +1257,11 @@ Each request METHOD can have only one HANDLER."
           (while (and (not (eobp))
                       (not (looking-at "^#\\+END_SRC")))
             (forward-line 1))
-          (setq end (point))
           (buffer-substring-no-properties start (line-beginning-position)))))))
 
 (defun copilot--get-current-solution-text ()
   "Extract the solution text from the current org-mode entry."
-  (save-excursion
-    (when (not (org-at-heading-p))
-      (outline-previous-heading))
-    (when (org-at-heading-p)
-      (let ((start (point))
-            end
-            solution-content)
-        (forward-line 1)
-        ;; Look for the beginning of a source block
-        (while (and (not (eobp))
-                    (not (looking-at "^#\\+BEGIN_SRC")))
-          (forward-line 1))
-        (when (looking-at "^#\\+BEGIN_SRC")
-          (forward-line 1)  ; Move past the BEGIN_SRC line
-          (setq start (point))
-          ;; Find the end of the source block
-          (while (and (not (eobp))
-                      (not (looking-at "^#\\+END_SRC")))
-            (forward-line 1))
-          (setq end (point))
-          (buffer-substring-no-properties start (line-beginning-position)))))))
+  (copilot--get-current-solution-text-at-pos (point)))
 
 ;;
 ;; UI

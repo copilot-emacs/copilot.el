@@ -2,10 +2,9 @@
 
 ## master (unreleased)
 
-## 0.5.1 (2026-03-18)
-
 ### Bug Fixes
-- Suppress "Request was canceled" messages
+
+- Suppress "Request was canceled" error messages in the echo area. ([#464](https://github.com/copilot-emacs/copilot.el/pull/464))
 
 ## 0.5.0 (2026-03-16)
 

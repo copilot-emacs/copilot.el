@@ -963,7 +963,11 @@ TRIGGER-KIND is 1 for invoked, 2 for automatic (default)."
   (setq copilot--completion-request-id
         (copilot--async-request 'textDocument/inlineCompletion
                                 (copilot--inline-completion-params (or trigger-kind 2))
-                                :success-fn callback)))
+                                :success-fn callback
+                                :error-fn (lambda (err)
+                                            (unless (= (plist-get err :code) -32800) ; Request canceled
+                                              (copilot--log 'error "textDocument/inlineCompletion failed: %S"
+                                                            err))))))
 
 (defun copilot--cycle-completion (direction)
   "Cycle completion with DIRECTION."

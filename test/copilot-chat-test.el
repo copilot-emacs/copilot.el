@@ -511,6 +511,41 @@
         (copilot-chat-send-region (point-min) (point-max) "")
         (let ((msg (car (spy-calls-args-for 'copilot-chat 0))))
           (expect msg :to-match "```emacs-lisp")
-          (expect msg :to-match "(\\+ 1 2)"))))))
+          (expect msg :to-match "(\\+ 1 2)")))))
+
+  (describe "copilot-chat-select-model"
+    (it "sets copilot-chat-model from user selection"
+      (let ((copilot-chat-model nil))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc-request
+                :and-return-value
+                (list (list :modelName "GPT-4o" :id "gpt-4o"
+                            :scopes (list "chat-panel" "edit-panel"))
+                      (list :modelName "Claude 3.5 Sonnet" :id "claude-3.5-sonnet"
+                            :scopes (list "chat-panel"))
+                      (list :modelName "GPT-4.1 Copilot" :id "gpt-41-copilot"
+                            :scopes (list "completion"))))
+        (spy-on 'completing-read :and-return-value "Claude 3.5 Sonnet (claude-3.5-sonnet)")
+        (copilot-chat-select-model)
+        (expect copilot-chat-model :to-equal "claude-3.5-sonnet")))
+
+    (it "excludes completion-only models"
+      (let ((copilot-chat-model nil)
+            (captured-choices nil))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc-request
+                :and-return-value
+                (list (list :modelName "GPT-4o" :id "gpt-4o"
+                            :scopes (list "chat-panel" "edit-panel"))
+                      (list :modelName "GPT-4.1 Copilot" :id "gpt-41-copilot"
+                            :scopes (list "completion"))))
+        (spy-on 'completing-read
+                :and-call-fake
+                (lambda (_prompt choices &rest _args)
+                  (setq captured-choices choices)
+                  "GPT-4o (gpt-4o)"))
+        (copilot-chat-select-model)
+        (expect (length captured-choices) :to-equal 1)
+        (expect (cdar captured-choices) :to-equal "gpt-4o")))))
 
 ;;; copilot-chat-test.el ends here

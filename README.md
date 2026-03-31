@@ -376,6 +376,7 @@ For example:
 | `copilot-logout` | Log out from GitHub Copilot |
 | `copilot-diagnose` | Restart the server and show diagnostic info |
 | `copilot-select-completion-model` | Choose which model to use for completions |
+| `copilot-chat-select-model` | Choose which model to use for chat |
 | **Completion** | |
 | `copilot-mode` | Toggle automatic completions in the current buffer |
 | `copilot-complete` | Trigger a completion at point |
@@ -575,6 +576,16 @@ If the balancer is causing problems for your workflow, you can disable it:
 Run `M-x copilot-select-completion-model` to interactively choose from the
 models available on your subscription. The selection is saved in
 `copilot-completion-model`. Set it to `nil` to revert to the server default.
+
+**Note:** Only models with a "completion" scope are available for inline
+completions. Models like Claude, Gemini, and others that you may see in VS
+Code's chat UI are chat/edit-only and cannot be used for inline completions.
+This is a server-side limitation, not a copilot.el restriction. Currently
+GitHub only offers a single completion model (`gpt-41-copilot`).
+
+To select a chat model, run `M-x copilot-chat-select-model`. Many more models
+are available for chat (Claude, Gemini, GPT-4o, etc.). The selection is saved
+in `copilot-chat-model`.
 
 ## Reporting Bugs
 

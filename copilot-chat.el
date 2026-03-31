@@ -479,5 +479,22 @@ If not currently streaming, reset the conversation instead."
       (let ((inhibit-read-only t))
         (erase-buffer)))))
 
+(defun copilot-chat-select-model ()
+  "Interactively select a Copilot Chat model."
+  (interactive)
+  (let* ((models (copilot--request 'copilot/models nil))
+         (chat-models
+          (seq-filter (lambda (m)
+                        (seq-contains-p (plist-get m :scopes) "chat-panel"))
+                      models))
+         (choices (mapcar (lambda (m)
+                            (cons (format "%s (%s)" (plist-get m :modelName) (plist-get m :id))
+                                  (plist-get m :id)))
+                          chat-models))
+         (choice (completing-read "Chat model: " choices nil t))
+         (model-id (cdr (assoc choice choices))))
+    (setq copilot-chat-model model-id)
+    (message "Chat model set to %s" model-id)))
+
 (provide 'copilot-chat)
 ;;; copilot-chat.el ends here

@@ -693,13 +693,19 @@ on success, or an error/timeout message on failure."
          (choices (mapcar (lambda (m)
                             (cons (format "%s (%s)" (plist-get m :modelName) (plist-get m :id))
                                   (plist-get m :id)))
-                          completion-models))
-         (choice (completing-read "Completion model: " choices nil t))
-         (model-id (cdr (assoc choice choices))))
-    (setq copilot-completion-model model-id)
-    (copilot--notify 'workspace/didChangeConfiguration
-                     `(:settings ,(copilot--effective-lsp-settings)))
-    (copilot--log 'info "Completion model set to %s" model-id)))
+                          completion-models)))
+    (if (= (length choices) 1)
+        (let ((model-id (cdar choices)))
+          (setq copilot-completion-model model-id)
+          (copilot--notify 'workspace/didChangeConfiguration
+                           `(:settings ,(copilot--effective-lsp-settings)))
+          (message "Only one completion model available: %s" model-id))
+      (let* ((choice (completing-read "Completion model: " choices nil t))
+             (model-id (cdr (assoc choice choices))))
+        (setq copilot-completion-model model-id)
+        (copilot--notify 'workspace/didChangeConfiguration
+                         `(:settings ,(copilot--effective-lsp-settings)))
+        (copilot--log 'info "Completion model set to %s" model-id)))))
 
 ;;
 ;; Auto completion
@@ -1669,6 +1675,7 @@ Use this for custom bindings in `copilot-mode'.")
     ["Toggle NES Mode" copilot-nes-mode]
     "--"
     ["Select Completion Model" copilot-select-completion-model]
+    ["Select Chat Model" copilot-chat-select-model]
     ["Login" copilot-login]
     ["Logout" copilot-logout]
     "--"

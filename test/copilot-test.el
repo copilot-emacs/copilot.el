@@ -41,7 +41,7 @@
         ;; The second call also signals (from our spy), but we just want
         ;; to verify both keyword variants are attempted.
         (condition-case nil
-            (copilot--make-connection)
+            (copilot--make-connection nil)
           (invalid-slot-name nil))
         (expect (spy-calls-count 'make-instance) :to-be-greater-than 1))))
 
@@ -362,27 +362,31 @@
   (describe "copilot--on-doc-close"
     (it "does not start the server when connection is not alive"
       (with-temp-buffer
-        (add-to-list 'copilot--opened-buffers (current-buffer))
-        (spy-on 'copilot--connection-alivep :and-return-value nil)
-        (spy-on 'jsonrpc-notify)
-        (copilot--on-doc-close)
-        ;; Should not send notification when server is not alive
-        (expect 'jsonrpc-notify :not :to-have-been-called)
-        ;; But should still clean up opened-buffers
-        (expect (seq-contains-p copilot--opened-buffers (current-buffer))
-                :not :to-be-truthy)))
+        (let ((copilot--opened-buffers (let ((h (make-hash-table :test #'equal)))
+                                         (puthash "local" (list (current-buffer)) h) h)))
+          (spy-on 'copilot--connection-alivep :and-return-value nil)
+          (spy-on 'jsonrpc-notify)
+          (copilot--on-doc-close)
+          ;; Should not send notification when server is not alive
+          (expect 'jsonrpc-notify :not :to-have-been-called)
+          ;; But should still clean up opened-buffers
+          (expect (seq-contains-p (gethash "local" copilot--opened-buffers) (current-buffer))
+                  :not :to-be-truthy))))
 
     (it "sends notification when connection is alive"
       (with-temp-buffer
-        (add-to-list 'copilot--opened-buffers (current-buffer))
-        (spy-on 'copilot--connection-alivep :and-return-value t)
-        (spy-on 'jsonrpc-notify)
-        (let ((copilot--connection t))
+        (let* ((fake-conn 'test-conn)
+               (copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                       (puthash "local" fake-conn h) h))
+               (copilot--opened-buffers (let ((h (make-hash-table :test #'equal)))
+                                          (puthash "local" (list (current-buffer)) h) h)))
+          (spy-on 'copilot--connection-alivep :and-return-value t)
+          (spy-on 'jsonrpc-notify)
           (copilot--on-doc-close)
           ;; Should send didClose notification
           (expect 'jsonrpc-notify :to-have-been-called)
           ;; And clean up opened-buffers
-          (expect (seq-contains-p copilot--opened-buffers (current-buffer))
+          (expect (seq-contains-p (gethash "local" copilot--opened-buffers) (current-buffer))
                   :not :to-be-truthy)))))
 
   ;;
@@ -583,13 +587,13 @@
 
   (describe "copilot--lsp-settings-changed"
     (it "does not restart the server"
-      (let ((copilot--connection nil))
+      (let ((copilot--connections (make-hash-table :test #'equal)))
         (spy-on 'copilot--start-server)
         (copilot--lsp-settings-changed 'copilot-lsp-settings '(:new "value"))
         (expect 'copilot--start-server :not :to-have-been-called)))
 
     (it "does not send notification when connection is not alive"
-      (let ((copilot--connection nil))
+      (let ((copilot--connections (make-hash-table :test #'equal)))
         (spy-on 'jsonrpc-notify)
         (copilot--lsp-settings-changed 'copilot-lsp-settings '(:new "value"))
         (expect 'jsonrpc-notify :not :to-have-been-called))))
@@ -624,31 +628,36 @@
 
   (describe "copilot--status-lighter"
     (it "returns \" Copilot\" when status is nil"
-      (let ((copilot--status nil))
+      (let ((copilot--status (make-hash-table :test #'equal)))
         (expect (copilot--status-lighter) :to-equal " Copilot")))
 
     (it "returns \" Copilot\" for Normal and not busy"
-      (let ((copilot--status '(:kind "Normal" :busy nil :message "")))
+      (let ((copilot--status (let ((h (make-hash-table :test #'equal)))
+                               (puthash "local" '(:kind "Normal" :busy nil :message "") h) h)))
         (expect (copilot--status-lighter) :to-equal " Copilot")))
 
     (it "returns \" Copilot*\" for Normal and busy"
-      (let ((copilot--status '(:kind "Normal" :busy t :message "")))
+      (let ((copilot--status (let ((h (make-hash-table :test #'equal)))
+                               (puthash "local" '(:kind "Normal" :busy t :message "") h) h)))
         (expect (copilot--status-lighter) :to-equal " Copilot*")))
 
     (it "returns propertized warning string for Warning kind"
-      (let ((copilot--status '(:kind "Warning" :busy nil :message "some warning")))
+      (let ((copilot--status (let ((h (make-hash-table :test #'equal)))
+                               (puthash "local" '(:kind "Warning" :busy nil :message "some warning") h) h)))
         (let ((result (copilot--status-lighter)))
           (expect result :to-equal " Copilot:Warning")
           (expect (get-text-property 0 'face result) :to-equal 'warning))))
 
     (it "returns propertized error string for Error kind"
-      (let ((copilot--status '(:kind "Error" :busy nil :message "auth failed")))
+      (let ((copilot--status (let ((h (make-hash-table :test #'equal)))
+                               (puthash "local" '(:kind "Error" :busy nil :message "auth failed") h) h)))
         (let ((result (copilot--status-lighter)))
           (expect result :to-equal " Copilot:Error")
           (expect (get-text-property 0 'face result) :to-equal 'error))))
 
     (it "returns propertized inactive string for Inactive kind"
-      (let ((copilot--status '(:kind "Inactive" :busy nil :message "")))
+      (let ((copilot--status (let ((h (make-hash-table :test #'equal)))
+                               (puthash "local" '(:kind "Inactive" :busy nil :message "") h) h)))
         (let ((result (copilot--status-lighter)))
           (expect result :to-equal " Copilot:Inactive")
           (expect (get-text-property 0 'face result) :to-equal 'shadow)))))
@@ -659,25 +668,30 @@
 
   (describe "didChangeStatus handler"
     (it "sets copilot--status from notification"
-      (let ((copilot--status nil))
+      (let* ((fake-conn 'test-conn)
+             (copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                     (puthash "local" fake-conn h) h))
+             (copilot--status (make-hash-table :test #'equal)))
         (spy-on 'force-mode-line-update)
-        ;; Simulate the notification by looking up and calling the handler
-        (let ((handlers (gethash 'didChangeStatus copilot--notification-handlers)))
-          (expect handlers :to-be-truthy)
-          (funcall (car handlers)
-                   '(:kind "Warning" :busy nil :message "something"))
-          (expect (plist-get copilot--status :kind) :to-equal "Warning")
-          (expect (plist-get copilot--status :busy) :to-equal nil)
-          (expect (plist-get copilot--status :message) :to-equal "something")
-          (expect 'force-mode-line-update :to-have-been-called-with t))))
+        (expect (gethash 'didChangeStatus copilot--notification-handlers) :to-be-truthy)
+        (copilot--handle-notification fake-conn 'didChangeStatus
+                                      '(:kind "Warning" :busy nil :message "something"))
+        (let ((status (gethash "local" copilot--status)))
+          (expect (plist-get status :kind) :to-equal "Warning")
+          (expect (plist-get status :busy) :to-equal nil)
+          (expect (plist-get status :message) :to-equal "something"))
+        (expect 'force-mode-line-update :to-have-been-called-with t)))
 
     (it "normalizes :json-false to nil for busy flag"
-      (let ((copilot--status nil))
+      (let* ((fake-conn 'test-conn)
+             (copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                     (puthash "local" fake-conn h) h))
+             (copilot--status (make-hash-table :test #'equal)))
         (spy-on 'force-mode-line-update)
-        (let ((handlers (gethash 'didChangeStatus copilot--notification-handlers)))
-          (funcall (car handlers)
-                   '(:kind "Normal" :busy :json-false :message nil))
-          (expect (plist-get copilot--status :busy) :to-equal nil)))))
+        (copilot--handle-notification fake-conn 'didChangeStatus
+                                      '(:kind "Normal" :busy :json-false :message nil))
+        (let ((status (gethash "local" copilot--status)))
+          (expect (plist-get status :busy) :to-equal nil)))))
 
   ;;
   ;; window/showMessageRequest handler
@@ -803,76 +817,89 @@
 
   (describe "$/progress handler"
     (it "stores session on begin and reports progress"
-      (let ((copilot--progress-sessions (make-hash-table :test 'equal)))
+      (let* ((fake-conn 'test-conn)
+             (copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                     (puthash "local" fake-conn h) h))
+             (copilot--progress-sessions (make-hash-table :test 'equal)))
         (spy-on 'force-mode-line-update)
         (expect (gethash '$/progress copilot--notification-handlers) :to-be-truthy)
         (copilot--handle-notification
-         nil '$/progress
+         fake-conn '$/progress
          '(:token "tok1"
            :value (:kind "begin" :title "Indexing" :message "Starting")))
-        (expect (hash-table-count copilot--progress-sessions) :to-equal 1)
-        (let ((session (gethash "tok1" copilot--progress-sessions)))
+        (let* ((sessions (gethash "local" copilot--progress-sessions))
+               (session (gethash "tok1" sessions)))
+          (expect (hash-table-count sessions) :to-equal 1)
           (expect (plist-get session :title) :to-equal "Indexing")
           (expect (plist-get session :message) :to-equal "Starting"))
         (expect (copilot--progress-lighter) :to-equal " [Indexing: Starting]")
         (expect 'force-mode-line-update :to-have-been-called-with t)))
 
     (it "updates session on report"
-      (let ((copilot--progress-sessions (make-hash-table :test 'equal)))
+      (let* ((fake-conn 'test-conn)
+             (copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                     (puthash "local" fake-conn h) h))
+             (copilot--progress-sessions (make-hash-table :test 'equal)))
         (spy-on 'force-mode-line-update)
         (copilot--handle-notification
-         nil '$/progress
+         fake-conn '$/progress
          '(:token "tok1"
            :value (:kind "begin" :title "Indexing" :message "Starting")))
         (copilot--handle-notification
-         nil '$/progress
+         fake-conn '$/progress
          '(:token "tok1"
            :value (:kind "report" :message "50 files" :percentage 42)))
-        (let ((session (gethash "tok1" copilot--progress-sessions)))
+        (let* ((sessions (gethash "local" copilot--progress-sessions))
+               (session (gethash "tok1" sessions)))
           (expect (plist-get session :message) :to-equal "50 files")
           (expect (plist-get session :percentage) :to-equal 42))
         (expect (copilot--progress-lighter) :to-equal " [Indexing: 50 files]")))
 
     (it "removes session on end"
-      (let ((copilot--progress-sessions (make-hash-table :test 'equal)))
+      (let* ((fake-conn 'test-conn)
+             (copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                     (puthash "local" fake-conn h) h))
+             (copilot--progress-sessions (make-hash-table :test 'equal)))
         (spy-on 'force-mode-line-update)
         (copilot--handle-notification
-         nil '$/progress
-         '(:token "tok1"
-           :value (:kind "begin" :title "Indexing")))
+         fake-conn '$/progress
+         '(:token "tok1" :value (:kind "begin" :title "Indexing")))
         (copilot--handle-notification
-         nil '$/progress
-         '(:token "tok1"
-           :value (:kind "end")))
-        (expect (hash-table-count copilot--progress-sessions) :to-equal 0)
+         fake-conn '$/progress
+         '(:token "tok1" :value (:kind "end")))
+        (expect (hash-table-count (gethash "local" copilot--progress-sessions)) :to-equal 0)
         (expect (copilot--progress-lighter) :to-be nil)))
 
     (it "tracks multiple tokens independently"
-      (let ((copilot--progress-sessions (make-hash-table :test 'equal)))
+      (let* ((fake-conn 'test-conn)
+             (copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                     (puthash "local" fake-conn h) h))
+             (copilot--progress-sessions (make-hash-table :test 'equal)))
         (spy-on 'force-mode-line-update)
         (copilot--handle-notification
-         nil '$/progress
-         '(:token "tok1"
-           :value (:kind "begin" :title "Indexing")))
+         fake-conn '$/progress
+         '(:token "tok1" :value (:kind "begin" :title "Indexing")))
         (copilot--handle-notification
-         nil '$/progress
-         '(:token "tok2"
-           :value (:kind "begin" :title "Loading")))
-        (expect (hash-table-count copilot--progress-sessions) :to-equal 2)
-        (copilot--handle-notification
-         nil '$/progress
-         '(:token "tok1"
-           :value (:kind "end")))
-        (expect (hash-table-count copilot--progress-sessions) :to-equal 1)
-        (expect (gethash "tok1" copilot--progress-sessions) :to-be nil)
-        (expect (gethash "tok2" copilot--progress-sessions) :to-be-truthy)))
+         fake-conn '$/progress
+         '(:token "tok2" :value (:kind "begin" :title "Loading")))
+        (let ((sessions (gethash "local" copilot--progress-sessions)))
+          (expect (hash-table-count sessions) :to-equal 2)
+          (copilot--handle-notification
+           fake-conn '$/progress
+           '(:token "tok1" :value (:kind "end")))
+          (expect (hash-table-count sessions) :to-equal 1)
+          (expect (gethash "tok1" sessions) :to-be nil)
+          (expect (gethash "tok2" sessions) :to-be-truthy))))
 
     (it "includes progress in mode-line lighter"
-      (let ((copilot--progress-sessions (make-hash-table :test 'equal))
-            (copilot--status nil))
+      (let* ((fake-conn 'test-conn)
+             (copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                     (puthash "local" fake-conn h) h))
+             (copilot--progress-sessions (make-hash-table :test 'equal))
+             (copilot--status (make-hash-table :test #'equal)))
         (spy-on 'force-mode-line-update)
         (copilot--handle-notification
-         nil '$/progress
+         fake-conn '$/progress
          '(:token "tok1"
            :value (:kind "begin" :title "Indexing" :percentage 42)))
         (expect (copilot--status-lighter) :to-equal " Copilot [Indexing: 42%]"))))
@@ -884,9 +911,12 @@
   (describe "copilot--shutdown-server"
     (it "sends shutdown request and exit notification when connection is alive"
       (let* ((conn (make-symbol "fake-conn"))
-             (copilot--connection conn)
-             (copilot--opened-buffers '(buf1))
-             (copilot--workspace-folders '("file:///tmp")))
+             (copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                     (puthash "local" conn h) h))
+             (copilot--opened-buffers (let ((h (make-hash-table :test #'equal)))
+                                        (puthash "local" '(buf1) h) h))
+             (copilot--workspace-folders (let ((h (make-hash-table :test #'equal)))
+                                           (puthash "local" '("file:///tmp") h) h)))
         (spy-on 'jsonrpc-request)
         (spy-on 'jsonrpc-notify)
         (spy-on 'jsonrpc-shutdown)
@@ -898,11 +928,14 @@
         (expect 'jsonrpc-shutdown :to-have-been-called)))
 
     (it "handles unresponsive server gracefully"
-      (let ((copilot--connection (make-symbol "fake-conn"))
-            (copilot--opened-buffers '(buf1))
-            (copilot--workspace-folders '("file:///tmp")))
-        (spy-on 'jsonrpc-request :and-call-fake
-                (lambda (&rest _) (error "Timeout")))
+      (let* ((conn (make-symbol "fake-conn"))
+             (copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                     (puthash "local" conn h) h))
+             (copilot--opened-buffers (let ((h (make-hash-table :test #'equal)))
+                                        (puthash "local" '(buf1) h) h))
+             (copilot--workspace-folders (let ((h (make-hash-table :test #'equal)))
+                                           (puthash "local" '("file:///tmp") h) h)))
+        (spy-on 'jsonrpc-request :and-call-fake (lambda (&rest _) (error "Timeout")))
         (spy-on 'jsonrpc-notify)
         (spy-on 'jsonrpc-shutdown)
         ;; Should not signal an error
@@ -910,10 +943,10 @@
         ;; Should still attempt exit and cleanup
         (expect 'jsonrpc-notify :to-have-been-called)
         (expect 'jsonrpc-shutdown :to-have-been-called)
-        (expect copilot--connection :to-be nil)))
+        (expect (gethash "local" copilot--connections) :to-be nil)))
 
     (it "is a no-op when connection is nil"
-      (let ((copilot--connection nil))
+      (let ((copilot--connections (make-hash-table :test #'equal)))
         (spy-on 'jsonrpc-request)
         (spy-on 'jsonrpc-notify)
         (spy-on 'jsonrpc-shutdown)
@@ -923,38 +956,61 @@
         (expect 'jsonrpc-shutdown :not :to-have-been-called)))
 
     (it "resets global state"
-      (let ((copilot--connection (make-symbol "fake-conn"))
-            (copilot--opened-buffers '(buf1 buf2))
-            (copilot--workspace-folders '("file:///a" "file:///b"))
-            (copilot--status '(:kind "Error" :busy nil :message "stale")))
+      (let* ((conn (make-symbol "fake-conn"))
+             (copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                     (puthash "local" conn h) h))
+             (copilot--opened-buffers (let ((h (make-hash-table :test #'equal)))
+                                        (puthash "local" '(buf1 buf2) h) h))
+             (copilot--workspace-folders (let ((h (make-hash-table :test #'equal)))
+                                           (puthash "local" '("file:///a" "file:///b") h) h))
+             (copilot--status (let ((h (make-hash-table :test #'equal)))
+                                (puthash "local" '(:kind "Error" :busy nil :message "stale") h) h)))
         (spy-on 'jsonrpc-request)
         (spy-on 'jsonrpc-notify)
         (spy-on 'jsonrpc-shutdown)
         (copilot--shutdown-server)
-        (expect copilot--connection :to-be nil)
-        (expect copilot--opened-buffers :to-be nil)
-        (expect copilot--workspace-folders :to-be nil)
-        (expect copilot--status :to-be nil)))
+        (expect (gethash "local" copilot--connections) :to-be nil)
+        (expect (gethash "local" copilot--opened-buffers) :to-be nil)
+        (expect (gethash "local" copilot--workspace-folders) :to-be nil)
+        (expect (gethash "local" copilot--status) :to-be nil)))
 
     (it "skips jsonrpc-shutdown at exit to avoid hanging Emacs"
       (let* ((conn (make-symbol "fake-conn"))
-             (copilot--connection conn)
-             (copilot--opened-buffers '(buf1))
-             (copilot--workspace-folders '("file:///tmp")))
+             (copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                     (puthash "local" conn h) h))
+             (copilot--opened-buffers (make-hash-table :test #'equal))
+             (copilot--workspace-folders (make-hash-table :test #'equal))
+             (copilot--status (make-hash-table :test #'equal))
+             (copilot--progress-sessions (make-hash-table :test #'equal)))
         (spy-on 'jsonrpc-request)
         (spy-on 'jsonrpc-notify)
         (spy-on 'jsonrpc-shutdown)
-        (copilot--shutdown-server t)
+        (copilot--shutdown-server "local" t)
         ;; The blocking shutdown call must be skipped on exit ...
         (expect 'jsonrpc-shutdown :not :to-have-been-called)
-        ;; ... but the server is still told to exit and state is reset.
+        ;; ... but the server is still told to exit and its state is cleared.
         (expect 'jsonrpc-notify :to-have-been-called-with conn 'exit nil)
-        (expect copilot--connection :to-be nil)))
+        (expect (gethash "local" copilot--connections) :to-be nil)))
 
-    (it "delegates to copilot--shutdown-server with at-exit from kill-emacs-hook"
-      (spy-on 'copilot--shutdown-server)
-      (copilot--shutdown-server-at-exit)
-      (expect 'copilot--shutdown-server :to-have-been-called-with t)))
+    (it "shuts down every server at exit without the blocking call"
+      (let* ((conn1 (make-symbol "conn1"))
+             (conn2 (make-symbol "conn2"))
+             (copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                     (puthash "local" conn1 h)
+                                     (puthash "/ssh:host:" conn2 h) h))
+             (copilot--opened-buffers (make-hash-table :test #'equal))
+             (copilot--workspace-folders (make-hash-table :test #'equal))
+             (copilot--status (make-hash-table :test #'equal))
+             (copilot--progress-sessions (make-hash-table :test #'equal)))
+        (spy-on 'jsonrpc-request)
+        (spy-on 'jsonrpc-notify)
+        (spy-on 'jsonrpc-shutdown)
+        (copilot--shutdown-all-servers-at-exit)
+        ;; Both servers are torn down ...
+        (expect (hash-table-count copilot--connections) :to-equal 0)
+        ;; ... and the busy-looping shutdown is skipped for all of them.
+        (expect 'jsonrpc-shutdown :not :to-have-been-called)
+        (expect (spy-calls-count 'jsonrpc-notify) :to-equal 2))))
 
   ;;
   ;; $/cancelRequest
@@ -964,7 +1020,8 @@
     (it "sends $/cancelRequest and clears ID when request is in-flight"
       (with-temp-buffer
         (setq-local copilot--completion-request-id 42)
-        (let ((copilot--connection t))
+        (let ((copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                      (puthash "local" t h) h)))
           (spy-on 'copilot--connection-alivep :and-return-value t)
           (spy-on 'jsonrpc-notify)
           (copilot--cancel-completion)
@@ -982,7 +1039,7 @@
     (it "clears ID without notifying when connection is dead"
       (with-temp-buffer
         (setq-local copilot--completion-request-id 99)
-        (let ((copilot--connection nil))
+        (let ((copilot--connections (make-hash-table :test #'equal)))
           (spy-on 'jsonrpc-notify)
           (copilot--cancel-completion)
           (expect 'jsonrpc-notify :not :to-have-been-called)
@@ -1066,12 +1123,13 @@
       (with-temp-buffer
         (emacs-lisp-mode)
         (insert "(+ 1 2)")
-        (let ((copilot--opened-buffers nil)
-              (copilot--connection t))
+        (let* ((copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                       (puthash "local" t h) h))
+               (copilot--opened-buffers (make-hash-table :test #'equal)))
           (spy-on 'copilot--connection-alivep :and-return-value t)
           (spy-on 'jsonrpc-notify)
           (copilot--ensure-doc-open)
-          (expect (seq-contains-p copilot--opened-buffers (current-buffer))
+          (expect (seq-contains-p (gethash "local" copilot--opened-buffers) (current-buffer))
                   :to-be-truthy)
           ;; Should have sent textDocument/didOpen
           (let ((calls (spy-calls-all-args 'jsonrpc-notify)))
@@ -1081,8 +1139,10 @@
 
     (it "is a no-op when buffer is already registered"
       (with-temp-buffer
-        (let ((copilot--opened-buffers (list (current-buffer)))
-              (copilot--connection t))
+        (let* ((copilot--connections (let ((h (make-hash-table :test #'equal)))
+                                       (puthash "local" t h) h))
+               (copilot--opened-buffers (let ((h (make-hash-table :test #'equal)))
+                                          (puthash "local" (list (current-buffer)) h) h)))
           (spy-on 'copilot--connection-alivep :and-return-value t)
           (spy-on 'jsonrpc-notify)
           (copilot--ensure-doc-open)

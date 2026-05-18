@@ -239,8 +239,9 @@ from available models."
 (defvar-local copilot--keymap-overlay nil
   "Overlay used to surround point and make copilot-completion-keymap activate.")
 
-(defvar copilot--connection nil
-  "Copilot server jsonrpc connection instance.")
+(defvar copilot--connections (make-hash-table :test #'equal)
+  "Hash table mapping connection key to Copilot server jsonrpc connection.
+Keys are either \"local\" or a TRAMP remote prefix string (e.g. \"/ssh:user@host:\").")
 
 (defvar-local copilot--line-bias 1
   "Line bias for Copilot completion.")
@@ -260,28 +261,50 @@ Incremented after each change.")
   "Return non-nil if the buffer has changed since last completion."
   (not (= copilot--last-doc-version copilot--doc-version)))
 
-(defvar copilot--opened-buffers nil
-  "List of buffers that have been opened in Copilot.")
+(defvar copilot--opened-buffers (make-hash-table :test #'equal)
+  "Hash table mapping connection key to list of buffers opened in Copilot.")
 
-(defvar copilot--workspace-folders nil
-  "List of workspace folder URIs already reported to the server.")
+(defvar copilot--workspace-folders (make-hash-table :test #'equal)
+  "Hash table mapping connection key to list of workspace folder URIs reported to that server.")
 
-(defvar copilot--status nil
-  "Current server status from `didChangeStatus' notification.
-Plist with keys :kind, :busy, and :message.")
+(defvar copilot--status (make-hash-table :test #'equal)
+  "Hash table mapping connection key to server status plist.
+Each value is a plist with keys :kind, :busy, and :message.")
 
-(defvar copilot--progress-sessions (make-hash-table :test 'equal)
-  "Hash table of active progress sessions, keyed by token.
-Each value is a plist with :title, :message, and :percentage.")
+(defvar copilot--progress-sessions (make-hash-table :test #'equal)
+  "Hash table mapping connection key to a hash table of active progress sessions.
+Inner hash tables are keyed by token; each value is a plist with :title, :message,
+and :percentage.")
+
+(defun copilot--connection-key ()
+  "Return the connection key for the current buffer.
+Returns \"local\" for local buffers, or the TRAMP remote prefix string
+\(e.g. \"/ssh:user@host:\") for remote buffers."
+  (if (and buffer-file-name (file-remote-p buffer-file-name))
+      (file-remote-p buffer-file-name)
+    "local"))
+
+(defun copilot--key-for-connection (conn)
+  "Return the connection key string for CONN, or nil if not found."
+  (let (found)
+    (maphash (lambda (k v) (when (eq v conn) (setq found k)))
+             copilot--connections)
+    found))
+
+(defun copilot--local-file-name (path)
+  "Return the local part of PATH, stripping any TRAMP prefix.
+For local paths returns PATH unchanged."
+  (or (file-remote-p path 'localname) path))
 
 (defun copilot--progress-lighter ()
-  "Compute mode-line progress indicator from active sessions.
+  "Compute mode-line progress indicator from active sessions for the current buffer's server.
 Returns nil when no active sessions.  Otherwise returns a string
 like \"[title: message]\" or \"[title: 42%]\" from the most
 recently updated session."
-  (when (> (hash-table-count copilot--progress-sessions) 0)
+  (when-let* ((sessions (gethash (copilot--connection-key) copilot--progress-sessions))
+              (_ (> (hash-table-count sessions) 0)))
     (let (latest)
-      (maphash (lambda (_k v) (setq latest v)) copilot--progress-sessions)
+      (maphash (lambda (_k v) (setq latest v)) sessions)
       (let ((title (plist-get latest :title))
             (message (plist-get latest :message))
             (percentage (plist-get latest :percentage)))
@@ -292,9 +315,10 @@ recently updated session."
 
 (defun copilot--status-lighter ()
   "Compute the mode-line lighter string from `copilot--status'."
-  (let ((kind (plist-get copilot--status :kind))
-        (busy (plist-get copilot--status :busy))
-        (progress (copilot--progress-lighter)))
+  (let* ((status (gethash (copilot--connection-key) copilot--status))
+         (kind (plist-get status :kind))
+         (busy (plist-get status :busy))
+         (progress (copilot--progress-lighter)))
     (concat
      (cond
       ((or (null kind) (and (equal kind "Normal") (not busy)))
@@ -460,9 +484,9 @@ recently updated session."
   "Simply ignore the response.")
 
 (defun copilot--connection-alivep ()
-  "Non-nil if the `copilot--connection' is alive."
-  (and copilot--connection
-       (zerop (process-exit-status (jsonrpc--process copilot--connection)))))
+  "Non-nil if the Copilot server connection for the current buffer is alive."
+  (when-let* ((conn (gethash (copilot--connection-key) copilot--connections)))
+    (zerop (process-exit-status (jsonrpc--process conn)))))
 
 (defmacro copilot--request (method &optional params &rest args)
   "Send a request to the copilot server for METHOD with PARAMS and ARGS.
@@ -471,14 +495,15 @@ reject the request with a schema-validation error."
   `(progn
      (unless (copilot--connection-alivep)
        (copilot--start-server))
-     (jsonrpc-request copilot--connection ,method (or ,params (make-hash-table)) ,@args)))
+     (jsonrpc-request (gethash (copilot--connection-key) copilot--connections)
+                      ,method (or ,params (make-hash-table)) ,@args)))
 
 (defmacro copilot--notify (&rest args)
   "Send a notification to the copilot server with ARGS."
   `(progn
      (unless (copilot--connection-alivep)
        (copilot--start-server))
-     (jsonrpc-notify copilot--connection ,@args)))
+     (jsonrpc-notify (gethash (copilot--connection-key) copilot--connections) ,@args)))
 
 (cl-defmacro copilot--async-request (method params &rest args
                                     &key
@@ -504,7 +529,7 @@ Returns the request ID (a number) so callers can cancel the request later."
        ;; jsonrpc will use temp buffer for callbacks, so we need to save the
        ;; current buffer and restore it inside callback
        (let ((buf (current-buffer)))
-         (car (jsonrpc--async-request-1 copilot--connection
+         (car (jsonrpc--async-request-1 (gethash (copilot--connection-key) copilot--connections)
                                         ,method ,params
                                         :success-fn (lambda (result)
                                                       (if (buffer-live-p buf)
@@ -517,23 +542,39 @@ Returns the request ID (a number) so callers can cancel the request later."
                                                                       ,method err)))
                                         ,@filtered-args))))))
 
-(defun copilot--shutdown-server ()
-  "Shut down the Copilot server with the standard LSP shutdown sequence.
+(defun copilot--shutdown-server (&optional key)
+  "Shut down the Copilot server identified by KEY with the standard LSP shutdown sequence.
+KEY defaults to `(copilot--connection-key)' for the current buffer.
 Sends a `shutdown' request followed by an `exit' notification, then
-cleans up the connection and resets global state.  Safe to call when
-there is no active connection."
-  (when copilot--connection
-    (condition-case _err
-        (jsonrpc-request copilot--connection 'shutdown nil :timeout 3)
-      (error nil))
-    (condition-case _err
-        (jsonrpc-notify copilot--connection 'exit nil)
-      (error nil))
-    (jsonrpc-shutdown copilot--connection)
-    (setq copilot--connection nil)
-    (setq copilot--opened-buffers nil)
-    (setq copilot--workspace-folders nil)
-    (setq copilot--status nil)))
+cleans up the connection and resets state for that key.  Safe to call when
+there is no active connection for that key."
+  (let* ((k (or key (copilot--connection-key)))
+         (conn (gethash k copilot--connections)))
+    (when conn
+      (condition-case _err
+          (jsonrpc-request conn 'shutdown nil :timeout 3)
+        (error nil))
+      (condition-case _err
+          (jsonrpc-notify conn 'exit nil)
+        (error nil))
+      (jsonrpc-shutdown conn)
+      (remhash k copilot--connections)
+      (remhash k copilot--opened-buffers)
+      (remhash k copilot--workspace-folders)
+      (remhash k copilot--status)
+      (remhash k copilot--progress-sessions))))
+
+(defun copilot--shutdown-all-servers ()
+  "Shut down all active Copilot server connections."
+  (let ((keys (hash-table-keys copilot--connections)))
+    (dolist (key keys)
+      (copilot--shutdown-server key))))
+
+;;;###autoload
+(defun copilot-disconnect ()
+  "Shut down the Copilot server for the current buffer's host."
+  (interactive)
+  (copilot--shutdown-server (copilot--connection-key)))
 
 (defun copilot--command ()
   "Return the command-line to start copilot server."
@@ -541,20 +582,36 @@ there is no active connection."
    (list (copilot-server-executable))
    copilot-server-args))
 
-(defun copilot--make-connection ()
-  "Establish copilot jsonrpc connection."
-  (let ((make-fn (apply-partially
-                  #'make-instance
-                  'jsonrpc-process-connection
-                  :name "copilot"
-                  :request-dispatcher #'copilot--handle-request
-                  :notification-dispatcher #'copilot--handle-notification
-                  :process (make-process :name "copilot server"
-                                         :command (copilot--command)
-                                         :coding 'utf-8-emacs-unix
-                                         :connection-type 'pipe
-                                         :stderr (get-buffer-create "*copilot stderr*")
-                                         :noquery t))))
+(defun copilot--make-connection (remote-prefix)
+  "Establish a Copilot jsonrpc connection.
+REMOTE-PREFIX is the TRAMP remote prefix string (e.g. \"/ssh:user@host:\") for
+remote connections, or nil for a local connection.  When non-nil, the server
+process is started on the remote host via TRAMP by binding `default-directory'."
+  (let* ((default-directory (if remote-prefix
+                                (concat remote-prefix "~/")
+                              default-directory))
+         (stderr-name (if remote-prefix
+                          (format "*copilot stderr %s*" remote-prefix)
+                        "*copilot stderr*"))
+         (make-fn (apply-partially
+                   #'make-instance
+                   'jsonrpc-process-connection
+                   :name "copilot"
+                   :request-dispatcher #'copilot--handle-request
+                   :notification-dispatcher #'copilot--handle-notification
+                   :on-shutdown
+                   (lambda (_conn)
+                     (copilot--log
+                      'error "Copilot server%s exited.  See %s for details."
+                      (if remote-prefix (format " (%s)" remote-prefix) "")
+                      stderr-name))
+                   :process (make-process :name "copilot server"
+                                          :command (copilot--command)
+                                          :coding 'utf-8-emacs-unix
+                                          :connection-type 'pipe
+                                          :stderr (get-buffer-create stderr-name)
+                                          :noquery t
+                                          :file-handler t))))
     (condition-case nil
         (funcall make-fn :events-buffer-config `(:size ,copilot-log-max))
       (invalid-slot-name
@@ -562,7 +619,9 @@ there is no active connection."
        (funcall make-fn :events-buffer-scrollback-size copilot-log-max)))))
 
 (defun copilot--effective-lsp-settings ()
-  "Return the effective LSP settings, including completion model."
+  "Return the effective LSP settings, including completion model.
+Always returns at least an empty hash table so the server receives
+a JSON object rather than null for the settings field."
   (let ((settings (copy-sequence copilot-lsp-settings)))
     (when copilot-completion-model
       (let* ((github (or (plist-get settings :github) '()))
@@ -570,31 +629,39 @@ there is no active connection."
         (setq copilot-section (plist-put copilot-section :selectedCompletionModel copilot-completion-model))
         (setq github (plist-put github :copilot copilot-section))
         (setq settings (plist-put settings :github github))))
-    settings))
+    (or settings (make-hash-table))))
 
 (defun copilot--start-server ()
-  "Start the copilot server process in local."
-  (cond
-   ((not (file-exists-p (copilot-server-executable)))
-    (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
-   (t
-    (let ((installed-version (copilot-installed-version)))
-      (when (and copilot-lsp-server-version (not (equal installed-version copilot-lsp-server-version)))
-        (warn "This package has been tested for Copilot LSP server version %s but version %s has been detected.
+  "Start the copilot server process for the current buffer's host.
+For remote buffers (TRAMP), the server is started on the remote host."
+  (let* ((key (copilot--connection-key))
+         (remote-prefix (if (equal key "local") nil key)))
+    ;; Limit the remote `default-directory' rebinding to the executable check
+    ;; and process creation so that subsequent calls (e.g. `vc-root-dir' inside
+    ;; `copilot--workspace-root') keep the buffer's actual directory.
+    (let ((default-directory (if remote-prefix
+                                 (concat remote-prefix "~/")
+                               default-directory)))
+      (unless (or remote-prefix (file-exists-p (copilot-server-executable)))
+        (user-error "Server is not installed%s, please install via `M-x copilot-install-server`"
+                    (if remote-prefix (format " on %s" remote-prefix) "")))
+      (let ((installed-version (copilot-installed-version)))
+        (when (and copilot-lsp-server-version (not (equal installed-version copilot-lsp-server-version)))
+          (warn "This package has been tested for Copilot LSP server version %s but version %s has been detected.
 You can change the installed version with `M-x copilot-reinstall-server` or remove this warning by changing the value of `copilot-lsp-server-version'."
-              copilot-lsp-server-version installed-version)))
-    (setq copilot--connection (copilot--make-connection))
-    (setq copilot--workspace-folders nil)
-    (copilot--log 'info "Copilot server started.")
+                copilot-lsp-server-version installed-version)))
+      (puthash key (copilot--make-connection remote-prefix) copilot--connections))
+    (puthash key nil copilot--workspace-folders)
+    (copilot--log 'info "Copilot server started%s."
+                  (if remote-prefix (format " on %s" remote-prefix) ""))
     (let* ((root (copilot--workspace-root))
            (root-uri (when root (copilot--path-to-uri root)))
            (folders (when root-uri
-                      (setq copilot--workspace-folders (list root-uri))
+                      (puthash key (list root-uri) copilot--workspace-folders)
                       (vector (list :uri root-uri :name (file-name-nondirectory (directory-file-name root)))))))
       (copilot--request
        'initialize
-       `(:processId
-         ,(emacs-pid)
+       `(,@(if remote-prefix '() `(:processId ,(emacs-pid)))
          ,@(when root-uri `(:rootUri ,root-uri))
          :capabilities
          (:workspace
@@ -612,14 +679,15 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
               `(:networkProxy ,copilot-network-proxy))))))
     (copilot--notify 'initialized '())
     (copilot--notify 'workspace/didChangeConfiguration `(:settings ,(copilot--effective-lsp-settings)))
-    (add-hook 'kill-emacs-hook #'copilot--shutdown-server))))
+    (add-hook 'kill-emacs-hook #'copilot--shutdown-all-servers)))
 
 ;;
 ;; login / logout
 ;;
 
 (defun copilot-login ()
-  "Login to Copilot."
+  "Login to Copilot.
+When called from a remote buffer, authenticates with the remote Copilot server."
   (interactive)
   (copilot--dbind
       (status user ((:userCode user-code)) ((:verificationUri verification-uri)))
@@ -758,7 +826,7 @@ a request that was just initiated by a wrapper command.")
 Sends `$/cancelRequest' to the server and resets the stored request ID."
   (when copilot--completion-request-id
     (when (copilot--connection-alivep)
-      (jsonrpc-notify copilot--connection
+      (jsonrpc-notify (gethash (copilot--connection-key) copilot--connections)
                       '$/cancelRequest
                       (list :id copilot--completion-request-id)))
     (setq copilot--completion-request-id nil)))
@@ -793,7 +861,9 @@ Sends `$/cancelRequest' to the server and resets the stored request ID."
         tab-width)))
 
 (defun copilot--workspace-root ()
-  "Return the root directory of the current workspace, or nil."
+  "Return the local part of the root directory of the current workspace, or nil.
+For TRAMP remote buffers the TRAMP prefix is stripped so the returned path
+is a plain absolute path suitable for use in URIs sent to the server."
   (when buffer-file-name
     (let ((root (or (and (fboundp 'project-current)
                          (when-let* ((proj (project-current)))
@@ -803,17 +873,20 @@ Sends `$/cancelRequest' to the server and resets the stored request ID."
                     (and (fboundp 'vc-root-dir)
                          (vc-root-dir)))))
       (when root
-        (file-truename root)))))
+        (copilot--local-file-name (file-truename root))))))
 
 (defun copilot--get-relative-path ()
-  "Get relative path to current buffer."
+  "Get relative path to current buffer.
+For TRAMP remote buffers, the TRAMP prefix is stripped before computing
+the relative path, so the result is a plain relative path."
   (cond
    ((not buffer-file-name)
     "")
    (t
-    (if-let* ((root (copilot--workspace-root)))
-        (file-relative-name buffer-file-name root)
-      (file-name-nondirectory buffer-file-name)))))
+    (let ((local-name (copilot--local-file-name buffer-file-name)))
+      (if-let* ((root (copilot--workspace-root)))
+          (file-relative-name local-name root)
+        (file-name-nondirectory local-name))))))
 
 (defun copilot--path-to-uri (path)
   "Convert file PATH to a URI string."
@@ -825,9 +898,11 @@ Sends `$/cancelRequest' to the server and resets the stored request ID."
     (concat "file://" (url-encode-url path)))))
 
 (defun copilot--get-uri ()
-  "Get URI of current buffer."
+  "Get URI of current buffer.
+For TRAMP remote buffers the TRAMP prefix is stripped so the URI contains
+the plain remote path as seen by the server process."
   (if buffer-file-name
-      (copilot--path-to-uri buffer-file-name)
+      (copilot--path-to-uri (copilot--local-file-name buffer-file-name))
     (concat "file:///buffer/" (url-encode-url (buffer-name (current-buffer))))))
 
 (defun copilot--get-source ()
@@ -936,7 +1011,7 @@ POS defaults to point.  Character offset is in UTF-16 code units."
             ;; base from the start. For now leave it as is.
             :indentSize indent
             :insertSpaces (if indent-tabs-mode :json-false t)
-            :path (buffer-file-name)
+            :path (when buffer-file-name (copilot--local-file-name buffer-file-name))
             :uri (copilot--get-uri)
             :relativePath (copilot--get-relative-path)
             :languageId (copilot--get-language-id)
@@ -1015,9 +1090,15 @@ TRIGGER-KIND is 1 for invoked, 2 for automatic (default)."
 Each request METHOD can have only one HANDLER."
   (puthash method handler copilot--request-handlers))
 
-(defun copilot--handle-request (_ method msg)
-  "Handle MSG of type METHOD by calling the appropriate registered handler."
-  (let ((handler (gethash method copilot--request-handlers)))
+(defvar copilot--current-connection nil
+  "Dynamically bound to the jsonrpc connection during notification/request dispatch.
+Handlers can read this to identify which server sent the message.")
+
+(defun copilot--handle-request (conn method msg)
+  "Handle MSG of type METHOD by calling the appropriate registered handler.
+CONN is bound to `copilot--current-connection' for the duration of the call."
+  (let ((copilot--current-connection conn)
+        (handler (gethash method copilot--request-handlers)))
     (when handler
       (funcall handler msg))))
 
@@ -1029,9 +1110,11 @@ Each request METHOD can have only one HANDLER."
   (let ((handlers (gethash method copilot--notification-handlers '())))
     (puthash method (cons handler handlers) copilot--notification-handlers)))
 
-(defun copilot--handle-notification (_ method msg)
-  "Handle MSG of type METHOD by calling all appropriate registered handlers."
-  (let ((handlers (gethash method copilot--notification-handlers '())))
+(defun copilot--handle-notification (conn method msg)
+  "Handle MSG of type METHOD by calling all appropriate registered handlers.
+CONN is bound to `copilot--current-connection' for the duration of each call."
+  (let ((copilot--current-connection conn)
+        (handlers (gethash method copilot--notification-handlers '())))
     (dolist (handler handlers)
       (funcall handler msg))))
 
@@ -1081,9 +1164,10 @@ Each request METHOD can have only one HANDLER."
 (copilot-on-notification
  'didChangeStatus
  (lambda (msg)
-   (copilot--dbind (kind busy message) msg
-     (setq copilot--status (list :kind kind :busy (eq busy t) :message message))
-     (force-mode-line-update t))))
+   (let ((key (copilot--key-for-connection copilot--current-connection)))
+     (copilot--dbind (kind busy message) msg
+       (puthash key (list :kind kind :busy (eq busy t) :message message) copilot--status)
+       (force-mode-line-update t)))))
 
 (copilot-on-request
  'window/showMessageRequest
@@ -1124,25 +1208,30 @@ Each request METHOD can have only one HANDLER."
 (copilot-on-notification
  '$/progress
  (lambda (msg)
-   (copilot--dbind (token value) msg
-     (let ((kind (plist-get value :kind)))
-       (cond
-        ((equal kind "begin")
-         (puthash token
-                  (list :title (plist-get value :title)
-                        :message (plist-get value :message)
-                        :percentage (plist-get value :percentage))
-                  copilot--progress-sessions))
-        ((equal kind "report")
-         (let ((session (gethash token copilot--progress-sessions)))
-           (when session
-             (when (plist-member value :message)
-               (plist-put session :message (plist-get value :message)))
-             (when (plist-member value :percentage)
-               (plist-put session :percentage (plist-get value :percentage))))))
-        ((equal kind "end")
-         (remhash token copilot--progress-sessions)))
-       (force-mode-line-update t)))))
+   (let* ((key (copilot--key-for-connection copilot--current-connection))
+          (sessions (or (gethash key copilot--progress-sessions)
+                        (let ((h (make-hash-table :test 'equal)))
+                          (puthash key h copilot--progress-sessions)
+                          h))))
+     (copilot--dbind (token value) msg
+       (let ((kind (plist-get value :kind)))
+         (cond
+          ((equal kind "begin")
+           (puthash token
+                    (list :title (plist-get value :title)
+                          :message (plist-get value :message)
+                          :percentage (plist-get value :percentage))
+                    sessions))
+          ((equal kind "report")
+           (let ((session (gethash token sessions)))
+             (when session
+               (when (plist-member value :message)
+                 (plist-put session :message (plist-get value :message)))
+               (when (plist-member value :percentage)
+                 (plist-put session :percentage (plist-get value :percentage))))))
+          ((equal kind "end")
+           (remhash token sessions)))
+         (force-mode-line-update t))))))
 
 (defun copilot--get-panel-completions (callback)
   "Get panel completions with CALLBACK."
@@ -1420,23 +1509,26 @@ Uppercase CHAR disables `case-fold-search', mirroring `zap-to-char'."
   "Ensure the current buffer has been opened with the Copilot server.
 Sends workspace folder and `textDocument/didOpen' notifications if
 the buffer has not been registered yet.  Safe to call multiple times."
-  (when-let* ((root (copilot--workspace-root))
-              (root-uri (copilot--path-to-uri root)))
-    (unless (member root-uri copilot--workspace-folders)
-      (push root-uri copilot--workspace-folders)
-      (copilot--notify 'workspace/didChangeWorkspaceFolders
-                       (list :event
-                             (list :added (vector (list :uri root-uri
-                                                        :name (file-name-nondirectory
-                                                               (directory-file-name root))))
-                                   :removed [])))))
-  (unless (seq-contains-p copilot--opened-buffers (current-buffer))
-    (add-to-list 'copilot--opened-buffers (current-buffer))
-    (copilot--notify 'textDocument/didOpen
-                     (list :textDocument (list :uri (copilot--get-uri)
-                                               :languageId (copilot--get-language-id)
-                                               :version copilot--doc-version
-                                               :text (copilot--get-source))))))
+  (let ((key (copilot--connection-key)))
+    (when-let* ((root (copilot--workspace-root))
+                (root-uri (copilot--path-to-uri root)))
+      (unless (member root-uri (gethash key copilot--workspace-folders))
+        (puthash key (cons root-uri (gethash key copilot--workspace-folders))
+                 copilot--workspace-folders)
+        (copilot--notify 'workspace/didChangeWorkspaceFolders
+                         (list :event
+                               (list :added (vector (list :uri root-uri
+                                                          :name (file-name-nondirectory
+                                                                 (directory-file-name root))))
+                                     :removed [])))))
+    (unless (seq-contains-p (gethash key copilot--opened-buffers) (current-buffer))
+      (puthash key (cons (current-buffer) (gethash key copilot--opened-buffers))
+               copilot--opened-buffers)
+      (copilot--notify 'textDocument/didOpen
+                       (list :textDocument (list :uri (copilot--get-uri)
+                                                 :languageId (copilot--get-language-id)
+                                                 :version copilot--doc-version
+                                                 :text (copilot--get-source)))))))
 
 (defun copilot--on-doc-focus (window)
   "Notify that the document WINDOW has been focussed or opened."
@@ -1445,18 +1537,21 @@ the buffer has not been registered yet.  Safe to call multiple times."
   ;; send a notification for the window gaining focus and only if the buffer has
   ;; copilot-mode enabled.
   (when (and copilot-mode (eq window (selected-window)))
-    (if (seq-contains-p copilot--opened-buffers (current-buffer))
+    (if (seq-contains-p (gethash (copilot--connection-key) copilot--opened-buffers) (current-buffer))
         (copilot--notify 'textDocument/didFocus
                          (list :textDocument (list :uri (copilot--get-uri))))
       (copilot--ensure-doc-open))))
 
 (defun copilot--on-doc-close (&rest _args)
   "Notify that the document has been closed."
-  (when (seq-contains-p copilot--opened-buffers (current-buffer))
-    (when (copilot--connection-alivep)
-      (jsonrpc-notify copilot--connection 'textDocument/didClose
-                      (list :textDocument (list :uri (copilot--get-uri)))))
-    (setq copilot--opened-buffers (delete (current-buffer) copilot--opened-buffers))))
+  (let* ((key (copilot--connection-key))
+         (opened (gethash key copilot--opened-buffers)))
+    (when (seq-contains-p opened (current-buffer))
+      (when (copilot--connection-alivep)
+        (jsonrpc-notify (gethash key copilot--connections)
+                        'textDocument/didClose
+                        (list :textDocument (list :uri (copilot--get-uri)))))
+      (puthash key (delete (current-buffer) opened) copilot--opened-buffers))))
 
 ;;;###autoload
 (defun copilot-complete ()

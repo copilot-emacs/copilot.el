@@ -461,7 +461,7 @@ If not currently streaming, reset the conversation instead."
              (buffer-local-value 'copilot-chat--streaming-p chat-buf))
         (with-current-buffer chat-buf
           (when (and copilot-chat--request-id (copilot--connection-alivep))
-            (jsonrpc-notify copilot--connection
+            (jsonrpc-notify (gethash (copilot--connection-key) copilot--connections)
                             '$/cancelRequest
                             (list :id copilot-chat--request-id)))
           (copilot-chat--end-streaming)

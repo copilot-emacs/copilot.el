@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 
+- Fix Emacs hanging on exit when shutting down the Copilot server (the blocking `jsonrpc-shutdown` is now skipped at `kill-emacs` time). ([#469](https://github.com/copilot-emacs/copilot.el/issues/469))
 - Fix NES insertion text never rendering because its zero-width overlay was marked `evaporate` and got deleted immediately. ([#451](https://github.com/copilot-emacs/copilot.el/issues/451))
 - Suppress "Request was canceled" error messages in the echo area. ([#464](https://github.com/copilot-emacs/copilot.el/pull/464))
 

@@ -377,7 +377,39 @@
 
   (describe "copilot-chat (command)"
     (it "rejects empty messages"
-      (expect (copilot-chat "") :to-throw 'user-error)))
+      (expect (copilot-chat "") :to-throw 'user-error))
+
+    (it "attaches a file-visiting buffer as context source"
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name))
+      (spy-on 'copilot-chat--create)
+      (spy-on 'copilot-chat--send-turn)
+      (spy-on 'display-buffer)
+      (let ((src (get-buffer-create "*copilot-chat-test-src*")))
+        (unwind-protect
+            (with-current-buffer src
+              (setq buffer-file-name "/tmp/copilot-chat-test.el")
+              (copilot-chat "hello")
+              (expect (buffer-local-value 'copilot-chat--source-buffer
+                                          (get-buffer copilot-chat--buffer-name))
+                      :to-be src))
+          (with-current-buffer src (setq buffer-file-name nil))
+          (kill-buffer src))))
+
+    (it "does not attach a non-file buffer as context source"
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name))
+      (spy-on 'copilot-chat--create)
+      (spy-on 'copilot-chat--send-turn)
+      (spy-on 'display-buffer)
+      (let ((src (get-buffer-create "*copilot-chat-test-scratch*")))
+        (unwind-protect
+            (with-current-buffer src
+              (copilot-chat "hello")
+              (expect (buffer-local-value 'copilot-chat--source-buffer
+                                          (get-buffer copilot-chat--buffer-name))
+                      :to-be nil))
+          (kill-buffer src)))))
 
   (describe "copilot-chat-send"
     (it "rejects empty messages"

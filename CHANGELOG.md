@@ -2,6 +2,10 @@
 
 ## master (unreleased)
 
+### Changes
+
+- `copilot-chat` now only attaches the originating buffer as context when it is a file-visiting buffer, so invoking chat from an unrelated buffer (dired, `*scratch*`, etc.) no longer sends it as context. ([#470](https://github.com/copilot-emacs/copilot.el/issues/470))
+
 ### Bug Fixes
 
 - Fix Emacs hanging on exit when shutting down the Copilot server (the blocking `jsonrpc-shutdown` is now skipped at `kill-emacs` time). ([#469](https://github.com/copilot-emacs/copilot.el/issues/469))

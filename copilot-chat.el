@@ -389,7 +389,11 @@ Otherwise, create a new conversation."
             "Copilot Chat: "))))
   (when (string-empty-p message)
     (user-error "Empty message"))
-  (let ((source-buf (current-buffer))
+  ;; Only attach the originating buffer as context when it is a real
+  ;; file-visiting buffer.  `copilot-chat' can be invoked from anywhere
+  ;; (dired, *scratch*, the chat buffer itself, ...), and sending an
+  ;; unrelated buffer as context is just noise.  See issue #470.
+  (let ((source-buf (when (buffer-file-name) (current-buffer)))
         (chat-buf (get-buffer-create copilot-chat--buffer-name)))
     (with-current-buffer chat-buf
       (unless (derived-mode-p 'copilot-chat-mode)

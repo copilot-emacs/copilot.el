@@ -517,11 +517,18 @@ Returns the request ID (a number) so callers can cancel the request later."
                                                                       ,method err)))
                                         ,@filtered-args))))))
 
-(defun copilot--shutdown-server ()
+(defun copilot--shutdown-server (&optional at-exit)
   "Shut down the Copilot server with the standard LSP shutdown sequence.
 Sends a `shutdown' request followed by an `exit' notification, then
 cleans up the connection and resets global state.  Safe to call when
-there is no active connection."
+there is no active connection.
+
+When AT-EXIT is non-nil, skip the final `jsonrpc-shutdown' call.  That
+function waits on `accept-process-output', which can busy-loop forever
+when several jsonrpc connections are alive at once, due to an Emacs bug
+fixed only on Emacs 31+ (see https://github.com/copilot-emacs/copilot.el/issues/469).
+At exit that would hang Emacs indefinitely, and the server process is
+reaped by Emacs anyway, so the `exit' notification is enough."
   (when copilot--connection
     (condition-case _err
         (jsonrpc-request copilot--connection 'shutdown nil :timeout 3)
@@ -529,11 +536,18 @@ there is no active connection."
     (condition-case _err
         (jsonrpc-notify copilot--connection 'exit nil)
       (error nil))
-    (jsonrpc-shutdown copilot--connection)
+    (unless at-exit
+      (jsonrpc-shutdown copilot--connection))
     (setq copilot--connection nil)
     (setq copilot--opened-buffers nil)
     (setq copilot--workspace-folders nil)
     (setq copilot--status nil)))
+
+(defun copilot--shutdown-server-at-exit ()
+  "Shut down the Copilot server from `kill-emacs-hook'.
+Skips the blocking `jsonrpc-shutdown' step so Emacs can exit without
+hanging.  See `copilot--shutdown-server'."
+  (copilot--shutdown-server t))
 
 (defun copilot--command ()
   "Return the command-line to start copilot server."
@@ -612,7 +626,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
               `(:networkProxy ,copilot-network-proxy))))))
     (copilot--notify 'initialized '())
     (copilot--notify 'workspace/didChangeConfiguration `(:settings ,(copilot--effective-lsp-settings)))
-    (add-hook 'kill-emacs-hook #'copilot--shutdown-server))))
+    (add-hook 'kill-emacs-hook #'copilot--shutdown-server-at-exit))))
 
 ;;
 ;; login / logout

@@ -934,7 +934,27 @@
         (expect copilot--connection :to-be nil)
         (expect copilot--opened-buffers :to-be nil)
         (expect copilot--workspace-folders :to-be nil)
-        (expect copilot--status :to-be nil))))
+        (expect copilot--status :to-be nil)))
+
+    (it "skips jsonrpc-shutdown at exit to avoid hanging Emacs"
+      (let* ((conn (make-symbol "fake-conn"))
+             (copilot--connection conn)
+             (copilot--opened-buffers '(buf1))
+             (copilot--workspace-folders '("file:///tmp")))
+        (spy-on 'jsonrpc-request)
+        (spy-on 'jsonrpc-notify)
+        (spy-on 'jsonrpc-shutdown)
+        (copilot--shutdown-server t)
+        ;; The blocking shutdown call must be skipped on exit ...
+        (expect 'jsonrpc-shutdown :not :to-have-been-called)
+        ;; ... but the server is still told to exit and state is reset.
+        (expect 'jsonrpc-notify :to-have-been-called-with conn 'exit nil)
+        (expect copilot--connection :to-be nil)))
+
+    (it "delegates to copilot--shutdown-server with at-exit from kill-emacs-hook"
+      (spy-on 'copilot--shutdown-server)
+      (copilot--shutdown-server-at-exit)
+      (expect 'copilot--shutdown-server :to-have-been-called-with t)))
 
   ;;
   ;; $/cancelRequest

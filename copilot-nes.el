@@ -181,13 +181,15 @@ Run `M-x copilot-reinstall-server' to upgrade."
           (overlay-put ov 'evaporate t)
           (overlay-put ov 'priority 100)
           (push ov copilot-nes--overlays)))
-      ;; Insertion overlay: show new text
+      ;; Insertion overlay: show new text.  The overlay is zero-width
+      ;; (it only carries an `after-string'), so it must NOT be marked
+      ;; `evaporate' — Emacs deletes an empty overlay the moment that
+      ;; property is set, which would make the insertion invisible.
       (when has-insertion
         (let* ((insertion-text (propertize text 'face 'copilot-nes-insertion-face))
                (ov (make-overlay end end nil nil nil)))
           (overlay-put ov 'after-string insertion-text)
           (overlay-put ov 'copilot-nes t)
-          (overlay-put ov 'evaporate t)
           (overlay-put ov 'priority 100)
           (push ov copilot-nes--overlays)))))
   ;; Record point so the post-command hook can detect actual movement

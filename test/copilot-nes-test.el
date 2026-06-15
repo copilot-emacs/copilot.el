@@ -94,7 +94,10 @@
           (copilot-nes--display edit)
           (expect (length copilot-nes--overlays) :to-equal 1)
           (let ((ov (car copilot-nes--overlays)))
-            (expect (overlay-get ov 'after-string) :to-be-truthy)))))
+            (expect (overlay-get ov 'after-string) :to-be-truthy)
+            ;; The overlay must stay attached to the buffer; an empty
+            ;; overlay marked `evaporate' would be detached and invisible.
+            (expect (overlay-buffer ov) :to-be-truthy)))))
 
     (it "sends didShowInlineEdit notification when command is present"
       (with-temp-buffer

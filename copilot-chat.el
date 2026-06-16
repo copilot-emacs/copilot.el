@@ -63,8 +63,12 @@ and file edits."
   :type 'boolean
   :group 'copilot-chat)
 
-(defcustom copilot-chat-auto-approve-tools '("get_errors" "fetch_web_page")
-  "Tools that skip confirmation and execute automatically."
+(defcustom copilot-chat-auto-approve-tools '("get_errors")
+  "Tools that skip confirmation and execute automatically.
+Only read-only, local tools should be auto-approved.  Tools that run
+shell commands, modify files, or reach the network (e.g.
+`fetch_web_page') are intentionally excluded so they always prompt
+for confirmation."
   :type '(repeat string)
   :group 'copilot-chat)
 
@@ -237,6 +241,23 @@ Return editor context for the requested skill."
                               'face 'copilot-chat-tool-face))
           (copilot-chat--scroll-to-bottom))))))
 
+(defun copilot-chat--tool-summary (name input)
+  "Return a concise, human-readable summary of tool NAME with INPUT.
+Used in confirmation prompts so the user can tell what they are
+approving without seeing a raw plist dump."
+  (pcase name
+    ("run_in_terminal"
+     (format "run shell command: %s" (plist-get input :command)))
+    ("create_file"
+     (format "create file: %s" (plist-get input :filePath)))
+    ("fetch_web_page"
+     (format "fetch: %s"
+             (string-join (append (plist-get input :urls) nil) ", ")))
+    ("get_errors"
+     (format "read diagnostics for: %s"
+             (string-join (append (plist-get input :filePaths) nil) ", ")))
+    (_ (format "%s with input %S" name input))))
+
 (defun copilot-chat--handle-tool-confirmation (msg)
   "Handle `conversation/invokeClientToolConfirmation' request MSG.
 Return \"Accept\" or \"Dismiss\" based on user confirmation."
@@ -244,10 +265,10 @@ Return \"Accept\" or \"Dismiss\" based on user confirmation."
         (input (plist-get msg :input)))
     (if (member name copilot-chat-auto-approve-tools)
         "Accept"
-      (let ((approved (yes-or-no-p
-                       (format "Copilot wants to run tool '%s' with input: %S.  Allow? "
-                               name input))))
-        (if approved "Accept" "Dismiss")))))
+      (if (yes-or-no-p (format "Copilot wants to %s.  Allow? "
+                               (copilot-chat--tool-summary name input)))
+          "Accept"
+        "Dismiss"))))
 
 (copilot-on-request 'conversation/invokeClientToolConfirmation
                     #'copilot-chat--handle-tool-confirmation)
@@ -259,29 +280,16 @@ Return \"Accept\" or \"Dismiss\" based on user confirmation."
 
 (defun copilot-chat--execute-run-in-terminal (input)
   "Execute run_in_terminal tool with INPUT."
-  (let ((command (plist-get input :command)))
+  (let ((command (plist-get input :command))
+        ;; Run in the workspace root rather than whatever buffer was
+        ;; current when the request arrived, so relative paths and build
+        ;; commands behave the way the user expects.
+        (default-directory (or (copilot--workspace-root) default-directory)))
     (copilot-chat--insert-tool-status "run_in_terminal" (format "Running: %s" command))
     (condition-case err
         (let ((output (shell-command-to-string command)))
           (copilot-chat--insert-tool-status "run_in_terminal" "Done.")
           (copilot-chat--tool-result "success" output))
-      (error
-       (copilot-chat--tool-result "error" (error-message-string err))))))
-
-(defun copilot-chat--execute-insert-edit (input)
-  "Execute insert_edit_into_file tool with INPUT."
-  (let ((file-path (plist-get input :filePath))
-        (code (plist-get input :code)))
-    (copilot-chat--insert-tool-status "insert_edit_into_file"
-                                      (format "Editing: %s" file-path))
-    (condition-case err
-        (let ((buf (find-file-noselect file-path)))
-          (with-current-buffer buf
-            (erase-buffer)
-            (insert code)
-            (save-buffer))
-          (copilot-chat--tool-result "success"
-                                    (format "File %s updated." file-path)))
       (error
        (copilot-chat--tool-result "error" (error-message-string err))))))
 
@@ -354,7 +362,6 @@ Dispatch to the appropriate tool and return a LanguageModelToolResult."
         (input (plist-get msg :input)))
     (pcase name
       ("run_in_terminal" (copilot-chat--execute-run-in-terminal input))
-      ("insert_edit_into_file" (copilot-chat--execute-insert-edit input))
       ("create_file" (copilot-chat--execute-create-file input))
       ("get_errors" (copilot-chat--execute-get-errors input))
       ("fetch_web_page" (copilot-chat--execute-fetch-web-page input))
@@ -400,13 +407,6 @@ Dispatch to the appropriate tool and return a LanguageModelToolResult."
                             :properties (list :command (list :type "string")
                                               :explanation (list :type "string"))
                             :required ["command"]))
-   (list :name "insert_edit_into_file"
-         :description "Insert or edit code in a file."
-         :inputSchema (list :type "object"
-                            :properties (list :filePath (list :type "string")
-                                              :code (list :type "string")
-                                              :explanation (list :type "string"))
-                            :required ["filePath" "code"]))
    (list :name "create_file"
          :description "Create a new file with the given content."
          :inputSchema (list :type "object"

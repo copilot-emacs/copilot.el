@@ -530,7 +530,7 @@
     (it "returns a vector of tool definitions"
       (let ((tools (copilot-chat--tool-definitions)))
         (expect (vectorp tools) :to-be-truthy)
-        (expect (length tools) :to-equal 5)))
+        (expect (length tools) :to-equal 4)))
 
     (it "includes run_in_terminal tool"
       (let* ((tools (append (copilot-chat--tool-definitions) nil))
@@ -580,7 +580,37 @@
         (expect (copilot-chat--handle-tool-confirmation
                  (list :name "run_in_terminal"
                        :input (list :command "rm -rf /")))
-                :to-equal "Dismiss"))))
+                :to-equal "Dismiss")))
+
+    (it "summarizes the tool in the confirmation prompt"
+      (let ((copilot-chat-auto-approve-tools nil)
+            (prompt nil))
+        (spy-on 'yes-or-no-p :and-call-fake
+                (lambda (msg) (setq prompt msg) nil))
+        (copilot-chat--handle-tool-confirmation
+         (list :name "run_in_terminal" :input (list :command "make test")))
+        ;; The raw command shows, not a plist dump.
+        (expect prompt :to-match "run shell command: make test"))))
+
+  ;;
+  ;; Tool summary
+  ;;
+
+  (describe "copilot-chat--tool-summary"
+    (it "describes a terminal command concisely"
+      (expect (copilot-chat--tool-summary
+               "run_in_terminal" (list :command "ls -la"))
+              :to-equal "run shell command: ls -la"))
+
+    (it "describes a file creation by path"
+      (expect (copilot-chat--tool-summary
+               "create_file" (list :filePath "/tmp/x.el" :content "huge"))
+              :to-equal "create file: /tmp/x.el"))
+
+    (it "joins multiple fetch URLs"
+      (expect (copilot-chat--tool-summary
+               "fetch_web_page" (list :urls ["https://a.com" "https://b.com"]))
+              :to-equal "fetch: https://a.com, https://b.com")))
 
   ;;
   ;; Tool invocation dispatch
@@ -595,14 +625,6 @@
                            :input (list :command "echo hi")))))
         (expect 'copilot-chat--execute-run-in-terminal :to-have-been-called)
         (expect (plist-get result :status) :to-equal "success")))
-
-    (it "dispatches insert_edit_into_file"
-      (spy-on 'copilot-chat--execute-insert-edit
-              :and-return-value (copilot-chat--tool-result "success" "ok"))
-      (copilot-chat--handle-tool-invocation
-       (list :name "insert_edit_into_file"
-             :input (list :filePath "/tmp/test" :code "code")))
-      (expect 'copilot-chat--execute-insert-edit :to-have-been-called))
 
     (it "dispatches create_file"
       (spy-on 'copilot-chat--execute-create-file

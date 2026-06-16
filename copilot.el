@@ -476,13 +476,9 @@ Return a plist with `:version' and `:tarball' keys."
 
 (defun copilot--install-server-native ()
   "Install the Copilot server using native precompiled binaries."
+  (unless (executable-find "tar")
+    (error "Cannot install the native server: `tar' is required to extract the package"))
   (let* ((platform (copilot--native-platform))
-         (_ (message "Copilot: Detected platform %s" platform))
-         (registry-info (progn
-                          (message "Copilot: Fetching package info from npm registry...")
-                          (copilot--npm-registry-info)))
-         (version (plist-get registry-info :version))
-         (tarball-url (plist-get registry-info :tarball))
          (pkg-dir (file-name-concat copilot-install-dir "lib" "node_modules"
                                     "@github" "copilot-language-server"))
          (bin-dir (file-name-concat copilot-install-dir "bin"))
@@ -490,42 +486,47 @@ Return a plist with `:version' and `:tarball' keys."
          (native-binary (file-name-concat pkg-dir "native" platform binary-name))
          (target-binary (if (eq system-type 'windows-nt)
                             (file-name-concat copilot-install-dir binary-name)
-                          (file-name-concat bin-dir binary-name)))
-         (tarball-file (make-temp-file "copilot-server" nil ".tar.gz")))
-    (message "Copilot: Downloading %s v%s..." copilot-server-package-name version)
-    (url-copy-file tarball-url tarball-file t)
-    ;; Create target directory
-    (make-directory pkg-dir 'parents)
-    ;; Extract tarball
-    (message "Copilot: Extracting package...")
-    (let ((exit-code (call-process "tar" nil nil nil "xzf" tarball-file "-C" pkg-dir)))
-      (unless (eq exit-code 0)
-        (error "Failed to extract tarball (exit code %d)" exit-code)))
-    ;; Move extracted package/ contents to pkg-dir
-    (let ((extracted-dir (file-name-concat pkg-dir "package")))
-      (dolist (file (directory-files extracted-dir nil "\\`[^.]"))
-        (let ((src (file-name-concat extracted-dir file))
-              (dst (file-name-concat pkg-dir file)))
-          (when (file-exists-p dst)
-            (if (file-directory-p dst)
-                (delete-directory dst t)
-              (delete-file dst)))
-          (rename-file src dst t)))
-      ;; Remove the empty package/ directory
-      (when (file-directory-p extracted-dir)
-        (delete-directory extracted-dir t)))
-    ;; Verify native binary exists
-    (unless (file-exists-p native-binary)
-      (error "Native binary not found at %s (platform %s may not be supported)"
-             native-binary platform))
-    ;; Create bin directory and copy binary
-    (make-directory (file-name-directory target-binary) 'parents)
-    (copy-file native-binary target-binary t)
-    (set-file-modes target-binary #o755)
-    ;; Clean up temp file
-    (delete-file tarball-file)
-    (message "Copilot: Successfully installed %s v%s (native %s)"
-             copilot-server-package-name version platform)))
+                          (file-name-concat bin-dir binary-name))))
+    (message "Copilot: Detected platform %s" platform)
+    (message "Copilot: Fetching package info from npm registry...")
+    (let* ((registry-info (copilot--npm-registry-info))
+           (version (plist-get registry-info :version))
+           (tarball-url (plist-get registry-info :tarball))
+           (tarball-file (make-temp-file "copilot-server" nil ".tar.gz")))
+      (unwind-protect
+          (progn
+            (message "Copilot: Downloading %s v%s..." copilot-server-package-name version)
+            (url-copy-file tarball-url tarball-file t)
+            (make-directory pkg-dir 'parents)
+            (message "Copilot: Extracting package...")
+            ;; `call-process' returns a string for an abnormal exit, so
+            ;; format the code with %s rather than %d.
+            (let ((exit-code (call-process "tar" nil nil nil "xzf" tarball-file "-C" pkg-dir)))
+              (unless (eq exit-code 0)
+                (error "Failed to extract tarball (exit code %s)" exit-code)))
+            ;; npm tarballs wrap everything in a `package/' directory; lift
+            ;; its contents up into pkg-dir.
+            (let ((extracted-dir (file-name-concat pkg-dir "package")))
+              (dolist (file (directory-files extracted-dir nil "\\`[^.]"))
+                (let ((src (file-name-concat extracted-dir file))
+                      (dst (file-name-concat pkg-dir file)))
+                  (when (file-exists-p dst)
+                    (if (file-directory-p dst)
+                        (delete-directory dst t)
+                      (delete-file dst)))
+                  (rename-file src dst t)))
+              (when (file-directory-p extracted-dir)
+                (delete-directory extracted-dir t)))
+            (unless (file-exists-p native-binary)
+              (error "Native binary not found at %s (platform %s may not be supported)"
+                     native-binary platform))
+            (make-directory (file-name-directory target-binary) 'parents)
+            (copy-file native-binary target-binary t)
+            (set-file-modes target-binary #o755)
+            (message "Copilot: Successfully installed %s v%s (native %s)"
+                     copilot-server-package-name version platform))
+        (when (file-exists-p tarball-file)
+          (delete-file tarball-file))))))
 
 ;;;###autoload
 (defun copilot-install-server-native ()

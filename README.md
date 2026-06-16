@@ -268,6 +268,12 @@ Customization variables:
 - **`copilot-nes-auto-dismiss-move-count`** — cursor movements before auto-dismissing (default `3`)
 - **`copilot-nes-auto-dismiss-distance`** — max lines between point and suggestion before auto-dismissing (default `40`)
 
+### Remote files (TRAMP)
+
+Copilot works in buffers visiting remote files over TRAMP. A separate language server is started on each remote host (over SSH, inside a container, and so on) and used for that host's buffers, while local buffers keep using the local server. This also lets you sandbox the server by running it inside a restricted container.
+
+The server must be installed on the remote host (run `M-x copilot-install-server` from a buffer on that host). `M-x copilot-disconnect` shuts down the server for the current buffer's host.
+
 ### Keybindings
 
 `copilot-mode` does not set any keybindings by default. Use `copilot-completion-map` (active while a completion overlay is visible) to bind keys:

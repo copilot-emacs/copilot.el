@@ -242,7 +242,8 @@ from available models."
 
 (defvar copilot--connections (make-hash-table :test #'equal)
   "Hash table mapping connection key to Copilot server jsonrpc connection.
-Keys are either \"local\" or a TRAMP remote prefix string (e.g. \"/ssh:user@host:\").")
+Keys are either \"local\" or a TRAMP remote prefix string
+\(e.g. \"/ssh:user@host:\").")
 
 (defvar-local copilot--line-bias 1
   "Line bias for Copilot completion.")
@@ -266,16 +267,17 @@ Incremented after each change.")
   "Hash table mapping connection key to list of buffers opened in Copilot.")
 
 (defvar copilot--workspace-folders (make-hash-table :test #'equal)
-  "Hash table mapping connection key to list of workspace folder URIs reported to that server.")
+  "Hash table mapping connection key to a list of workspace folder URIs.
+The URIs are those already reported to that key's server.")
 
 (defvar copilot--status (make-hash-table :test #'equal)
   "Hash table mapping connection key to server status plist.
 Each value is a plist with keys :kind, :busy, and :message.")
 
 (defvar copilot--progress-sessions (make-hash-table :test #'equal)
-  "Hash table mapping connection key to a hash table of active progress sessions.
-Inner hash tables are keyed by token; each value is a plist with :title, :message,
-and :percentage.")
+  "Hash table mapping connection key to a hash table of progress sessions.
+Inner hash tables are keyed by token; each value is a plist with
+:title, :message, and :percentage.")
 
 (defun copilot--connection-key ()
   "Return the connection key for the current buffer.
@@ -298,7 +300,7 @@ For local paths returns PATH unchanged."
   (or (file-remote-p path 'localname) path))
 
 (defun copilot--progress-lighter ()
-  "Compute mode-line progress indicator from active sessions for the current buffer's server.
+  "Compute mode-line progress indicator for the current buffer's server.
 Returns nil when no active sessions.  Otherwise returns a string
 like \"[title: message]\" or \"[title: 42%]\" from the most
 recently updated session."
@@ -1221,8 +1223,9 @@ Each request METHOD can have only one HANDLER."
   (puthash method handler copilot--request-handlers))
 
 (defvar copilot--current-connection nil
-  "Dynamically bound to the jsonrpc connection during notification/request dispatch.
-Handlers can read this to identify which server sent the message.")
+  "The jsonrpc connection currently dispatching a notification or request.
+Dynamically bound during dispatch so handlers can identify which
+server sent the message.")
 
 (defun copilot--handle-request (conn method msg)
   "Handle MSG of type METHOD by calling the appropriate registered handler.

@@ -136,6 +136,38 @@
           (expect copilot-nes--move-count :to-equal 0)))))
 
   ;;
+  ;; Shadowing copilot-mode completions
+  ;;
+
+  (describe "copilot-nes--shadow-completion-p"
+    (it "is non-nil while a suggestion is pending"
+      (let ((copilot-nes--edit '(:text "x")))
+        (expect (copilot-nes--shadow-completion-p) :to-be-truthy)))
+
+    (it "is nil when no suggestion is pending"
+      (let ((copilot-nes--edit nil))
+        (expect (copilot-nes--shadow-completion-p) :not :to-be-truthy)))
+
+    (it "is registered as a copilot disable-display predicate"
+      (expect (memq #'copilot-nes--shadow-completion-p
+                    copilot-disable-display-predicates)
+              :to-be-truthy)))
+
+  (describe "copilot-nes--display shadowing"
+    (it "clears a visible copilot completion"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (insert "hello world\n")
+        (let ((edit (list :text "planet"
+                          :range (list :start (list :line 0 :character 6)
+                                       :end (list :line 0 :character 11))
+                          :command nil)))
+          (spy-on 'copilot--notify)
+          (spy-on 'copilot-clear-overlay)
+          (copilot-nes--display edit)
+          (expect 'copilot-clear-overlay :to-have-been-called)))))
+
+  ;;
   ;; Accept
   ;;
 

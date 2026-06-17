@@ -33,10 +33,12 @@
 ;; text at cursor), NES suggestions can appear anywhere in the file and can
 ;; replace or delete existing text.
 ;;
-;; Enable `copilot-nes-mode' in a buffer to start receiving suggestions.  It
-;; can coexist with `copilot-mode'.
+;; Enable `copilot-nes-mode' in a buffer to start receiving suggestions.  NES
+;; relies on `copilot-mode' to start and sync the language server, so enable
+;; `copilot-mode' in the same buffer.
 ;;
 ;; Usage:
+;;   (add-hook 'prog-mode-hook #'copilot-mode)
 ;;   (add-hook 'prog-mode-hook #'copilot-nes-mode)
 ;;
 ;; Key bindings (active when a suggestion is pending):
@@ -257,6 +259,11 @@ invocation (or when already at the edit), apply the edit."
       (if (not near-edit)
           ;; Jump to the edit location so the user can see what they're accepting
           (goto-char beg)
+        ;; Clear the overlays before touching the buffer so the suggestion's
+        ;; ghost text can't linger over the applied edit until the next
+        ;; command (notably under evil-mode).  The edit details are already
+        ;; captured above, so resetting state here is safe.
+        (copilot-nes--clear)
         ;; Apply the edit
         (delete-region beg end)
         (goto-char beg)
@@ -265,8 +272,7 @@ invocation (or when already at the edit), apply the edit."
         (when command
           (copilot--notify 'workspace/executeCommand
                            (list :command (plist-get command :command)
-                                 :arguments (plist-get command :arguments))))
-        (copilot-nes--clear)))))
+                                 :arguments (plist-get command :arguments))))))))
 
 ;;
 ;; Dismiss
@@ -287,7 +293,16 @@ invocation (or when already at the edit), apply the edit."
                         yank yank-pop newline newline-and-indent open-line
                         delete-forward-char delete-indentation join-line
                         indent-for-tab-command c-electric-brace c-electric-slash
-                        c-electric-semicolon c-electric-paren)
+                        c-electric-semicolon c-electric-paren
+                        ;; Accepting a `copilot-mode' completion edits the
+                        ;; buffer too, which invalidates a pending NES overlay.
+                        copilot-accept-completion
+                        copilot-accept-completion-by-word
+                        copilot-accept-completion-by-line
+                        copilot-accept-completion-by-sentence
+                        copilot-accept-completion-by-paragraph
+                        copilot-accept-completion-up-to-char
+                        copilot-accept-completion-to-char)
   "Commands considered text-modifying for NES triggering.")
 
 (defun copilot-nes--post-command ()
@@ -295,6 +310,11 @@ invocation (or when already at the edit), apply the edit."
   (cond
    ;; After a text-modifying command, schedule a new request
    ((memq this-command copilot-nes--text-changing-commands)
+    ;; Any edit shifts the positions a pending suggestion was drawn at, so
+    ;; drop it immediately (e.g. after accepting a `copilot-mode' completion)
+    ;; before requesting a fresh one.
+    (when copilot-nes--edit
+      (copilot-nes--clear))
     (copilot-nes--schedule-request))
    ;; When a suggestion is pending and point actually moved, track it
    (copilot-nes--edit
@@ -356,6 +376,15 @@ invocation (or when already at the edit), apply the edit."
   "Keymap for `copilot-nes-mode'.
 Bindings only activate when a NES suggestion is pending.")
 
+(defun copilot-nes--warn-without-copilot-mode (buffer)
+  "Warn if BUFFER has `copilot-nes-mode' enabled but not `copilot-mode'.
+NES does not start or sync the language server on its own; it relies on
+`copilot-mode' for that, so without it no suggestions ever appear."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when (and copilot-nes-mode (not (bound-and-true-p copilot-mode)))
+        (message "copilot-nes-mode needs copilot-mode enabled in this buffer to receive suggestions")))))
+
 ;;;###autoload
 (define-minor-mode copilot-nes-mode
   "Minor mode for Copilot Next Edit Suggestions.
@@ -363,12 +392,22 @@ NES predicts edits you will want to make next, based on recent
 edit history.  Suggestions can appear anywhere in the file and
 can replace or delete existing text.
 
+NES does not start or sync the language server itself; it relies on
+`copilot-mode' to do that.  Enable `copilot-mode' in the same buffer,
+otherwise `copilot-nes-mode' produces no suggestions.
+
 \\{copilot-nes-mode-map}"
   :lighter " NES"
   :keymap copilot-nes-mode-map
   (if copilot-nes-mode
       (progn
         (copilot-nes--check-server-version)
+        ;; Warn when `copilot-mode' is missing, deferred to idle so that
+        ;; enabling both modes from the same hook (in either order) doesn't
+        ;; trigger a spurious warning.
+        (run-with-idle-timer 0 nil
+                             #'copilot-nes--warn-without-copilot-mode
+                             (current-buffer))
         (add-hook 'post-command-hook #'copilot-nes--post-command nil t))
     (copilot-nes--cancel-timer)
     (copilot-nes--clear)

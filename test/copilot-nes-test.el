@@ -154,7 +154,9 @@
           (copilot-nes-accept)
           (expect (buffer-substring-no-properties (point-min) (point-max))
                   :to-equal "hello planet\n")
-          (expect copilot-nes--edit :to-equal nil))))
+          (expect copilot-nes--edit :to-equal nil)
+          ;; Overlays must be gone so no ghost text lingers over the edit.
+          (expect copilot-nes--overlays :to-equal nil))))
 
     (it "applies a pure insertion"
       (with-temp-buffer
@@ -302,7 +304,28 @@
         (spy-on 'copilot-nes--schedule-request)
         (let ((this-command 'self-insert-command))
           (copilot-nes--post-command))
-        (expect 'copilot-nes--schedule-request :to-have-been-called))))
+        (expect 'copilot-nes--schedule-request :to-have-been-called)))
+
+    (it "dismisses a stale suggestion after accepting a copilot completion"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (insert "hello\nworld\n")
+        (goto-char (point-min))
+        (let ((edit (list :text "x"
+                          :range (list :start (list :line 0 :character 0)
+                                       :end (list :line 0 :character 1))
+                          :command nil)))
+          (spy-on 'copilot--notify)
+          (spy-on 'copilot-nes--schedule-request)
+          (copilot-nes--display edit)
+          (expect copilot-nes--edit :to-be-truthy)
+          ;; Accepting an inline completion edits the buffer and should clear
+          ;; the now-misplaced NES overlay right away.
+          (let ((this-command 'copilot-accept-completion))
+            (copilot-nes--post-command))
+          (expect copilot-nes--edit :to-equal nil)
+          (expect copilot-nes--overlays :to-equal nil)
+          (expect 'copilot-nes--schedule-request :to-have-been-called)))))
 
   ;;
   ;; Timer management
@@ -369,6 +392,33 @@
         (copilot-nes-mode 1)
         (expect 'copilot-nes--check-server-version :to-have-been-called)
         (copilot-nes-mode -1))))
+
+  ;;
+  ;; copilot-mode dependency warning
+  ;;
+
+  (describe "copilot-nes--warn-without-copilot-mode"
+    (it "warns when copilot-nes-mode is on but copilot-mode is off"
+      (with-temp-buffer
+        (setq-local copilot-nes-mode t)
+        (spy-on 'message)
+        (copilot-nes--warn-without-copilot-mode (current-buffer))
+        (expect 'message :to-have-been-called)))
+
+    (it "is silent when copilot-mode is also on"
+      (with-temp-buffer
+        (setq-local copilot-nes-mode t)
+        (setq-local copilot-mode t)
+        (spy-on 'message)
+        (copilot-nes--warn-without-copilot-mode (current-buffer))
+        (expect 'message :not :to-have-been-called)))
+
+    (it "is silent when the buffer is dead"
+      (let ((buf (generate-new-buffer "nes-dead")))
+        (kill-buffer buf)
+        (spy-on 'message)
+        (copilot-nes--warn-without-copilot-mode buf)
+        (expect 'message :not :to-have-been-called))))
 
   ;;
   ;; Distance check

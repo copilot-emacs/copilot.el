@@ -13,6 +13,9 @@
 
 ### Bug Fixes
 
+- Dismiss a pending NES suggestion immediately when the buffer is edited (e.g. after accepting a `copilot-mode` completion), instead of leaving a misplaced overlay behind. ([#477](https://github.com/copilot-emacs/copilot.el/issues/477))
+- Clear NES overlays before applying an accepted suggestion so the ghost text no longer lingers over the edit until the next command. ([#477](https://github.com/copilot-emacs/copilot.el/issues/477))
+- Tell the user to enable `copilot-mode` when `copilot-nes-mode` is turned on without it, since NES relies on `copilot-mode` to start and sync the server. ([#477](https://github.com/copilot-emacs/copilot.el/issues/477))
 - Fix Emacs hanging on exit when shutting down the Copilot server (the blocking `jsonrpc-shutdown` is now skipped at `kill-emacs` time). ([#469](https://github.com/copilot-emacs/copilot.el/issues/469))
 - Fix NES insertion text never rendering because its zero-width overlay was marked `evaporate` and got deleted immediately. ([#451](https://github.com/copilot-emacs/copilot.el/issues/451))
 - Suppress "Request was canceled" error messages in the echo area. ([#464](https://github.com/copilot-emacs/copilot.el/pull/464))

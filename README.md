@@ -253,15 +253,20 @@ NES predicts the next edit you'll want to make anywhere in the file, based on yo
 >
 > NES requires `copilot-language-server` version 1.434.0 or newer. Run `M-x copilot-reinstall-server` to upgrade if needed.
 
-Enable `copilot-nes-mode` in a buffer to start receiving suggestions. It can coexist with `copilot-mode`:
+`copilot-nes-mode` works alongside `copilot-mode` and relies on it to start and sync the language server. Enable both in the buffer; on its own `copilot-nes-mode` does not produce any suggestions (it will tell you so when enabled without `copilot-mode`).
 
 ```elisp
+(add-hook 'prog-mode-hook #'copilot-mode)
 (add-hook 'prog-mode-hook #'copilot-nes-mode)
 ```
 
 When a suggestion is pending:
 - **TAB** — accept the suggestion (jumps to it first if far away, applies on second press)
 - **C-g** — dismiss the suggestion
+
+> [!NOTE]
+>
+> `copilot-nes-mode` predefines **TAB** and **C-g**, whereas `copilot-mode` ships no completion keybindings and leaves `copilot-completion-map` for you to populate. In both cases the bindings only take effect while a suggestion (or completion) is pending and otherwise fall through to their usual commands, so the predefined NES keys are safe to leave enabled.
 
 Customization variables:
 - **`copilot-nes-idle-delay`** — seconds of idle time before requesting a suggestion (default `0.5`)

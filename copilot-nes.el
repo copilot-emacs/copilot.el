@@ -166,6 +166,15 @@ Run `M-x copilot-reinstall-server' to upgrade."
   (setq copilot-nes--move-count 0)
   (setq copilot-nes--last-point nil))
 
+(defun copilot-nes--shadow-completion-p ()
+  "Return non-nil when a pending NES suggestion should hide completions.
+Registered in `copilot-disable-display-predicates' so that regular
+`copilot-mode' completions are suppressed while a NES suggestion is
+pending."
+  copilot-nes--edit)
+
+(add-to-list 'copilot-disable-display-predicates #'copilot-nes--shadow-completion-p)
+
 (defun copilot-nes--display (edit)
   "Display EDIT as overlays in the buffer."
   (copilot-nes--clear)
@@ -195,6 +204,10 @@ Run `M-x copilot-reinstall-server' to upgrade."
           (overlay-put ov 'copilot-nes t)
           (overlay-put ov 'priority 100)
           (push ov copilot-nes--overlays)))))
+  ;; Shadow any completion that is already on screen; the disable-display
+  ;; predicate keeps `copilot-mode' from re-showing one while the suggestion
+  ;; is pending.
+  (copilot-clear-overlay)
   ;; Record point so the post-command hook can detect actual movement
   (setq copilot-nes--last-point (point))
   ;; Notify server that we showed the suggestion

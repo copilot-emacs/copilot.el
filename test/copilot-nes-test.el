@@ -299,14 +299,25 @@
             (copilot-nes--post-command))
           (expect copilot-nes--edit :to-equal nil))))
 
-    (it "schedules a request after text-modifying commands"
+    (it "does not schedule a request on plain cursor movement"
       (with-temp-buffer
+        (insert "hello\nworld\n")
+        (goto-char (point-min))
         (spy-on 'copilot-nes--schedule-request)
-        (let ((this-command 'self-insert-command))
+        (let ((this-command 'next-line))
+          (forward-line 1)
           (copilot-nes--post-command))
+        (expect 'copilot-nes--schedule-request :not :to-have-been-called))))
+
+  (describe "copilot-nes--on-change"
+    (it "schedules a request after a buffer change"
+      (with-temp-buffer
+        (spy-on 'track-changes-fetch)
+        (spy-on 'copilot-nes--schedule-request)
+        (copilot-nes--on-change 'id)
         (expect 'copilot-nes--schedule-request :to-have-been-called)))
 
-    (it "dismisses a stale suggestion after accepting a copilot completion"
+    (it "clears a stale suggestion before scheduling a fresh request"
       (with-temp-buffer
         (setq-local copilot--line-bias 1)
         (insert "hello\nworld\n")
@@ -316,13 +327,13 @@
                                        :end (list :line 0 :character 1))
                           :command nil)))
           (spy-on 'copilot--notify)
+          (spy-on 'track-changes-fetch)
           (spy-on 'copilot-nes--schedule-request)
           (copilot-nes--display edit)
           (expect copilot-nes--edit :to-be-truthy)
-          ;; Accepting an inline completion edits the buffer and should clear
-          ;; the now-misplaced NES overlay right away.
-          (let ((this-command 'copilot-accept-completion))
-            (copilot-nes--post-command))
+          ;; Any edit (e.g. accepting an inline completion) shifts the overlay
+          ;; out of place, so it should be dropped and a fresh request made.
+          (copilot-nes--on-change 'id)
           (expect copilot-nes--edit :to-equal nil)
           (expect copilot-nes--overlays :to-equal nil)
           (expect 'copilot-nes--schedule-request :to-have-been-called)))))
@@ -371,6 +382,18 @@
         (copilot-nes-mode -1)
         (expect (memq #'copilot-nes--post-command post-command-hook)
                 :not :to-be-truthy)))
+
+    (it "registers a track-changes tracker when enabled"
+      (with-temp-buffer
+        (copilot-nes-mode 1)
+        (expect copilot-nes--track-changes-id :to-be-truthy)
+        (copilot-nes-mode -1)))
+
+    (it "unregisters the track-changes tracker when disabled"
+      (with-temp-buffer
+        (copilot-nes-mode 1)
+        (copilot-nes-mode -1)
+        (expect copilot-nes--track-changes-id :to-equal nil)))
 
     (it "clears state when disabled"
       (with-temp-buffer

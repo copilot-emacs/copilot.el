@@ -9,6 +9,7 @@
 
 ### Changes
 
+- NES now detects buffer edits via `track-changes` instead of a hardcoded list of editing commands, so it reacts to edits from any command (including `evil` and other non-listed commands). ([#477](https://github.com/copilot-emacs/copilot.el/issues/477))
 - `copilot-chat` now only attaches the originating buffer as context when it is a file-visiting buffer, so invoking chat from an unrelated buffer (dired, `*scratch*`, etc.) no longer sends it as context. ([#470](https://github.com/copilot-emacs/copilot.el/issues/470))
 
 ### Bug Fixes

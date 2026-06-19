@@ -107,8 +107,7 @@
                (edit (list :text "new"
                            :range (list :start (list :line 0 :character 0)
                                         :end (list :line 0 :character 5))
-                           :command cmd))
-               (copilot--connection t))
+                           :command cmd)))
           (spy-on 'copilot--connection-alivep :and-return-value t)
           (spy-on 'jsonrpc-notify)
           (copilot-nes--display edit)
@@ -574,8 +573,7 @@
                (edit (list :text "planet"
                            :range (list :start (list :line 0 :character 6)
                                         :end (list :line 0 :character 11))
-                           :command cmd))
-               (copilot--connection t))
+                           :command cmd)))
           (spy-on 'copilot--connection-alivep :and-return-value t)
           (spy-on 'jsonrpc-notify)
           (copilot-nes--display edit)

@@ -131,9 +131,7 @@
       (kill-buffer test-buf)))
 
   ;; Shutdown
-  (when copilot--connection
-    (jsonrpc-shutdown copilot--connection)
-    (setq copilot--connection nil))
+  (copilot--shutdown-all-servers)
   (message "\nDone."))
 
 (test--run)

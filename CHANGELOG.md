@@ -4,6 +4,7 @@
 
 ### New Features
 
+- Add TRAMP support by spawning one Copilot server per remote host. Remote files are served by a server started on their host (over SSH, inside a container, etc.), which also enables sandboxing the server. A new `copilot-disconnect` command shuts down the server for the current buffer's host. ([#403](https://github.com/copilot-emacs/copilot.el/issues/403))
 - Add experimental Agent mode for Copilot Chat (`copilot-chat-use-agent-mode`). When enabled, Copilot can run client-side tools (`run_in_terminal`, `create_file`, `get_errors`, `fetch_web_page`); each invocation prompts for confirmation unless listed in `copilot-chat-auto-approve-tools`. ([#441](https://github.com/copilot-emacs/copilot.el/issues/441))
 - Add native binary installation support. `copilot-install-server` now falls back to downloading precompiled binaries when npm is unavailable, removing the Node.js requirement on supported platforms. A new `copilot-install-server-native` command is also available for explicit native installation.
 

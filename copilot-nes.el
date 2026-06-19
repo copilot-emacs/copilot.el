@@ -48,6 +48,7 @@
 ;;; Code:
 
 (require 'copilot)
+(require 'track-changes)
 
 (defconst copilot-nes--min-server-version "1.434.0"
   "Minimum copilot-language-server version required for NES support.")
@@ -287,42 +288,36 @@ invocation (or when already at the edit), apply the edit."
 ;; Auto-triggering
 ;;
 
-(defvar copilot-nes--text-changing-commands
-  '(self-insert-command delete-char delete-backward-char
-                        kill-word backward-kill-word kill-line kill-region
-                        yank yank-pop newline newline-and-indent open-line
-                        delete-forward-char delete-indentation join-line
-                        indent-for-tab-command c-electric-brace c-electric-slash
-                        c-electric-semicolon c-electric-paren
-                        ;; Accepting a `copilot-mode' completion edits the
-                        ;; buffer too, which invalidates a pending NES overlay.
-                        copilot-accept-completion
-                        copilot-accept-completion-by-word
-                        copilot-accept-completion-by-line
-                        copilot-accept-completion-by-sentence
-                        copilot-accept-completion-by-paragraph
-                        copilot-accept-completion-up-to-char
-                        copilot-accept-completion-to-char)
-  "Commands considered text-modifying for NES triggering.")
+(defvar-local copilot-nes--track-changes-id nil
+  "Tracker id from `track-changes-register' for this buffer.")
+
+(defun copilot-nes--on-change (id &optional _distance)
+  "Handle a `track-changes' signal for tracker ID.
+Any buffer edit shifts the positions a pending suggestion was drawn at,
+so drop it (e.g. after accepting a `copilot-mode' completion) and
+schedule a fresh request.  This catches every text modification, no
+matter which command produced it."
+  (condition-case err
+      (progn
+        ;; We don't need the change details, but must fetch to re-arm the tracker.
+        (track-changes-fetch id #'ignore)
+        (when copilot-nes--edit
+          (copilot-nes--clear))
+        (copilot-nes--schedule-request))
+    (error
+     (copilot--log 'error "NES change fetch failed: %s"
+                   (error-message-string err)))))
 
 (defun copilot-nes--post-command ()
-  "Hook run after each command in `copilot-nes-mode'."
-  (cond
-   ;; After a text-modifying command, schedule a new request
-   ((memq this-command copilot-nes--text-changing-commands)
-    ;; Any edit shifts the positions a pending suggestion was drawn at, so
-    ;; drop it immediately (e.g. after accepting a `copilot-mode' completion)
-    ;; before requesting a fresh one.
-    (when copilot-nes--edit
-      (copilot-nes--clear))
-    (copilot-nes--schedule-request))
-   ;; When a suggestion is pending and point actually moved, track it
-   (copilot-nes--edit
+  "Auto-dismiss a pending suggestion once point wanders away from it.
+Text edits are handled separately via `track-changes'; this only tracks
+cursor movement, which does not modify the buffer."
+  (when copilot-nes--edit
     (when (and copilot-nes--last-point (/= (point) copilot-nes--last-point))
       (cl-incf copilot-nes--move-count)
       (when (or (>= copilot-nes--move-count copilot-nes-auto-dismiss-move-count)
                 (copilot-nes--too-far-p))
-        (copilot-nes--clear)))))
+        (copilot-nes--clear))))
   (setq copilot-nes--last-point (point)))
 
 (defun copilot-nes--too-far-p ()
@@ -408,9 +403,15 @@ otherwise `copilot-nes-mode' produces no suggestions.
         (run-with-idle-timer 0 nil
                              #'copilot-nes--warn-without-copilot-mode
                              (current-buffer))
+        (unless copilot-nes--track-changes-id
+          (setq copilot-nes--track-changes-id
+                (track-changes-register #'copilot-nes--on-change :nobefore t)))
         (add-hook 'post-command-hook #'copilot-nes--post-command nil t))
     (copilot-nes--cancel-timer)
     (copilot-nes--clear)
+    (when copilot-nes--track-changes-id
+      (track-changes-unregister copilot-nes--track-changes-id)
+      (setq copilot-nes--track-changes-id nil))
     (remove-hook 'post-command-hook #'copilot-nes--post-command t)))
 
 (provide 'copilot-nes)

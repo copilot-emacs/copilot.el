@@ -1,12 +1,15 @@
 # Changelog
 
-## master (unreleased)
+## main (unreleased)
+
+## 0.6.0 (2026-06-22)
 
 ### New Features
 
 - Hide regular `copilot-mode` completions while a NES suggestion is pending, so the two no longer overlap on screen. ([#477](https://github.com/copilot-emacs/copilot.el/issues/477))
 - Add experimental Agent mode for Copilot Chat (`copilot-chat-use-agent-mode`). When enabled, Copilot can run client-side tools (`run_in_terminal`, `create_file`, `get_errors`, `fetch_web_page`); each invocation prompts for confirmation unless listed in `copilot-chat-auto-approve-tools`. ([#441](https://github.com/copilot-emacs/copilot.el/issues/441))
 - Add native binary installation support. `copilot-install-server` now falls back to downloading precompiled binaries when npm is unavailable, removing the Node.js requirement on supported platforms. A new `copilot-install-server-native` command is also available for explicit native installation.
+- Add `copilot-chat-select-model` for interactively choosing a chat model, since many more models are available for chat than for completions. ([#465](https://github.com/copilot-emacs/copilot.el/discussions/465))
 
 ### Changes
 

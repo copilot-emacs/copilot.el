@@ -61,7 +61,8 @@ When nil, the server picks the default model."
 Agent mode allows Copilot to execute tools such as shell commands
 and file edits."
   :type 'boolean
-  :group 'copilot-chat)
+  :group 'copilot-chat
+  :package-version '(copilot . "0.6"))
 
 (defcustom copilot-chat-auto-approve-tools '("get_errors")
   "Tools that skip confirmation and execute automatically.
@@ -70,7 +71,8 @@ shell commands, modify files, or reach the network (e.g.
 `fetch_web_page') are intentionally excluded so they always prompt
 for confirmation."
   :type '(repeat string)
-  :group 'copilot-chat)
+  :group 'copilot-chat
+  :package-version '(copilot . "0.6"))
 
 (defface copilot-chat-error-face
   '((t :inherit error))

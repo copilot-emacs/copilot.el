@@ -4,6 +4,7 @@
 
 ### New Features
 
+- Add MCP (Model Context Protocol) server support for agent mode via the new `copilot-mcp-servers` option. Configured servers are forwarded to the language server and their tools become available in `copilot-chat`, each prompting for confirmation like the built-in tools.
 - Preview file changes in a temporary buffer before confirming an agent-mode edit tool (`create_file`, `insert_edit_into_file`, `replace_string_in_file`), so you can see what will be written before approving. Controlled by `copilot-chat-preview-tool-edits` (default on).
 
 ### Bug Fixes

@@ -234,6 +234,33 @@ from available models."
   :group 'copilot
   :package-version '(copilot . "0.4"))
 
+(defcustom copilot-mcp-servers nil
+  "Model Context Protocol servers to expose to Copilot agent mode.
+The value is a map from server name to its definition, sent to the
+language server so its tools become available in `copilot-chat' agent
+mode (see `copilot-chat-use-agent-mode').  Each tool invocation still
+prompts for confirmation unless auto-approved.
+
+The map is most naturally written as a plist keyed by server name.  A
+stdio server is launched from a command; an HTTP or SSE server is
+reached at a URL:
+
+  \\='(:fetch (:command \"uvx\" :args [\"mcp-server-fetch\"])
+    :memory (:command \"npx\"
+             :args [\"-y\" \"@modelcontextprotocol/server-memory\"]
+             :env (:MEMORY_FILE_PATH \"/tmp/memory.json\"))
+    :remote (:type \"http\" :url \"https://example.com/mcp/\"
+             :headers (:Authorization \"Bearer TOKEN\")))
+
+The value is serialized to JSON, so list-valued fields such as `:args'
+must be vectors.  As with `copilot-lsp-settings', change this through
+the customization framework (`setopt' or `customize') so the running
+server is updated; a plain `setq' takes effect only on restart."
+  :set #'copilot--lsp-settings-changed
+  :type 'sexp
+  :group 'copilot
+  :package-version '(copilot . "0.7"))
+
 (defvar-local copilot--overlay nil
   "Overlay for Copilot completion.")
 
@@ -691,8 +718,23 @@ hanging.  See `copilot--shutdown-server'."
        ;; handle older jsonrpc versions
        (funcall make-fn :events-buffer-scrollback-size copilot-log-max)))))
 
+(defun copilot--mcp-settings-json ()
+  "Return `copilot-mcp-servers' encoded as the server's MCP config string.
+Return nil when no servers are configured or encoding fails."
+  (when copilot-mcp-servers
+    (condition-case err
+        (json-serialize copilot-mcp-servers)
+      (error
+       ;; A surfaced warning, not just a log line: the most likely cause
+       ;; is a list where a vector is required (e.g. :args), and silently
+       ;; dropping every server would be very hard to diagnose.
+       (lwarn 'copilot :error
+              "Invalid `copilot-mcp-servers' (list-valued fields like :args must be vectors): %S"
+              err)
+       nil))))
+
 (defun copilot--effective-lsp-settings ()
-  "Return the effective LSP settings, including completion model."
+  "Return the effective LSP settings, including completion model and MCP."
   (let ((settings (copy-sequence copilot-lsp-settings)))
     (when copilot-completion-model
       (let* ((github (or (plist-get settings :github) '()))
@@ -700,6 +742,11 @@ hanging.  See `copilot--shutdown-server'."
         (setq copilot-section (plist-put copilot-section :selectedCompletionModel copilot-completion-model))
         (setq github (plist-put github :copilot copilot-section))
         (setq settings (plist-put settings :github github))))
+    ;; The server reads :mcp as a JSON *string* (it checks the type and
+    ;; JSON-parses it), so this must stay a serialized string rather than
+    ;; a nested object like the other settings keys.
+    (when-let* ((mcp (copilot--mcp-settings-json)))
+      (setq settings (plist-put settings :mcp mcp)))
     settings))
 
 (defun copilot--start-server ()

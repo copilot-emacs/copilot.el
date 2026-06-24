@@ -262,15 +262,15 @@ approving without seeing a raw plist dump."
 
 (defun copilot-chat--handle-tool-confirmation (msg)
   "Handle `conversation/invokeClientToolConfirmation' request MSG.
-Return \"Accept\" or \"Dismiss\" based on user confirmation."
+Return a result plist the server accepts: (:result \"accept\") to allow
+the tool call or (:result \"dismiss\") to decline it."
   (let ((name (plist-get msg :name))
         (input (plist-get msg :input)))
-    (if (member name copilot-chat-auto-approve-tools)
-        "Accept"
-      (if (yes-or-no-p (format "Copilot wants to %s.  Allow? "
-                               (copilot-chat--tool-summary name input)))
-          "Accept"
-        "Dismiss"))))
+    (if (or (member name copilot-chat-auto-approve-tools)
+            (yes-or-no-p (format "Copilot wants to %s.  Allow? "
+                                 (copilot-chat--tool-summary name input))))
+        (list :result "accept")
+      (list :result "dismiss"))))
 
 (copilot-on-request 'conversation/invokeClientToolConfirmation
                     #'copilot-chat--handle-tool-confirmation)

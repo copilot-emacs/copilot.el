@@ -563,7 +563,7 @@
         (expect (copilot-chat--handle-tool-confirmation
                  (list :name "get_errors"
                        :input (list :filePaths ["foo.el"])))
-                :to-equal "Accept")))
+                :to-equal '(:result "accept"))))
 
     (it "prompts for tools not in auto-approve list"
       (let ((copilot-chat-auto-approve-tools '("get_errors")))
@@ -571,16 +571,16 @@
         (expect (copilot-chat--handle-tool-confirmation
                  (list :name "run_in_terminal"
                        :input (list :command "ls")))
-                :to-equal "Accept")
+                :to-equal '(:result "accept"))
         (expect 'yes-or-no-p :to-have-been-called)))
 
-    (it "returns Dismiss when user declines"
+    (it "dismisses when user declines"
       (let ((copilot-chat-auto-approve-tools nil))
         (spy-on 'yes-or-no-p :and-return-value nil)
         (expect (copilot-chat--handle-tool-confirmation
                  (list :name "run_in_terminal"
                        :input (list :command "rm -rf /")))
-                :to-equal "Dismiss")))
+                :to-equal '(:result "dismiss"))))
 
     (it "summarizes the tool in the confirmation prompt"
       (let ((copilot-chat-auto-approve-tools nil)

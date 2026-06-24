@@ -2,6 +2,10 @@
 
 ## main (unreleased)
 
+### Bug Fixes
+
+- Fix agent-mode tool confirmations always failing (so Copilot Chat couldn't read files, edit, etc.) by returning the `(:result "accept")`/`(:result "dismiss")` shape the server expects instead of a bare string. ([#483](https://github.com/copilot-emacs/copilot.el/issues/483))
+
 ## 0.6.0 (2026-06-22)
 
 ### New Features

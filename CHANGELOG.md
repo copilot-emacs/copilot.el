@@ -2,6 +2,10 @@
 
 ## main (unreleased)
 
+### Changes
+
+- Show readable agent-mode confirmation prompts for the server's own tools (`read_file`, `insert_edit_into_file`, `replace_string_in_file`, etc.) instead of a raw plist dump, falling back to the server-provided message, then the raw input, for any tool we don't recognize. `copilot-chat-auto-approve-tools` is matched exactly so it never auto-approves a same-named tool from a different namespace.
+
 ### Bug Fixes
 
 - Fix agent-mode tool confirmations always failing (so Copilot Chat couldn't read files, edit, etc.) by returning the `(:result "accept")`/`(:result "dismiss")` shape the server expects instead of a bare string. ([#483](https://github.com/copilot-emacs/copilot.el/issues/483))

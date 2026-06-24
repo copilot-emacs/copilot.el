@@ -590,7 +590,57 @@
         (copilot-chat--handle-tool-confirmation
          (list :name "run_in_terminal" :input (list :command "make test")))
         ;; The raw command shows, not a plist dump.
-        (expect prompt :to-match "run shell command: make test"))))
+        (expect prompt :to-match "run shell command: make test")))
+
+    (it "auto-approves a server tool listed by its full name"
+      (let ((copilot-chat-auto-approve-tools '("copilot.read_file")))
+        (expect (copilot-chat--handle-tool-confirmation
+                 (list :name "copilot.read_file"
+                       :input (list :filePath "/tmp/x.el")))
+                :to-equal '(:result "accept"))))
+
+    (it "does not auto-approve a namespaced tool by its base name alone"
+      (let ((copilot-chat-auto-approve-tools '("read_file")))
+        (spy-on 'yes-or-no-p :and-return-value nil)
+        (expect (copilot-chat--handle-tool-confirmation
+                 (list :name "copilot.read_file"
+                       :input (list :filePath "/tmp/x.el")))
+                :to-equal '(:result "dismiss"))
+        (expect 'yes-or-no-p :to-have-been-called)))
+
+    (it "falls back to the server message for unknown tools"
+      (let ((copilot-chat-auto-approve-tools nil)
+            (prompt nil))
+        (spy-on 'yes-or-no-p :and-call-fake
+                (lambda (msg) (setq prompt msg) nil))
+        (copilot-chat--handle-tool-confirmation
+         (list :name "copilot.some_new_tool"
+               :input (list :foo "bar")
+               :message "Allow the new tool to run?"))
+        ;; No plist dump: the server-provided message is shown verbatim.
+        (expect prompt :to-match "Allow the new tool to run?")
+        (expect prompt :not :to-match ":foo")))
+
+    (it "shows the raw input when no summary or server message exists"
+      (let ((copilot-chat-auto-approve-tools nil)
+            (prompt nil))
+        (spy-on 'yes-or-no-p :and-call-fake
+                (lambda (msg) (setq prompt msg) nil))
+        (copilot-chat--handle-tool-confirmation
+         (list :name "copilot.mystery_tool"
+               :input (list :command "rm -rf /")))
+        ;; The user can still see what is being approved.
+        (expect prompt :to-match "mystery_tool")
+        (expect prompt :to-match "rm -rf /")))
+
+    (it "prompts sensibly when the request has no tool name"
+      (let ((copilot-chat-auto-approve-tools nil)
+            (prompt nil))
+        (spy-on 'yes-or-no-p :and-call-fake
+                (lambda (msg) (setq prompt msg) nil))
+        (copilot-chat--handle-tool-confirmation (list :input nil))
+        ;; No stray "nil" leaks into the prompt.
+        (expect prompt :not :to-match "run nil"))))
 
   ;;
   ;; Tool summary
@@ -610,7 +660,34 @@
     (it "joins multiple fetch URLs"
       (expect (copilot-chat--tool-summary
                "fetch_web_page" (list :urls ["https://a.com" "https://b.com"]))
-              :to-equal "fetch: https://a.com, https://b.com")))
+              :to-equal "fetch: https://a.com, https://b.com"))
+
+    (it "describes reading a server file by path"
+      (expect (copilot-chat--tool-summary
+               "read_file" (list :filePath "/tmp/x.el" :offset 1 :limit 50))
+              :to-equal "read file: /tmp/x.el"))
+
+    (it "describes a namespaced server tool by its base name"
+      (expect (copilot-chat--tool-summary
+               "copilot.read_file" (list :filePath "/tmp/x.el"))
+              :to-equal "read file: /tmp/x.el"))
+
+    (it "includes the explanation when editing a file"
+      (expect (copilot-chat--tool-summary
+               "insert_edit_into_file"
+               (list :filePath "/tmp/x.el" :explanation "add error handling"))
+              :to-equal "edit file /tmp/x.el: add error handling"))
+
+    (it "describes a string replacement edit by path"
+      (expect (copilot-chat--tool-summary
+               "replace_string_in_file"
+               (list :filePath "/tmp/x.el" :oldString "a" :newString "b"))
+              :to-equal "edit file: /tmp/x.el"))
+
+    (it "returns nil for tools without a tailored summary"
+      (expect (copilot-chat--tool-summary
+               "copilot.some_new_tool" (list :foo "bar"))
+              :to-be nil)))
 
   ;;
   ;; Tool invocation dispatch

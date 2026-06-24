@@ -69,7 +69,14 @@ and file edits."
 Only read-only, local tools should be auto-approved.  Tools that run
 shell commands, modify files, or reach the network (e.g.
 `fetch_web_page') are intentionally excluded so they always prompt
-for confirmation."
+for confirmation.
+
+Names are matched exactly, and auto-approval bypasses confirmation
+completely, including the server's own prompts for sensitive files, so
+add an entry only for a tool you fully trust.  The server's built-in
+tools are reported with a namespace prefix (e.g. \"copilot.read_file\"
+for the read-only file reader); an entry must include that prefix to
+match."
   :type '(repeat string)
   :group 'copilot-chat
   :package-version '(copilot . "0.6"))
@@ -243,34 +250,87 @@ Return editor context for the requested skill."
                               'face 'copilot-chat-tool-face))
           (copilot-chat--scroll-to-bottom))))))
 
+(defun copilot-chat--tool-base-name (name)
+  "Return tool NAME stripped of any server namespace prefix.
+The server's built-in tools may arrive qualified (e.g.
+\"copilot.read_file\"), while the client tools we register are
+unqualified.  Matching on the base name handles both forms."
+  (if (and (stringp name) (string-match "\\.\\([^.]+\\)\\'" name))
+      (match-string 1 name)
+    name))
+
 (defun copilot-chat--tool-summary (name input)
   "Return a concise, human-readable summary of tool NAME with INPUT.
-Used in confirmation prompts so the user can tell what they are
-approving without seeing a raw plist dump."
-  (pcase name
+Return nil for tools we have no tailored summary for, so callers can
+fall back to the server-provided confirmation message."
+  (pcase (copilot-chat--tool-base-name name)
     ("run_in_terminal"
      (format "run shell command: %s" (plist-get input :command)))
     ("create_file"
      (format "create file: %s" (plist-get input :filePath)))
+    ("read_file"
+     (format "read file: %s" (plist-get input :filePath)))
+    ("insert_edit_into_file"
+     (let ((path (plist-get input :filePath))
+           (explanation (plist-get input :explanation)))
+       (if (and (stringp explanation) (not (string-empty-p explanation)))
+           (format "edit file %s: %s" path explanation)
+         (format "edit file: %s" path))))
+    ("replace_string_in_file"
+     (format "edit file: %s" (plist-get input :filePath)))
     ("fetch_web_page"
      (format "fetch: %s"
              (string-join (append (plist-get input :urls) nil) ", ")))
     ("get_errors"
      (format "read diagnostics for: %s"
              (string-join (append (plist-get input :filePaths) nil) ", ")))
-    (_ (format "%s with input %S" name input))))
+    (_ nil)))
+
+(defun copilot-chat--confirmation-prompt (msg)
+  "Return the yes-or-no prompt string for confirmation request MSG.
+Prefer a tailored summary of the tool, then the server-provided message
+or title, and finally the tool name with its raw input so the user can
+still tell what they are approving."
+  (let* ((name (plist-get msg :name))
+         (input (plist-get msg :input))
+         (summary (copilot-chat--tool-summary name input))
+         (message (plist-get msg :message))
+         (title (plist-get msg :title))
+         (base (copilot-chat--tool-base-name name)))
+    (cond
+     (summary
+      (format "Copilot wants to %s.  Allow? " summary))
+     ((and (stringp message) (not (string-empty-p message)))
+      (format "%s  Allow? " message))
+     ((and (stringp title) (not (string-empty-p title)))
+      (format "%s  Allow? " title))
+     ((and (stringp base) (not (string-empty-p base)) input)
+      (format "Copilot wants to run %s with input %S.  Allow? " base input))
+     ((and (stringp base) (not (string-empty-p base)))
+      (format "Copilot wants to run %s.  Allow? " base))
+     (input
+      (format "Copilot wants to run a tool with input %S.  Allow? " input))
+     (t
+      "Copilot wants to run a tool.  Allow? "))))
+
+(defun copilot-chat--tool-auto-approved-p (name)
+  "Return non-nil when tool NAME is listed in `copilot-chat-auto-approve-tools'.
+Matching is exact.  Auto-approval bypasses confirmation entirely
+\(including the server's own prompts for sensitive files), so a tool is
+auto-approved only when its full reported name is listed, never a
+namespace-stripped variant."
+  (and (stringp name)
+       (member name copilot-chat-auto-approve-tools)
+       t))
 
 (defun copilot-chat--handle-tool-confirmation (msg)
   "Handle `conversation/invokeClientToolConfirmation' request MSG.
 Return a result plist the server accepts: (:result \"accept\") to allow
 the tool call or (:result \"dismiss\") to decline it."
-  (let ((name (plist-get msg :name))
-        (input (plist-get msg :input)))
-    (if (or (member name copilot-chat-auto-approve-tools)
-            (yes-or-no-p (format "Copilot wants to %s.  Allow? "
-                                 (copilot-chat--tool-summary name input))))
-        (list :result "accept")
-      (list :result "dismiss"))))
+  (if (or (copilot-chat--tool-auto-approved-p (plist-get msg :name))
+          (yes-or-no-p (copilot-chat--confirmation-prompt msg)))
+      (list :result "accept")
+    (list :result "dismiss")))
 
 (copilot-on-request 'conversation/invokeClientToolConfirmation
                     #'copilot-chat--handle-tool-confirmation)

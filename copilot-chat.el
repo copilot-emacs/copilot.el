@@ -83,6 +83,16 @@ match."
   :group 'copilot-chat
   :package-version '(copilot . "0.6"))
 
+(defcustom copilot-chat-preview-tool-edits t
+  "When non-nil, preview file changes before confirming an edit tool.
+For the tools that create or edit files (`create_file',
+`insert_edit_into_file', `replace_string_in_file') the proposed change
+is shown in a temporary buffer while you are asked to approve it, so
+you can see what will be written before answering."
+  :type 'boolean
+  :group 'copilot-chat
+  :package-version '(copilot . "0.7"))
+
 (defface copilot-chat-error-face
   '((t :inherit error))
   "Face for error messages in the chat buffer."
@@ -96,6 +106,16 @@ match."
 (defface copilot-chat-tool-face
   '((t :inherit font-lock-preprocessor-face))
   "Face for tool invocation lines in the chat buffer."
+  :group 'copilot-chat)
+
+(defface copilot-chat-diff-added-face
+  '((t :inherit diff-added))
+  "Face for added lines in a tool edit preview."
+  :group 'copilot-chat)
+
+(defface copilot-chat-diff-removed-face
+  '((t :inherit diff-removed))
+  "Face for removed lines in a tool edit preview."
   :group 'copilot-chat)
 
 ;;
@@ -382,12 +402,89 @@ namespace-stripped variant."
        (member name copilot-chat-auto-approve-tools)
        t))
 
+(defconst copilot-chat--tool-preview-buffer-name "*copilot-chat-tool-preview*"
+  "Name of the buffer used to preview a pending tool edit.")
+
+(defun copilot-chat--diff-lines (text prefix face)
+  "Prefix each line of TEXT with PREFIX and propertize it with FACE."
+  (mapconcat (lambda (line)
+               (propertize (concat prefix line) 'face face))
+             (split-string (or text "") "\n")
+             "\n"))
+
+(defun copilot-chat--tool-preview (name input)
+  "Return a textual preview of the change NAME with INPUT will make.
+Return nil for tools that do not write files."
+  (pcase (copilot-chat--tool-base-name name)
+    ("create_file"
+     (format "Create %s:\n\n%s"
+             (plist-get input :filePath)
+             (copilot-chat--diff-lines (plist-get input :content)
+                                       "+" 'copilot-chat-diff-added-face)))
+    ("insert_edit_into_file"
+     ;; The :code here is the model's edit snippet, not the resulting
+     ;; file: it uses "...existing code..." markers for the regions it
+     ;; leaves untouched.  Frame it as such rather than implying it is
+     ;; the literal content that will be written.
+     (let ((explanation (plist-get input :explanation)))
+       (concat (format "Edit %s" (plist-get input :filePath))
+               (when (and (stringp explanation) (not (string-empty-p explanation)))
+                 (format "\n%s" explanation))
+               "\n\nProposed edit (\"...existing code...\" marks unchanged regions):\n\n"
+               (or (plist-get input :code) ""))))
+    ("replace_string_in_file"
+     (let ((old (plist-get input :oldString))
+           (new (plist-get input :newString)))
+       (concat (format "Edit %s\n\n" (plist-get input :filePath))
+               ;; Omit an empty side so a pure insertion or deletion does
+               ;; not render a misleading bare "-"/"+" line.
+               (when (and (stringp old) (not (string-empty-p old)))
+                 (concat (copilot-chat--diff-lines
+                          old "-" 'copilot-chat-diff-removed-face)
+                         "\n"))
+               (when (and (stringp new) (not (string-empty-p new)))
+                 (copilot-chat--diff-lines
+                  new "+" 'copilot-chat-diff-added-face)))))
+    (_ nil)))
+
+(defun copilot-chat--confirm-with-preview (msg preview)
+  "Show PREVIEW in a temporary window, then prompt to confirm MSG.
+Return non-nil when the user approves.  The preview buffer is removed
+afterwards."
+  ;; A fresh buffer per call, so an overlapping confirmation can't erase
+  ;; or kill the preview out from under this prompt.
+  (let ((buf (generate-new-buffer copilot-chat--tool-preview-buffer-name)))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf
+            (insert preview)
+            (goto-char (point-min))
+            (setq buffer-read-only t))
+          (display-buffer buf '((display-buffer-pop-up-window
+                                 display-buffer-use-some-window)
+                                (window-height . fit-window-to-buffer)))
+          (yes-or-no-p (copilot-chat--confirmation-prompt msg)))
+      (when-let* ((win (get-buffer-window buf)))
+        (quit-window nil win))
+      (kill-buffer buf))))
+
+(defun copilot-chat--confirm-tool (msg)
+  "Ask the user whether to allow the tool described by MSG.
+Show a preview of the change first when `copilot-chat-preview-tool-edits'
+is enabled and the tool writes files.  Return non-nil on approval."
+  (let ((preview (and copilot-chat-preview-tool-edits
+                      (copilot-chat--tool-preview (plist-get msg :name)
+                                                  (plist-get msg :input)))))
+    (if preview
+        (copilot-chat--confirm-with-preview msg preview)
+      (yes-or-no-p (copilot-chat--confirmation-prompt msg)))))
+
 (defun copilot-chat--handle-tool-confirmation (msg)
   "Handle `conversation/invokeClientToolConfirmation' request MSG.
 Return a result plist the server accepts: (:result \"accept\") to allow
 the tool call or (:result \"dismiss\") to decline it."
   (if (or (copilot-chat--tool-auto-approved-p (plist-get msg :name))
-          (yes-or-no-p (copilot-chat--confirmation-prompt msg)))
+          (copilot-chat--confirm-tool msg))
       (list :result "accept")
     (list :result "dismiss")))
 

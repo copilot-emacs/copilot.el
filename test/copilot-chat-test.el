@@ -762,6 +762,86 @@
               :to-be nil)))
 
   ;;
+  ;; Tool edit preview
+  ;;
+
+  (describe "copilot-chat--tool-preview"
+    (it "previews a file creation with its content"
+      (let ((preview (copilot-chat--tool-preview
+                      "create_file"
+                      (list :filePath "/tmp/x.el" :content "line1\nline2"))))
+        (expect preview :to-match "Create /tmp/x.el")
+        (expect preview :to-match "\\+line1")
+        (expect preview :to-match "\\+line2")))
+
+    (it "previews an edit with explanation and code"
+      (let ((preview (copilot-chat--tool-preview
+                      "copilot.insert_edit_into_file"
+                      (list :filePath "/tmp/x.el"
+                            :explanation "add guard"
+                            :code "(when x y)"))))
+        (expect preview :to-match "Edit /tmp/x.el")
+        (expect preview :to-match "add guard")
+        (expect preview :to-match "(when x y)")))
+
+    (it "previews a string replacement as a diff"
+      (let ((preview (copilot-chat--tool-preview
+                      "replace_string_in_file"
+                      (list :filePath "/tmp/x.el"
+                            :oldString "old" :newString "new"))))
+        (expect preview :to-match "-old")
+        (expect preview :to-match "\\+new")))
+
+    (it "omits the removed side for a pure insertion"
+      (let ((preview (copilot-chat--tool-preview
+                      "replace_string_in_file"
+                      (list :filePath "/tmp/x.el"
+                            :oldString "" :newString "added"))))
+        (expect preview :to-match "\\+added")
+        ;; No misleading lone "-" line for an empty old string.
+        (expect preview :not :to-match "^-")))
+
+    (it "returns nil for read-only and unknown tools"
+      (expect (copilot-chat--tool-preview
+               "copilot.read_file" (list :filePath "/tmp/x.el"))
+              :to-be nil)
+      (expect (copilot-chat--tool-preview
+               "run_in_terminal" (list :command "ls"))
+              :to-be nil)))
+
+  (describe "tool confirmation preview"
+    (it "shows a preview buffer when approving an edit tool"
+      (let ((copilot-chat-preview-tool-edits t)
+            (shown nil))
+        (spy-on 'yes-or-no-p :and-call-fake
+                (lambda (&rest _)
+                  (setq shown (get-buffer "*copilot-chat-tool-preview*"))
+                  t))
+        (expect (copilot-chat--handle-tool-confirmation
+                 (list :name "create_file"
+                       :input (list :filePath "/tmp/x.el" :content "hi")))
+                :to-equal '(:result "accept"))
+        ;; The preview buffer existed during the prompt...
+        (expect shown :to-be-truthy)
+        ;; ...and is cleaned up afterwards.
+        (expect (get-buffer "*copilot-chat-tool-preview*") :to-be nil)))
+
+    (it "skips the preview when copilot-chat-preview-tool-edits is nil"
+      (let ((copilot-chat-preview-tool-edits nil))
+        (spy-on 'yes-or-no-p :and-return-value t)
+        (copilot-chat--handle-tool-confirmation
+         (list :name "create_file"
+               :input (list :filePath "/tmp/x.el" :content "hi")))
+        (expect (get-buffer "*copilot-chat-tool-preview*") :to-be nil)))
+
+    (it "does not preview non-editing tools"
+      (let ((copilot-chat-preview-tool-edits t))
+        (spy-on 'yes-or-no-p :and-return-value nil)
+        (copilot-chat--handle-tool-confirmation
+         (list :name "run_in_terminal" :input (list :command "ls")))
+        (expect (get-buffer "*copilot-chat-tool-preview*") :to-be nil))))
+
+  ;;
   ;; Tool invocation dispatch
   ;;
 

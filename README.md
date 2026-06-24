@@ -234,6 +234,7 @@ Key bindings in the `*copilot-chat*` buffer:
 
 Customization:
 - **`copilot-chat-model`** — model to use for chat (default `nil`, meaning a default chat model is resolved from the server)
+- **`copilot-chat-preview-tool-edits`** — in agent mode, preview file changes in a temporary buffer before you confirm an edit tool (default `t`)
 
 > [!TIP]
 >

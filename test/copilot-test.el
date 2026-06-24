@@ -497,7 +497,43 @@
                   :to-equal "gpt-4o")
           (expect (plist-get (plist-get (plist-get result :github) :copilot)
                              :other)
-                  :to-equal "value")))))
+                  :to-equal "value"))))
+
+    (it "omits :mcp when no servers are configured"
+      (let ((copilot-completion-model nil)
+            (copilot-mcp-servers nil)
+            (copilot-lsp-settings '(:foo "bar")))
+        (expect (plist-member (copilot--effective-lsp-settings) :mcp)
+                :to-be nil)))
+
+    (it "encodes configured MCP servers as a JSON string"
+      (let ((copilot-completion-model nil)
+            (copilot-mcp-servers '(:fetch (:command "uvx"
+                                           :args ["mcp-server-fetch"])))
+            (copilot-lsp-settings nil))
+        (let* ((result (copilot--effective-lsp-settings))
+               (mcp (plist-get result :mcp)))
+          (expect (stringp mcp) :to-be-truthy)
+          (expect (json-parse-string mcp :object-type 'plist)
+                  :to-equal '(:fetch (:command "uvx"
+                                      :args ["mcp-server-fetch"])))))))
+
+  (describe "copilot--mcp-settings-json"
+    (it "returns nil when no servers are configured"
+      (let ((copilot-mcp-servers nil))
+        (expect (copilot--mcp-settings-json) :to-be nil)))
+
+    (it "serializes a stdio and an http server"
+      (let ((copilot-mcp-servers
+             '(:local (:command "npx" :args ["-y" "srv"])
+               :remote (:type "http" :url "https://x/mcp/"))))
+        (expect (json-parse-string (copilot--mcp-settings-json)
+                                   :object-type 'plist)
+                :to-equal copilot-mcp-servers)))
+
+    (it "returns nil and logs when the value cannot be encoded"
+      (let ((copilot-mcp-servers '(:bad (:args (1 . 2)))))
+        (expect (copilot--mcp-settings-json) :to-be nil))))
 
   ;;
   ;; LSP position

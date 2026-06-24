@@ -234,11 +234,28 @@ Key bindings in the `*copilot-chat*` buffer:
 
 Customization:
 - **`copilot-chat-model`** — model to use for chat (default `nil`, meaning a default chat model is resolved from the server)
+- **`copilot-chat-use-agent-mode`** — let Copilot run tools (shell commands, file edits, reads, etc.) during a chat (default `nil`)
 - **`copilot-chat-preview-tool-edits`** — in agent mode, preview file changes in a temporary buffer before you confirm an edit tool (default `t`)
+- **`copilot-chat-auto-approve-tools`** — tool names that skip the confirmation prompt (default `'("get_errors")`)
 
 > [!TIP]
 >
 > Install [`markdown-mode`](https://github.com/jrblevin/markdown-mode) for rich markdown rendering (headings, code blocks, emphasis, etc.) in the chat buffer. Without it, only basic highlighting is used.
+
+#### MCP servers
+
+When agent mode is enabled, you can extend Copilot with [Model Context Protocol](https://modelcontextprotocol.io) servers. Set `copilot-mcp-servers` to a map of server name to definition and copilot.el forwards it to the language server, whose tools then become available in the chat. Each invocation still prompts for confirmation unless listed in `copilot-chat-auto-approve-tools`.
+
+```elisp
+(setopt copilot-mcp-servers
+        '(:fetch (:command "uvx" :args ["mcp-server-fetch"])
+          :memory (:command "npx"
+                   :args ["-y" "@modelcontextprotocol/server-memory"])
+          :remote (:type "http" :url "https://example.com/mcp/"
+                   :headers (:Authorization "Bearer TOKEN"))))
+```
+
+A server with a `:command` is launched locally over stdio; one with a `:type` of `"http"` or `"sse"` is reached at its `:url`. The value is serialized to JSON, so list-valued fields like `:args` must be vectors. Use `setopt` (or `customize`) so a running server picks up the change.
 
 For a more feature-rich chat experience, take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el).
 

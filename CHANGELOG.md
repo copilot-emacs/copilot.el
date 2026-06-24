@@ -2,6 +2,10 @@
 
 ## main (unreleased)
 
+### Bug Fixes
+
+- Resolve a concrete default chat model from the server when `copilot-chat-model` is nil (preferring the server's designated chat default, then an `auto` model) instead of leaving the model unset, which some servers answer with an empty reply. The lookup runs once per session, only against an already-running server. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
+
 ### Changes
 
 - Show readable agent-mode confirmation prompts for the server's own tools (`read_file`, `insert_edit_into_file`, `replace_string_in_file`, etc.) instead of a raw plist dump, falling back to the server-provided message, then the raw input, for any tool we don't recognize. `copilot-chat-auto-approve-tools` is matched exactly so it never auto-approves a same-named tool from a different namespace.

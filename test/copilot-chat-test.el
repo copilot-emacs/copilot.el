@@ -10,6 +10,14 @@
 (require 'copilot-chat)
 
 (describe "copilot-chat"
+  ;; Resolving a default model issues a synchronous request; keep it from
+  ;; reaching the (absent) server during specs that don't care about it.
+  ;; Specs that exercise resolution override this spy.
+  (before-each
+    (setq copilot-chat--resolved-model nil
+          copilot-chat--model-resolved nil)
+    (spy-on 'jsonrpc-request :and-return-value nil))
+
   (describe "loading"
     (it "provides the copilot-chat feature"
       (expect (featurep 'copilot-chat) :to-be-truthy)))
@@ -464,7 +472,7 @@
               (expect (plist-get captured-params :model) :to-equal "gpt-4o"))
           (kill-buffer buf))))
 
-    (it "omits model when copilot-chat-model is nil"
+    (it "sends a server-resolved default when copilot-chat-model is nil"
       (let ((captured-params nil)
             (copilot-chat-model nil)
             (buf (get-buffer-create copilot-chat--buffer-name)))
@@ -472,6 +480,26 @@
             (progn
               (with-current-buffer buf
                 (copilot-chat-mode))
+              (spy-on 'copilot-chat--default-model :and-return-value "auto")
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--create "hello" #'ignore)
+              (expect (plist-get captured-params :model) :to-equal "auto"))
+          (kill-buffer buf))))
+
+    (it "omits model when no default can be resolved"
+      (let ((captured-params nil)
+            (copilot-chat-model nil)
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode))
+              (spy-on 'copilot-chat--default-model :and-return-value nil)
               (spy-on 'copilot--connection-alivep :and-return-value t)
               (spy-on 'jsonrpc--async-request-1
                       :and-call-fake
@@ -481,6 +509,50 @@
               (copilot-chat--create "hello" #'ignore)
               (expect (plist-member captured-params :model) :not :to-be-truthy))
           (kill-buffer buf)))))
+
+  ;;
+  ;; Default model resolution
+  ;;
+
+  (describe "copilot-chat--default-model"
+    (before-each
+      (setq copilot-chat--resolved-model nil
+            copilot-chat--model-resolved nil)
+      (spy-on 'copilot--connection-alivep :and-return-value t))
+
+    (it "prefers the server-designated chat default"
+      (spy-on 'copilot-chat--chat-models :and-return-value
+              (list (list :id "gpt-4o" :isChatDefault :json-false)
+                    (list :id "claude" :isChatDefault t)
+                    (list :id "auto")))
+      (expect (copilot-chat--default-model) :to-equal "claude"))
+
+    (it "falls back to the auto model when no chat default is marked"
+      (spy-on 'copilot-chat--chat-models :and-return-value
+              (list (list :id "gpt-4o" :isChatDefault :json-false)
+                    (list :id "auto" :isChatDefault :json-false)))
+      (expect (copilot-chat--default-model) :to-equal "auto"))
+
+    (it "falls back to the first chat model otherwise"
+      (spy-on 'copilot-chat--chat-models :and-return-value
+              (list (list :id "gpt-4o") (list :id "gemini")))
+      (expect (copilot-chat--default-model) :to-equal "gpt-4o"))
+
+    (it "returns nil when the model list is unavailable"
+      (spy-on 'copilot-chat--chat-models :and-throw-error 'error)
+      (expect (copilot-chat--default-model) :to-be nil))
+
+    (it "does not query the server when the connection is down"
+      (spy-on 'copilot--connection-alivep :and-return-value nil)
+      (spy-on 'copilot-chat--chat-models)
+      (expect (copilot-chat--default-model) :to-be nil)
+      (expect 'copilot-chat--chat-models :not :to-have-been-called))
+
+    (it "caches the result, including nil, and queries the server once"
+      (spy-on 'copilot-chat--chat-models :and-return-value nil)
+      (copilot-chat--default-model)
+      (copilot-chat--default-model)
+      (expect 'copilot-chat--chat-models :to-have-been-called-times 1)))
 
   ;;
   ;; Streaming cancellation

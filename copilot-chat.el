@@ -50,7 +50,9 @@
 
 (defcustom copilot-chat-model nil
   "The model to use for Copilot Chat.
-When nil, the server picks the default model."
+When nil, a default chat model is resolved from the server (preferring
+its designated chat default, then an `auto' model).  Use
+`copilot-chat-select-model' to choose one interactively."
   :type '(choice (const :tag "Default" nil)
                  (string :tag "Model ID"))
   :group 'copilot-chat
@@ -136,6 +138,63 @@ which may be slightly after `copilot-chat--request-id' is set.")
 
 (defconst copilot-chat--buffer-name "*copilot-chat*"
   "Name of the Copilot Chat buffer.")
+
+;;
+;; Model selection
+;;
+
+(defvar copilot-chat--resolved-model nil
+  "Cached default chat model id resolved from the server, or nil.
+Only meaningful once `copilot-chat--model-resolved' is non-nil.")
+
+(defvar copilot-chat--model-resolved nil
+  "Non-nil once a default chat model has been resolved this session.
+Tracked separately from `copilot-chat--resolved-model' so that a nil
+result (no usable default) is cached too and not re-queried on every
+message.")
+
+(defun copilot-chat--chat-models ()
+  "Return the models the server scopes for the chat panel."
+  (seq-filter (lambda (m)
+                (seq-contains-p (plist-get m :scopes) "chat-panel"))
+              (copilot--request 'copilot/models nil :timeout 5)))
+
+(defun copilot-chat--resolve-default-model ()
+  "Query the server for a default chat model id, or nil.
+Prefer the model the server marks as the chat default, then an `auto'
+model, then the first available chat model."
+  (condition-case err
+      (let ((models (copilot-chat--chat-models)))
+        (or (plist-get (seq-find (lambda (m)
+                                   (eq (plist-get m :isChatDefault) t))
+                                 models)
+                       :id)
+            ;; "auto" is the server's catch-all router model; it has no
+            ;; dedicated flag, so match it by its stable id.
+            (plist-get (seq-find (lambda (m)
+                                   (equal (plist-get m :id) "auto"))
+                                 models)
+                       :id)
+            (plist-get (car models) :id)))
+    (error
+     (copilot--log 'warn "Could not resolve a default chat model: %S" err)
+     nil)))
+
+(defun copilot-chat--default-model ()
+  "Return a server-resolved default chat model id, or nil.
+The server is queried at most once per session, and only when the
+connection is already up so chat never blocks on starting it.  The
+result, including nil, is cached."
+  (when (and (not copilot-chat--model-resolved)
+             (copilot--connection-alivep))
+    (setq copilot-chat--resolved-model (copilot-chat--resolve-default-model)
+          copilot-chat--model-resolved t))
+  copilot-chat--resolved-model)
+
+(defun copilot-chat--model ()
+  "Return the chat model id to send to the server.
+Use `copilot-chat-model' when set, otherwise a server-resolved default."
+  (or copilot-chat-model (copilot-chat--default-model)))
 
 ;;
 ;; Internal helpers
@@ -521,8 +580,8 @@ CALLBACK is called with the response containing conversationId and turnId."
                    :capabilities (list :skills (vector "current-editor")
                                        :allSkills t)
                    :source "panel")
-             (when copilot-chat-model
-               (list :model copilot-chat-model))
+             (when-let* ((model (copilot-chat--model)))
+               (list :model model))
              (list :workspaceFolders
                    (vconcat
                     (when-let* ((root (copilot--workspace-root)))
@@ -766,18 +825,16 @@ If not currently streaming, reset the conversation instead."
 (defun copilot-chat-select-model ()
   "Interactively select a Copilot Chat model."
   (interactive)
-  (let* ((models (copilot--request 'copilot/models nil))
-         (chat-models
-          (seq-filter (lambda (m)
-                        (seq-contains-p (plist-get m :scopes) "chat-panel"))
-                      models))
-         (choices (mapcar (lambda (m)
+  (let* ((choices (mapcar (lambda (m)
                             (cons (format "%s (%s)" (plist-get m :modelName) (plist-get m :id))
                                   (plist-get m :id)))
-                          chat-models))
+                          (copilot-chat--chat-models)))
          (choice (completing-read "Chat model: " choices nil t))
          (model-id (cdr (assoc choice choices))))
-    (setq copilot-chat-model model-id)
+    (setq copilot-chat-model model-id
+          ;; Forget any cached default so clearing the model later
+          ;; re-resolves from the server.
+          copilot-chat--model-resolved nil)
     (message "Chat model set to %s" model-id)))
 
 (provide 'copilot-chat)

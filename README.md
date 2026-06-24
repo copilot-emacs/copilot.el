@@ -233,7 +233,7 @@ Key bindings in the `*copilot-chat*` buffer:
 - **q** — quit the chat window
 
 Customization:
-- **`copilot-chat-model`** — model to use for chat (default `nil`, meaning server default)
+- **`copilot-chat-model`** — model to use for chat (default `nil`, meaning a default chat model is resolved from the server)
 
 > [!TIP]
 >
@@ -590,7 +590,10 @@ GitHub only offers a single completion model (`gpt-41-copilot`).
 
 To select a chat model, run `M-x copilot-chat-select-model`. Many more models
 are available for chat (Claude, Gemini, GPT-4o, etc.). The selection is saved
-in `copilot-chat-model`.
+in `copilot-chat-model`. When that is left at `nil`, copilot.el resolves a
+default from the server (its designated chat default, or an `auto` model)
+rather than leaving the model unset, which some servers answer with an empty
+reply.
 
 ## Reporting Bugs
 

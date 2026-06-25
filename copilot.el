@@ -298,6 +298,15 @@ Incremented after each change.")
   "Current server status from `didChangeStatus' notification.
 Plist with keys :kind, :busy, and :message.")
 
+(defvar copilot--quota nil
+  "Latest quota snapshot from the `copilot/quotaChange' notification.
+A plist with keys such as :chat, :completions, :premium_interactions
+\(each a snapshot plist with :percentRemaining and :unlimited),
+:copilotPlan, and :canUpgradePlan.  Nil until the server reports it.
+
+Note `:premium_interactions' is snake_case in the server payload even
+though its siblings are camelCase; this matches the wire format.")
+
 (defvar copilot--progress-sessions (make-hash-table :test 'equal)
   "Hash table of active progress sessions, keyed by token.
 Each value is a plist with :title, :message, and :percentage.")
@@ -684,7 +693,8 @@ reaped by Emacs anyway, so the `exit' notification is enough."
     (setq copilot--connection nil)
     (setq copilot--opened-buffers nil)
     (setq copilot--workspace-folders nil)
-    (setq copilot--status nil)))
+    (setq copilot--status nil)
+    (setq copilot--quota nil)))
 
 (defun copilot--shutdown-server-at-exit ()
   "Shut down the Copilot server from `kill-emacs-hook'.
@@ -1261,6 +1271,59 @@ Each request METHOD can have only one HANDLER."
    (copilot--dbind (kind busy message) msg
      (setq copilot--status (list :kind kind :busy (eq busy t) :message message))
      (force-mode-line-update t))))
+
+(copilot-on-notification
+ 'copilot/quotaChange
+ (lambda (msg)
+   (setq copilot--quota msg)))
+
+(copilot-on-notification
+ 'copilot/quotaWarning
+ (lambda (msg)
+   (when-let* ((message (plist-get msg :message)))
+     (let ((type (plist-get msg :type)))
+       ;; The server flags the urgent ones as type "warning"; everything
+       ;; else is informational.
+       (copilot--log (if (and (stringp type)
+                              (string-equal-ignore-case type "warning"))
+                         'warning 'info)
+                     "%s" message)))))
+
+(defun copilot--quota-snapshot-string (label snapshot)
+  "Return a one-line description of quota SNAPSHOT under LABEL, or nil.
+SNAPSHOT is a plist with :percentRemaining and :unlimited."
+  (when snapshot
+    (let ((pct (plist-get snapshot :percentRemaining)))
+      (cond
+       ((eq (plist-get snapshot :unlimited) t)
+        (format "%s: unlimited" label))
+       ((numberp pct)
+        ;; Round rather than %d-truncate so a fractional sliver such as
+        ;; 0.4% doesn't read as a flat "0% remaining".
+        (format "%s: %s%% remaining" label
+                (string-trim-right (format "%.1f" pct) "\\.0")))
+       (t nil)))))
+
+(defun copilot-quota ()
+  "Show the current Copilot usage quota reported by the server."
+  (interactive)
+  (if (null copilot--quota)
+      (message "Copilot: no quota information reported yet.")
+    (let* ((plan (plist-get copilot--quota :copilotPlan))
+           (parts (delq nil
+                        (list (and plan (format "plan: %s" plan))
+                              (copilot--quota-snapshot-string
+                               "chat" (plist-get copilot--quota :chat))
+                              (copilot--quota-snapshot-string
+                               "completions"
+                               (plist-get copilot--quota :completions))
+                              (copilot--quota-snapshot-string
+                               "premium"
+                               (plist-get copilot--quota
+                                          :premium_interactions))))))
+      (if parts
+          (message "Copilot quota - %s" (string-join parts ", "))
+        (message "Copilot: quota details unavailable.")))))
 
 (copilot-on-request
  'window/showMessageRequest

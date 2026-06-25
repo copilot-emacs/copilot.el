@@ -19,13 +19,6 @@
 - Add `copilot-chat-list-mcp-tools` to see the connected MCP servers, their status, and their tools, and warn when an MCP server fails to start (previously silent).
 - Preview file changes in a temporary buffer before confirming an agent-mode edit tool (`create_file`, `insert_edit_into_file`, `replace_string_in_file`), so you can see what will be written before approving. Controlled by `copilot-chat-preview-tool-edits` (default on).
 
-### Bug Fixes
-
-- Report Flycheck diagnostics for the agent-mode `get_errors` tool, not just Flymake, so Flycheck users get real diagnostics instead of "no diagnostics available".
-- Surface a turn-level error reported by the server at the end of a chat turn, instead of leaving only an empty reply. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
-- Stop the `copilot--infer-indentation-offset` warning from firing while generating chat context, so chatting from a buffer whose mode has no configured indentation offset no longer nags. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
-- Resolve a concrete default chat model from the server when `copilot-chat-model` is nil (preferring the server's designated chat default, then an `auto` model) instead of leaving the model unset, which some servers answer with an empty reply. The lookup runs once per session, only against an already-running server. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
-
 ### Changes
 
 - Show readable agent-mode confirmation prompts for the server's own tools (`read_file`, `insert_edit_into_file`, `replace_string_in_file`, etc.) instead of a raw plist dump, falling back to the server-provided message, then the raw input, for any tool we don't recognize. `copilot-chat-auto-approve-tools` is matched exactly so it never auto-approves a same-named tool from a different namespace.
@@ -33,6 +26,10 @@
 ### Bug Fixes
 
 - Fix agent-mode tool confirmations always failing (so Copilot Chat couldn't read files, edit, etc.) by returning the `(:result "accept")`/`(:result "dismiss")` shape the server expects instead of a bare string. ([#483](https://github.com/copilot-emacs/copilot.el/issues/483))
+- Report Flycheck diagnostics for the agent-mode `get_errors` tool, not just Flymake, so Flycheck users get real diagnostics instead of "no diagnostics available".
+- Surface a turn-level error reported by the server at the end of a chat turn, instead of leaving only an empty reply. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
+- Stop the `copilot--infer-indentation-offset` warning from firing while generating chat context, so chatting from a buffer whose mode has no configured indentation offset no longer nags. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
+- Resolve a concrete default chat model from the server when `copilot-chat-model` is nil (preferring the server's designated chat default, then an `auto` model) instead of leaving the model unset, which some servers answer with an empty reply. The lookup runs once per session, only against an already-running server. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
 
 ## 0.6.0 (2026-06-22)
 

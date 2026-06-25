@@ -4,20 +4,31 @@
 
 ### New Features
 
-- Answer the server's `workspace/findFiles` and `workspace/findTextInFiles` requests so agent mode can search the project by file glob and by text/regex (via ripgrep), a step toward whole-workspace questions.
-- Answer the server's `workspace/readFile` and `workspace/readDirectory` requests so agent mode can read files and list directories across the project.
-- Add opt-in semantic search (`copilot-chat-enable-semantic-search`): declare the `watchedFiles` capability and answer the server's `copilot/watchedFiles` request with the project's file list, so the server can build a workspace index for whole-codebase questions.
-- Attach extra context to a chat message: `copilot-chat-add-file-reference` (`C-c C-f`) and `copilot-chat-add-region-reference` send specific files or selections along with the next message, and `copilot-chat-clear-references` drops anything pending.
-- Add `copilot-chat-slash-command` (`C-c /`) to pick and send a chat slash command (`/explain`, `/fix`, `/tests`, `/doc`, etc.) fetched from the server, with optional arguments.
-- Act on chat code blocks: `copilot-chat-insert-code-block` (`C-c C-i`) inserts the block at point into the source buffer, and `copilot-chat-copy-code-block` (`C-c M-w`) copies it to the kill ring, instead of leaving chat output as read-only text.
-- Announce when a suggestion matches public code, and collect the matches (with licenses and reference URLs) in a buffer shown by `copilot-list-code-citations`. Controlled by `copilot-show-code-citations` (default on). ([#471](https://github.com/copilot-emacs/copilot.el/issues/471))
-- Track Copilot usage quota: surface the server's quota warnings and add `copilot-quota` to show how much of your chat, completion, and premium-request allowance is left.
-- Run the agent-mode `run_in_terminal` tool asynchronously instead of blocking Emacs for the whole command. The editor stays responsive, the language-server connection keeps flowing, `C-g` aborts a running command, and `copilot-chat-terminal-timeout` (default 30s) kills runaways. The command's exit status is now reported back to the model.
-- Show a status line in the chat buffer when Copilot runs one of its own built-in or MCP tools that asks for confirmation (`read_file`, the edit tools, etc.), so those tool calls leave a trace, not just the ones copilot.el executes locally.
-- Offer an `always` choice at agent-mode tool confirmation prompts, alongside yes and no, to approve a tool for the rest of the conversation instead of confirming each call. The choice is remembered until a new conversation starts.
+Agent mode tooling:
+
 - Add MCP (Model Context Protocol) server support for agent mode via the new `copilot-mcp-servers` option. Configured servers are forwarded to the language server and their tools become available in `copilot-chat`, each prompting for confirmation like the built-in tools.
 - Add `copilot-chat-list-mcp-tools` to see the connected MCP servers, their status, and their tools, and warn when an MCP server fails to start (previously silent).
 - Preview file changes in a temporary buffer before confirming an agent-mode edit tool (`create_file`, `insert_edit_into_file`, `replace_string_in_file`), so you can see what will be written before approving. Controlled by `copilot-chat-preview-tool-edits` (default on).
+- Offer an `always` choice at agent-mode tool confirmation prompts, alongside yes and no, to approve a tool for the rest of the conversation instead of confirming each call. The choice is remembered until a new conversation starts.
+- Run the agent-mode `run_in_terminal` tool asynchronously instead of blocking Emacs for the whole command. The editor stays responsive, the language-server connection keeps flowing, `C-g` aborts a running command, and `copilot-chat-terminal-timeout` (default 30s) kills runaways. The command's exit status is now reported back to the model.
+- Show a status line in the chat buffer when Copilot runs one of its own built-in or MCP tools that asks for confirmation (`read_file`, the edit tools, etc.), so those tool calls leave a trace, not just the ones copilot.el executes locally.
+
+Workspace access for agent mode:
+
+- Answer the server's `workspace/findFiles` and `workspace/findTextInFiles` requests so agent mode can search the project by file glob and by text/regex (via ripgrep), a step toward whole-workspace questions.
+- Answer the server's `workspace/readFile` and `workspace/readDirectory` requests so agent mode can read files and list directories across the project.
+- Add opt-in semantic search (`copilot-chat-enable-semantic-search`): declare the `watchedFiles` capability and answer the server's `copilot/watchedFiles` request with the project's file list, so the server can build a workspace index for whole-codebase questions.
+
+Chat usability:
+
+- Add `copilot-chat-slash-command` (`C-c /`) to pick and send a chat slash command (`/explain`, `/fix`, `/tests`, `/doc`, etc.) fetched from the server, with optional arguments.
+- Act on chat code blocks: `copilot-chat-insert-code-block` (`C-c C-i`) inserts the block at point into the source buffer, and `copilot-chat-copy-code-block` (`C-c M-w`) copies it to the kill ring, instead of leaving chat output as read-only text.
+- Attach extra context to a chat message: `copilot-chat-add-file-reference` (`C-c C-f`) and `copilot-chat-add-region-reference` send specific files or selections along with the next message, and `copilot-chat-clear-references` drops anything pending.
+
+Account and usage:
+
+- Track Copilot usage quota: surface the server's quota warnings and add `copilot-quota` to show how much of your chat, completion, and premium-request allowance is left.
+- Announce when a suggestion matches public code, and collect the matches (with licenses and reference URLs) in a buffer shown by `copilot-list-code-citations`. Controlled by `copilot-show-code-citations` (default on). ([#471](https://github.com/copilot-emacs/copilot.el/issues/471))
 
 ### Changes
 
@@ -26,10 +37,10 @@
 ### Bug Fixes
 
 - Fix agent-mode tool confirmations always failing (so Copilot Chat couldn't read files, edit, etc.) by returning the `(:result "accept")`/`(:result "dismiss")` shape the server expects instead of a bare string. ([#483](https://github.com/copilot-emacs/copilot.el/issues/483))
-- Report Flycheck diagnostics for the agent-mode `get_errors` tool, not just Flymake, so Flycheck users get real diagnostics instead of "no diagnostics available".
+- Resolve a concrete default chat model from the server when `copilot-chat-model` is nil (preferring the server's designated chat default, then an `auto` model) instead of leaving the model unset, which some servers answer with an empty reply. The lookup runs once per session, only against an already-running server. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
 - Surface a turn-level error reported by the server at the end of a chat turn, instead of leaving only an empty reply. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
 - Stop the `copilot--infer-indentation-offset` warning from firing while generating chat context, so chatting from a buffer whose mode has no configured indentation offset no longer nags. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
-- Resolve a concrete default chat model from the server when `copilot-chat-model` is nil (preferring the server's designated chat default, then an `auto` model) instead of leaving the model unset, which some servers answer with an empty reply. The lookup runs once per session, only against an already-running server. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
+- Report Flycheck diagnostics for the agent-mode `get_errors` tool, not just Flymake, so Flycheck users get real diagnostics instead of "no diagnostics available".
 
 ## 0.6.0 (2026-06-22)
 

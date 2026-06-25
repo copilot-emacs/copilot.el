@@ -274,6 +274,19 @@ Returns a string or nil."
                      (plist-get last-round :reply)))))
     (and (stringp reply) reply)))
 
+(defun copilot-chat--error-text (err)
+  "Return a human-readable string for a server ERR value, or nil.
+ERR may be a string, a structured object with a `:message', or absent."
+  (cond ((null err) nil)
+        ((stringp err) err)
+        ((and (listp err) (stringp (plist-get err :message)))
+         (plist-get err :message))
+        (t (format "%S" err))))
+
+(defun copilot-chat--format-error (msg)
+  "Return MSG rendered as a styled chat error line."
+  (propertize (format "[Error: %s]\n\n" msg) 'face 'copilot-chat-error-face))
+
 (defun copilot-chat--handle-progress (msg)
   "Handle `$/progress' notification MSG for chat streaming."
   (copilot--dbind (token value) msg
@@ -294,18 +307,27 @@ Returns a string or nil."
                 (copilot-chat--scroll-to-bottom)))
              ((equal kind "end")
               (copilot-chat--end-streaming)
-              (when-let* ((result (plist-get value :result))
-                          ((listp result)))
-                (setq copilot-chat--follow-up (plist-get result :followUp)))
-              (let ((inhibit-read-only t))
-                (goto-char (point-max))
-                (insert "\n\n")
-                (when (and copilot-chat--follow-up
-                           (stringp copilot-chat--follow-up)
-                           (not (string-empty-p copilot-chat--follow-up)))
-                  (insert (propertize
-                           (format "Follow-up: %s\n\n" copilot-chat--follow-up)
-                           'face 'copilot-chat-follow-up-face))))
+              (let* ((result (plist-get value :result))
+                     ;; The server normally sends an object here, but
+                     ;; guard against any other shape.
+                     (result (and (listp result) result))
+                     (error-msg (copilot-chat--error-text
+                                 (plist-get result :error))))
+                ;; Reset the follow-up every turn so a stale one from a
+                ;; previous turn is never re-inserted.
+                (setq copilot-chat--follow-up (plist-get result :followUp))
+                (let ((inhibit-read-only t))
+                  (goto-char (point-max))
+                  (insert "\n\n")
+                  ;; Surface a turn-level error the server reports at the
+                  ;; end, which would otherwise leave only an empty reply.
+                  (when error-msg
+                    (insert (copilot-chat--format-error error-msg)))
+                  (when (and (stringp copilot-chat--follow-up)
+                             (not (string-empty-p copilot-chat--follow-up)))
+                    (insert (propertize
+                             (format "Follow-up: %s\n\n" copilot-chat--follow-up)
+                             'face 'copilot-chat-follow-up-face)))))
               (copilot-chat--scroll-to-bottom)
               (setq copilot-chat--active-buffers
                     (assoc-delete-all token copilot-chat--active-buffers))))))))))
@@ -842,7 +864,11 @@ Servers are configured via `copilot-mcp-servers'."
   (let ((buf copilot-chat--source-buffer))
     (when (and buf (buffer-live-p buf))
       (with-current-buffer buf
-        (let ((doc (copilot--generate-doc)))
+        ;; The indentation-offset warning is meant for completion
+        ;; debugging; suppress it here so merely chatting from a buffer
+        ;; whose mode has no configured offset doesn't nag the user.
+        (let* ((copilot-indent-offset-warning-disable t)
+               (doc (copilot--generate-doc)))
           (plist-put doc :source (copilot--get-source))
           doc)))))
 
@@ -852,8 +878,7 @@ Servers are configured via `copilot-mcp-servers'."
     (with-current-buffer buf
       (let ((inhibit-read-only t))
         (goto-char (point-max))
-        (insert (propertize (format "\n[Error: %s]\n\n" error-msg)
-                            'face 'copilot-chat-error-face))
+        (insert "\n" (copilot-chat--format-error error-msg))
         (copilot-chat--scroll-to-bottom)))))
 
 ;;

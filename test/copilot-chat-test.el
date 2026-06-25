@@ -1398,6 +1398,84 @@
           (expect msg :to-match "```emacs-lisp")
           (expect msg :to-match "(\\+ 1 2)")))))
 
+  (describe "copilot-chat--chat-templates"
+    ;; copilot--request is a macro over jsonrpc-request, so stub the
+    ;; transport rather than the macro.
+    (before-each
+      (setq copilot-chat--templates nil)
+      (spy-on 'copilot--workspace-root :and-return-value nil)
+      (spy-on 'copilot--connection-alivep :and-return-value t))
+    (after-each (setq copilot-chat--templates nil))
+
+    (it "filters templates to the chat-panel scope"
+      (let ((copilot-chat-use-agent-mode nil))
+        (spy-on 'jsonrpc-request :and-return-value
+                (vector (list :id "explain" :scopes ["chat-panel"])
+                        (list :id "agentonly" :scopes ["agent-panel"])))
+        (let ((tpls (copilot-chat--chat-templates)))
+          (expect (length tpls) :to-equal 1)
+          (expect (plist-get (car tpls) :id) :to-equal "explain"))))
+
+    (it "filters to the agent-panel scope in agent mode"
+      (let ((copilot-chat-use-agent-mode t))
+        (spy-on 'jsonrpc-request :and-return-value
+                (vector (list :id "explain" :scopes ["chat-panel"])
+                        (list :id "agentcmd" :scopes ["agent-panel"])))
+        (expect (plist-get (car (copilot-chat--chat-templates)) :id)
+                :to-equal "agentcmd")))
+
+    (it "sends a percent-encoded workspace-folder URI"
+      (let ((copilot-chat-use-agent-mode nil)
+            (captured nil))
+        (spy-on 'copilot--workspace-root :and-return-value "/tmp/My Project")
+        (spy-on 'jsonrpc-request :and-call-fake
+                (lambda (_conn _method params &rest _)
+                  (setq captured params)
+                  []))
+        (copilot-chat--chat-templates)
+        (let ((uri (plist-get (aref (plist-get captured :workspaceFolders) 0)
+                              :uri)))
+          (expect uri :to-match "My%20Project"))))
+
+    (it "caches the result and queries the server once"
+      (let ((copilot-chat-use-agent-mode nil))
+        (spy-on 'jsonrpc-request :and-return-value
+                (vector (list :id "explain" :scopes ["chat-panel"])))
+        (copilot-chat--chat-templates)
+        (copilot-chat--chat-templates)
+        (expect 'jsonrpc-request :to-have-been-called-times 1)))
+
+    (it "returns no templates when the query fails"
+      (let ((copilot-chat-use-agent-mode nil))
+        (spy-on 'copilot--log)
+        (spy-on 'jsonrpc-request :and-throw-error 'error)
+        (expect (copilot-chat--chat-templates) :to-be nil))))
+
+  (describe "copilot-chat-slash-command"
+    (it "sends the chosen command with arguments as a message"
+      (spy-on 'copilot-chat--chat-templates :and-return-value
+              (list (list :id "explain" :description "Explain code"
+                          :scopes ["chat-panel"])))
+      (spy-on 'completing-read :and-return-value "/explain  Explain code")
+      (spy-on 'read-string :and-return-value "this function")
+      (spy-on 'copilot-chat)
+      (copilot-chat-slash-command)
+      (expect 'copilot-chat :to-have-been-called-with "/explain this function"))
+
+    (it "sends a bare command when no arguments are given"
+      (spy-on 'copilot-chat--chat-templates :and-return-value
+              (list (list :id "tests" :description "Generate tests"
+                          :scopes ["chat-panel"])))
+      (spy-on 'completing-read :and-return-value "/tests  Generate tests")
+      (spy-on 'read-string :and-return-value "  ")
+      (spy-on 'copilot-chat)
+      (copilot-chat-slash-command)
+      (expect 'copilot-chat :to-have-been-called-with "/tests"))
+
+    (it "errors when no slash commands are available"
+      (spy-on 'copilot-chat--chat-templates :and-return-value nil)
+      (expect (copilot-chat-slash-command) :to-throw 'user-error)))
+
   (describe "copilot-chat-select-model"
     (it "sets copilot-chat-model from user selection"
       (let ((copilot-chat-model nil))

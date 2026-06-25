@@ -1154,6 +1154,7 @@ in the chat buffer."
     (define-key map (kbd "C-c C-k") #'copilot-chat-stop)
     (define-key map (kbd "C-c C-i") #'copilot-chat-insert-code-block)
     (define-key map (kbd "C-c M-w") #'copilot-chat-copy-code-block)
+    (define-key map (kbd "C-c /") #'copilot-chat-slash-command)
     (define-key map (kbd "q") #'quit-window)
     map)
   "Keymap for `copilot-chat-mode'.")
@@ -1277,6 +1278,62 @@ When called interactively, prompt for the message."
                       (format "%s\n\n```%s\n%s\n```" prompt lang code)
                     (format "```%s\n%s\n```" lang code))))
     (copilot-chat message)))
+
+(defvar copilot-chat--templates nil
+  "Cached slash-command templates from `conversation/templates'.
+The set is static per session, so it is fetched once.")
+
+(defun copilot-chat--chat-templates ()
+  "Return the server's slash-command templates for the chat.
+Filter to the scope matching the current mode (`agent-panel' when
+`copilot-chat-use-agent-mode' is on, otherwise `chat-panel').  The
+server query is made at most once per session and cached; a failed
+query yields no templates rather than an error."
+  (unless copilot-chat--templates
+    (setq copilot-chat--templates
+          (condition-case err
+              (let* ((root (copilot--workspace-root))
+                     (params (when root
+                               (list :workspaceFolders
+                                     (vector (list :uri (copilot--path-to-uri root)
+                                                   :name (file-name-nondirectory
+                                                          (directory-file-name root))))))))
+                (or (append (copilot--request 'conversation/templates params)
+                            nil)
+                    ;; Distinguish "fetched, none" from "not fetched yet".
+                    'none))
+            (error
+             (copilot--log 'warning "Could not fetch chat templates: %S" err)
+             'none))))
+  (let ((scope (if copilot-chat-use-agent-mode "agent-panel" "chat-panel")))
+    (seq-filter (lambda (tpl)
+                  (seq-contains-p (plist-get tpl :scopes) scope))
+                (if (eq copilot-chat--templates 'none) nil
+                  copilot-chat--templates))))
+
+;;;###autoload
+(defun copilot-chat-slash-command ()
+  "Choose a Copilot Chat slash command and send it.
+Slash commands (such as `/explain', `/fix', `/tests', `/doc') are
+fetched from the server.  You can supply optional arguments after the
+command."
+  (interactive)
+  (let ((templates (copilot-chat--chat-templates)))
+    (unless templates
+      (user-error "No slash commands available"))
+    (let* ((choices
+            (mapcar (lambda (tpl)
+                      (cons (format "/%s  %s" (plist-get tpl :id)
+                                    (or (plist-get tpl :description) ""))
+                            (plist-get tpl :id)))
+                    templates))
+           (choice (completing-read "Slash command: " choices nil t))
+           (id (cdr (assoc choice choices)))
+           (args (read-string (format "/%s " id)))
+           (message (if (string-empty-p (string-trim args))
+                        (format "/%s" id)
+                      (format "/%s %s" id args))))
+      (copilot-chat message))))
 
 ;;;###autoload
 (defun copilot-chat-stop ()

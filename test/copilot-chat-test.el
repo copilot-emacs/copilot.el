@@ -217,6 +217,94 @@
           (kill-buffer buf)))))
 
   ;;
+  ;; Turn-end error display
+  ;;
+
+  (describe "turn error display in progress handler"
+    (it "surfaces an error reported at the end of a turn"
+      (let ((buf (get-buffer-create "*copilot-chat-test-turn-error*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p t))
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "end"
+                                    :result (list :error "model overloaded"))))
+                (with-current-buffer buf
+                  (expect (buffer-string) :to-match "Error: model overloaded"))))
+          (kill-buffer buf))))
+
+    (it "shows no error line for a clean turn"
+      (let ((buf (get-buffer-create "*copilot-chat-test-clean-turn*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p t))
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "end"
+                                    :result (list :followUp "next"))))
+                (with-current-buffer buf
+                  (expect (buffer-string) :not :to-match "Error:"))))
+          (kill-buffer buf))))
+
+    (it "renders a structured error as its message"
+      (let ((buf (get-buffer-create "*copilot-chat-test-struct-error*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p t))
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "end"
+                                    :result (list :error (list :code 500
+                                                               :message "overloaded")))))
+                (with-current-buffer buf
+                  (expect (buffer-string) :to-match "Error: overloaded")
+                  ;; Not the raw plist.
+                  (expect (buffer-string) :not :to-match ":code"))))
+          (kill-buffer buf))))
+
+    (it "clears a stale follow-up when the result is not an object"
+      (let ((buf (get-buffer-create "*copilot-chat-test-stale-fu*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p t
+                      copilot-chat--follow-up "old suggestion"))
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "end" :result "not-an-object")))
+                (with-current-buffer buf
+                  (expect (buffer-string) :not :to-match "old suggestion")
+                  (expect copilot-chat--follow-up :to-be nil))))
+          (kill-buffer buf)))))
+
+  (describe "copilot-chat--error-text"
+    (it "returns a bare string error unchanged"
+      (expect (copilot-chat--error-text "boom") :to-equal "boom"))
+
+    (it "extracts the message from a structured error"
+      (expect (copilot-chat--error-text '(:code 500 :message "overloaded"))
+              :to-equal "overloaded"))
+
+    (it "returns nil when there is no error"
+      (expect (copilot-chat--error-text nil) :to-be nil)))
+
+  ;;
   ;; Context handler
   ;;
 
@@ -272,7 +360,19 @@
             (let ((doc (copilot-chat--generate-context-doc)))
               (expect doc :to-be-truthy)
               (expect (plist-get doc :source) :to-match "hello")
-              (expect (plist-get doc :languageId) :to-equal "emacs-lisp")))))))
+              (expect (plist-get doc :languageId) :to-equal "emacs-lisp"))))))
+
+    (it "suppresses the indentation-offset warning while generating"
+      (with-temp-buffer
+        (let ((source-buf (current-buffer))
+              (captured 'unset))
+          (setq copilot-chat--source-buffer source-buf)
+          (spy-on 'copilot--generate-doc :and-call-fake
+                  (lambda () (setq captured copilot-indent-offset-warning-disable)
+                    '()))
+          (spy-on 'copilot--get-source :and-return-value "")
+          (copilot-chat--generate-context-doc)
+          (expect captured :to-be t)))))
 
   ;;
   ;; Inline error display

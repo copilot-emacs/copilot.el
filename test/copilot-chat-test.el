@@ -714,6 +714,31 @@
         ;; No stray "nil" leaks into the prompt.
         (expect prompt :not :to-match "run nil"))))
 
+  (describe "server-side tool activity logging"
+    (it "logs a status line for an approved server tool"
+      (let ((copilot-chat-auto-approve-tools '("copilot.read_file")))
+        (spy-on 'copilot-chat--insert-tool-status)
+        (copilot-chat--handle-tool-confirmation
+         (list :name "copilot.read_file" :input (list :filePath "/tmp/x.el")))
+        (expect 'copilot-chat--insert-tool-status
+                :to-have-been-called-with "read_file" "read file: /tmp/x.el")))
+
+    (it "does not log a client tool at confirmation time"
+      ;; Client tools (run_in_terminal etc.) log their own progress while
+      ;; executing, so they must not also log here.
+      (spy-on 'yes-or-no-p :and-return-value t)
+      (spy-on 'copilot-chat--insert-tool-status)
+      (copilot-chat--handle-tool-confirmation
+       (list :name "run_in_terminal" :input (list :command "ls")))
+      (expect 'copilot-chat--insert-tool-status :not :to-have-been-called))
+
+    (it "does not log a dismissed tool"
+      (spy-on 'yes-or-no-p :and-return-value nil)
+      (spy-on 'copilot-chat--insert-tool-status)
+      (copilot-chat--handle-tool-confirmation
+       (list :name "copilot.read_file" :input (list :filePath "/tmp/x.el")))
+      (expect 'copilot-chat--insert-tool-status :not :to-have-been-called)))
+
   ;;
   ;; Tool summary
   ;;

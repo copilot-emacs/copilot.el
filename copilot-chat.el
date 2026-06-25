@@ -492,13 +492,38 @@ is enabled and the tool writes files.  Return non-nil on approval."
         (copilot-chat--confirm-with-preview msg preview)
       (yes-or-no-p (copilot-chat--confirmation-prompt msg)))))
 
+(defun copilot-chat--client-tool-names ()
+  "Return the names of copilot.el's own client tools.
+These are the tools copilot.el registers and runs itself; they log their
+own progress while running, so they need no separate status line at
+confirmation time."
+  (mapcar (lambda (def) (plist-get def :name))
+          (copilot-chat--tool-definitions)))
+
+(defun copilot-chat--log-server-tool (msg)
+  "Insert a status line for a server-executed tool approved via MSG.
+The server runs its own built-in and MCP tools internally, so for the
+ones it asks us to confirm this is the only trace they leave in the chat
+buffer.  Tools copilot.el executes itself are skipped, since they log
+their own progress."
+  (let* ((name (plist-get msg :name))
+         (base (copilot-chat--tool-base-name name)))
+    (unless (member base (copilot-chat--client-tool-names))
+      (copilot-chat--insert-tool-status
+       base
+       (or (copilot-chat--tool-summary name (plist-get msg :input))
+           "running")))))
+
 (defun copilot-chat--handle-tool-confirmation (msg)
   "Handle `conversation/invokeClientToolConfirmation' request MSG.
 Return a result plist the server accepts: (:result \"accept\") to allow
 the tool call or (:result \"dismiss\") to decline it."
   (if (or (copilot-chat--tool-auto-approved-p (plist-get msg :name))
           (copilot-chat--confirm-tool msg))
-      (list :result "accept")
+      (progn
+        ;; Logging must never derail the acceptance reply.
+        (ignore-errors (copilot-chat--log-server-tool msg))
+        (list :result "accept"))
     (list :result "dismiss")))
 
 (copilot-on-request 'conversation/invokeClientToolConfirmation

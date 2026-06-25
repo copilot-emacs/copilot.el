@@ -15,7 +15,8 @@
   ;; Specs that exercise resolution override this spy.
   (before-each
     (setq copilot-chat--resolved-model nil
-          copilot-chat--model-resolved nil)
+          copilot-chat--model-resolved nil
+          copilot-chat--session-approved-tools nil)
     (spy-on 'jsonrpc-request :and-return-value nil))
 
   (describe "loading"
@@ -508,6 +509,21 @@
                         (cons nil nil)))
               (copilot-chat--create "hello" #'ignore)
               (expect (plist-member captured-params :model) :not :to-be-truthy))
+          (kill-buffer buf))))
+
+    (it "clears session tool approvals for a new conversation"
+      (let ((copilot-chat--session-approved-tools '("read_file"))
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode))
+              (spy-on 'copilot-chat--default-model :and-return-value nil)
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-return-value (cons nil nil))
+              (copilot-chat--create "hello" #'ignore)
+              (expect copilot-chat--session-approved-tools :to-be nil))
           (kill-buffer buf)))))
 
   ;;
@@ -639,30 +655,20 @@
 
     (it "prompts for tools not in auto-approve list"
       (let ((copilot-chat-auto-approve-tools '("get_errors")))
-        (spy-on 'yes-or-no-p :and-return-value t)
+        (spy-on 'copilot-chat--ask-tool :and-return-value 'allow)
         (expect (copilot-chat--handle-tool-confirmation
                  (list :name "run_in_terminal"
                        :input (list :command "ls")))
                 :to-equal '(:result "accept"))
-        (expect 'yes-or-no-p :to-have-been-called)))
+        (expect 'copilot-chat--ask-tool :to-have-been-called)))
 
     (it "dismisses when user declines"
       (let ((copilot-chat-auto-approve-tools nil))
-        (spy-on 'yes-or-no-p :and-return-value nil)
+        (spy-on 'copilot-chat--ask-tool :and-return-value 'deny)
         (expect (copilot-chat--handle-tool-confirmation
                  (list :name "run_in_terminal"
                        :input (list :command "rm -rf /")))
                 :to-equal '(:result "dismiss"))))
-
-    (it "summarizes the tool in the confirmation prompt"
-      (let ((copilot-chat-auto-approve-tools nil)
-            (prompt nil))
-        (spy-on 'yes-or-no-p :and-call-fake
-                (lambda (msg) (setq prompt msg) nil))
-        (copilot-chat--handle-tool-confirmation
-         (list :name "run_in_terminal" :input (list :command "make test")))
-        ;; The raw command shows, not a plist dump.
-        (expect prompt :to-match "run shell command: make test")))
 
     (it "auto-approves a server tool listed by its full name"
       (let ((copilot-chat-auto-approve-tools '("copilot.read_file")))
@@ -673,46 +679,64 @@
 
     (it "does not auto-approve a namespaced tool by its base name alone"
       (let ((copilot-chat-auto-approve-tools '("read_file")))
-        (spy-on 'yes-or-no-p :and-return-value nil)
+        (spy-on 'copilot-chat--ask-tool :and-return-value 'deny)
         (expect (copilot-chat--handle-tool-confirmation
                  (list :name "copilot.read_file"
                        :input (list :filePath "/tmp/x.el")))
                 :to-equal '(:result "dismiss"))
-        (expect 'yes-or-no-p :to-have-been-called)))
+        (expect 'copilot-chat--ask-tool :to-have-been-called)))
 
-    (it "falls back to the server message for unknown tools"
+    (it "remembers a tool approved with `always' for the session"
       (let ((copilot-chat-auto-approve-tools nil)
-            (prompt nil))
-        (spy-on 'yes-or-no-p :and-call-fake
-                (lambda (msg) (setq prompt msg) nil))
-        (copilot-chat--handle-tool-confirmation
-         (list :name "copilot.some_new_tool"
-               :input (list :foo "bar")
-               :message "Allow the new tool to run?"))
-        ;; No plist dump: the server-provided message is shown verbatim.
-        (expect prompt :to-match "Allow the new tool to run?")
-        (expect prompt :not :to-match ":foo")))
+            (copilot-chat--session-approved-tools nil))
+        (spy-on 'copilot-chat--ask-tool :and-return-value 'always)
+        ;; First call prompts and is approved...
+        (expect (copilot-chat--handle-tool-confirmation
+                 (list :name "copilot.read_file"
+                       :input (list :filePath "/tmp/x.el")))
+                :to-equal '(:result "accept"))
+        (expect copilot-chat--session-approved-tools :to-contain "read_file")
+        ;; ...the next call to the same tool is auto-approved without asking.
+        (spy-calls-reset 'copilot-chat--ask-tool)
+        (expect (copilot-chat--handle-tool-confirmation
+                 (list :name "copilot.read_file"
+                       :input (list :filePath "/tmp/y.el")))
+                :to-equal '(:result "accept"))
+        (expect 'copilot-chat--ask-tool :not :to-have-been-called)))
 
-    (it "shows the raw input when no summary or server message exists"
-      (let ((copilot-chat-auto-approve-tools nil)
-            (prompt nil))
-        (spy-on 'yes-or-no-p :and-call-fake
-                (lambda (msg) (setq prompt msg) nil))
-        (copilot-chat--handle-tool-confirmation
-         (list :name "copilot.mystery_tool"
-               :input (list :command "rm -rf /")))
-        ;; The user can still see what is being approved.
-        (expect prompt :to-match "mystery_tool")
-        (expect prompt :to-match "rm -rf /")))
+    (describe "confirmation prompt"
+      (it "summarizes the tool"
+        (expect (copilot-chat--confirmation-prompt
+                 (list :name "run_in_terminal" :input (list :command "make test")))
+                :to-match "run shell command: make test"))
 
-    (it "prompts sensibly when the request has no tool name"
-      (let ((copilot-chat-auto-approve-tools nil)
-            (prompt nil))
-        (spy-on 'yes-or-no-p :and-call-fake
-                (lambda (msg) (setq prompt msg) nil))
-        (copilot-chat--handle-tool-confirmation (list :input nil))
-        ;; No stray "nil" leaks into the prompt.
-        (expect prompt :not :to-match "run nil"))))
+      (it "falls back to the server message for unknown tools"
+        (let ((prompt (copilot-chat--confirmation-prompt
+                       (list :name "copilot.some_new_tool"
+                             :input (list :foo "bar")
+                             :message "Allow the new tool to run?"))))
+          (expect prompt :to-match "Allow the new tool to run?")
+          (expect prompt :not :to-match ":foo")))
+
+      (it "shows the raw input when no summary or server message exists"
+        (let ((prompt (copilot-chat--confirmation-prompt
+                       (list :name "copilot.mystery_tool"
+                             :input (list :command "rm -rf /")))))
+          (expect prompt :to-match "mystery_tool")
+          (expect prompt :to-match "rm -rf /")))
+
+      (it "stays sensible when the request has no tool name"
+        (expect (copilot-chat--confirmation-prompt (list :input nil))
+                :not :to-match "run nil"))))
+
+  (describe "copilot-chat--ask-tool"
+    (it "maps the yes/no/always choices to decisions"
+      (spy-on 'read-multiple-choice :and-return-value '(?y "yes" ""))
+      (expect (copilot-chat--ask-tool (list :name "x")) :to-equal 'allow)
+      (spy-on 'read-multiple-choice :and-return-value '(?n "no" ""))
+      (expect (copilot-chat--ask-tool (list :name "x")) :to-equal 'deny)
+      (spy-on 'read-multiple-choice :and-return-value '(?a "always" ""))
+      (expect (copilot-chat--ask-tool (list :name "x")) :to-equal 'always)))
 
   (describe "server-side tool activity logging"
     (it "logs a status line for an approved server tool"
@@ -726,14 +750,14 @@
     (it "does not log a client tool at confirmation time"
       ;; Client tools (run_in_terminal etc.) log their own progress while
       ;; executing, so they must not also log here.
-      (spy-on 'yes-or-no-p :and-return-value t)
+      (spy-on 'copilot-chat--ask-tool :and-return-value 'allow)
       (spy-on 'copilot-chat--insert-tool-status)
       (copilot-chat--handle-tool-confirmation
        (list :name "run_in_terminal" :input (list :command "ls")))
       (expect 'copilot-chat--insert-tool-status :not :to-have-been-called))
 
     (it "does not log a dismissed tool"
-      (spy-on 'yes-or-no-p :and-return-value nil)
+      (spy-on 'copilot-chat--ask-tool :and-return-value 'deny)
       (spy-on 'copilot-chat--insert-tool-status)
       (copilot-chat--handle-tool-confirmation
        (list :name "copilot.read_file" :input (list :filePath "/tmp/x.el")))
@@ -838,10 +862,10 @@
     (it "shows a preview buffer when approving an edit tool"
       (let ((copilot-chat-preview-tool-edits t)
             (shown nil))
-        (spy-on 'yes-or-no-p :and-call-fake
+        (spy-on 'read-multiple-choice :and-call-fake
                 (lambda (&rest _)
                   (setq shown (get-buffer "*copilot-chat-tool-preview*"))
-                  t))
+                  '(?y "yes" "")))
         (expect (copilot-chat--handle-tool-confirmation
                  (list :name "create_file"
                        :input (list :filePath "/tmp/x.el" :content "hi")))
@@ -853,7 +877,7 @@
 
     (it "skips the preview when copilot-chat-preview-tool-edits is nil"
       (let ((copilot-chat-preview-tool-edits nil))
-        (spy-on 'yes-or-no-p :and-return-value t)
+        (spy-on 'copilot-chat--ask-tool :and-return-value 'allow)
         (copilot-chat--handle-tool-confirmation
          (list :name "create_file"
                :input (list :filePath "/tmp/x.el" :content "hi")))
@@ -861,7 +885,7 @@
 
     (it "does not preview non-editing tools"
       (let ((copilot-chat-preview-tool-edits t))
-        (spy-on 'yes-or-no-p :and-return-value nil)
+        (spy-on 'copilot-chat--ask-tool :and-return-value 'deny)
         (copilot-chat--handle-tool-confirmation
          (list :name "run_in_terminal" :input (list :command "ls")))
         (expect (get-buffer "*copilot-chat-tool-preview*") :to-be nil))))

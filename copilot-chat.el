@@ -405,14 +405,27 @@ still tell what they are approving."
      (t
       "Copilot wants to run a tool.  Allow? "))))
 
+(defvar copilot-chat--session-approved-tools nil
+  "Tool base names approved for the rest of the conversation.
+Populated by choosing `always' at a confirmation prompt, and reset when
+a new conversation starts.  Unlike `copilot-chat-auto-approve-tools',
+this is a live, per-session choice, so it matches on the base name.
+
+This is a global, not a buffer-local, variable: the confirmation request
+is handled in the JSON-RPC dispatcher rather than in the chat buffer, so
+buffer-local state would not be reachable from there.")
+
 (defun copilot-chat--tool-auto-approved-p (name)
-  "Return non-nil when tool NAME is listed in `copilot-chat-auto-approve-tools'.
-Matching is exact.  Auto-approval bypasses confirmation entirely
-\(including the server's own prompts for sensitive files), so a tool is
-auto-approved only when its full reported name is listed, never a
-namespace-stripped variant."
+  "Return non-nil when tool NAME should skip the confirmation prompt.
+A tool is auto-approved when its full reported name is in
+`copilot-chat-auto-approve-tools' (matched exactly, since auto-approval
+bypasses confirmation entirely, including the server's own prompts for
+sensitive files), or when its base name was approved for this session
+via the `always' choice."
   (and (stringp name)
-       (member name copilot-chat-auto-approve-tools)
+       (or (member name copilot-chat-auto-approve-tools)
+           (member (copilot-chat--tool-base-name name)
+                   copilot-chat--session-approved-tools))
        t))
 
 (defconst copilot-chat--tool-preview-buffer-name "*copilot-chat-tool-preview*"
@@ -460,10 +473,24 @@ Return nil for tools that do not write files."
                   new "+" 'copilot-chat-diff-added-face)))))
     (_ nil)))
 
+(defun copilot-chat--ask-tool (msg)
+  "Prompt to approve the tool described by MSG.
+Return `allow' (run it once), `always' (run it and skip future prompts
+for this tool this session), or `deny'."
+  (pcase (car (read-multiple-choice
+               (copilot-chat--confirmation-prompt msg)
+               '((?y "yes" "Allow this tool call")
+                 (?n "no" "Decline this tool call")
+                 (?a "always"
+                     "Allow this and future calls to this tool this session"))))
+    (?y 'allow)
+    (?a 'always)
+    (_ 'deny)))
+
 (defun copilot-chat--confirm-with-preview (msg preview)
   "Show PREVIEW in a temporary window, then prompt to confirm MSG.
-Return non-nil when the user approves.  The preview buffer is removed
-afterwards."
+Return the approval decision (see `copilot-chat--ask-tool').  The preview
+buffer is removed afterwards."
   ;; A fresh buffer per call, so an overlapping confirmation can't erase
   ;; or kill the preview out from under this prompt.
   (let ((buf (generate-new-buffer copilot-chat--tool-preview-buffer-name)))
@@ -476,7 +503,7 @@ afterwards."
           (display-buffer buf '((display-buffer-pop-up-window
                                  display-buffer-use-some-window)
                                 (window-height . fit-window-to-buffer)))
-          (yes-or-no-p (copilot-chat--confirmation-prompt msg)))
+          (copilot-chat--ask-tool msg))
       (when-let* ((win (get-buffer-window buf)))
         (quit-window nil win))
       (kill-buffer buf))))
@@ -484,13 +511,14 @@ afterwards."
 (defun copilot-chat--confirm-tool (msg)
   "Ask the user whether to allow the tool described by MSG.
 Show a preview of the change first when `copilot-chat-preview-tool-edits'
-is enabled and the tool writes files.  Return non-nil on approval."
+is enabled and the tool writes files.  Return the approval decision (see
+`copilot-chat--ask-tool')."
   (let ((preview (and copilot-chat-preview-tool-edits
                       (copilot-chat--tool-preview (plist-get msg :name)
                                                   (plist-get msg :input)))))
     (if preview
         (copilot-chat--confirm-with-preview msg preview)
-      (yes-or-no-p (copilot-chat--confirmation-prompt msg)))))
+      (copilot-chat--ask-tool msg))))
 
 (defun copilot-chat--client-tool-names ()
   "Return the names of copilot.el's own client tools.
@@ -517,14 +545,25 @@ their own progress."
 (defun copilot-chat--handle-tool-confirmation (msg)
   "Handle `conversation/invokeClientToolConfirmation' request MSG.
 Return a result plist the server accepts: (:result \"accept\") to allow
-the tool call or (:result \"dismiss\") to decline it."
-  (if (or (copilot-chat--tool-auto-approved-p (plist-get msg :name))
-          (copilot-chat--confirm-tool msg))
-      (progn
-        ;; Logging must never derail the acceptance reply.
-        (ignore-errors (copilot-chat--log-server-tool msg))
-        (list :result "accept"))
-    (list :result "dismiss")))
+the tool call or (:result \"dismiss\") to decline it.  Choosing `always'
+at the prompt remembers the tool for the rest of the conversation."
+  (let ((name (plist-get msg :name)))
+    (if (copilot-chat--tool-auto-approved-p name)
+        (copilot-chat--accept-tool msg)
+      (pcase (copilot-chat--confirm-tool msg)
+        ('deny (list :result "dismiss"))
+        (decision
+         (when (eq decision 'always)
+           (cl-pushnew (copilot-chat--tool-base-name name)
+                       copilot-chat--session-approved-tools
+                       :test #'equal))
+         (copilot-chat--accept-tool msg))))))
+
+(defun copilot-chat--accept-tool (msg)
+  "Return an acceptance result for MSG, logging the tool activity."
+  ;; Logging must never derail the acceptance reply.
+  (ignore-errors (copilot-chat--log-server-tool msg))
+  (list :result "accept"))
 
 (copilot-on-request 'conversation/invokeClientToolConfirmation
                     #'copilot-chat--handle-tool-confirmation)
@@ -791,6 +830,8 @@ Dispatch to the appropriate tool and return a LanguageModelToolResult."
   "Create a new conversation with MESSAGE.
 CALLBACK is called with the response containing conversationId and turnId."
   (let ((token (format "copilot-chat-%s" (float-time))))
+    ;; A fresh conversation starts with a clean slate of session approvals.
+    (setq copilot-chat--session-approved-tools nil)
     (with-current-buffer (get-buffer copilot-chat--buffer-name)
       (setq copilot-chat--work-done-token token)
       (push (cons token (current-buffer)) copilot-chat--active-buffers))

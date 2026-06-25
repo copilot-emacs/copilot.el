@@ -242,6 +242,7 @@ Customization:
 - **`copilot-chat-model`** — model to use for chat (default `nil`, meaning a default chat model is resolved from the server)
 - **`copilot-chat-use-agent-mode`** — let Copilot run tools (shell commands, file edits, reads, etc.) during a chat (default `nil`)
 - **`copilot-chat-preview-tool-edits`** — in agent mode, preview file changes in a temporary buffer before you confirm an edit tool (default `t`)
+- **`copilot-chat-terminal-timeout`** — seconds before an agent-mode `run_in_terminal` command is killed (default `30`, `nil` to disable)
 - **`copilot-chat-ripgrep-program`** — ripgrep executable used for agent-mode workspace search (default `"rg"`)
 - **`copilot-chat-auto-approve-tools`** — tool names that skip the confirmation prompt (default `'("get_errors")`)
 
@@ -631,6 +632,15 @@ in `copilot-chat-model`. When that is left at `nil`, copilot.el resolves a
 default from the server (its designated chat default, or an `auto` model)
 rather than leaving the model unset, which some servers answer with an empty
 reply.
+
+### Public code references
+
+Copilot can detect when a suggestion closely matches public code. When
+`copilot-show-code-citations` is non-nil (the default), such matches are
+announced in the echo area and collected, with their licenses and reference
+URLs, in a buffer you can open with `M-x copilot-list-code-citations`. Set the
+option to `nil` to turn the feature off, including the underlying server
+traffic.
 
 ## Reporting Bugs
 

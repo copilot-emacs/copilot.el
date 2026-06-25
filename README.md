@@ -403,6 +403,7 @@ For example:
 | `copilot-logout` | Log out from GitHub Copilot |
 | `copilot-diagnose` | Restart the server and show diagnostic info |
 | `copilot-quota` | Show the current Copilot usage quota |
+| `copilot-list-code-citations` | Show suggestions that matched public code |
 | `copilot-select-completion-model` | Choose which model to use for completions |
 | `copilot-chat-select-model` | Choose which model to use for chat |
 | **Completion** | |

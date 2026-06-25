@@ -137,6 +137,16 @@ find indentation offset."
   :type 'boolean
   :package-version '(copilot . "0.1"))
 
+(defcustom copilot-show-code-citations t
+  "When non-nil, report when a suggestion matches public code.
+GitHub Copilot can detect when a suggestion closely matches public
+code.  When enabled, such matches are announced in the echo area and
+collected, with their licenses and reference URLs, in the
+`*copilot-code-references*' buffer (see `copilot-list-code-citations')."
+  :group 'copilot
+  :type 'boolean
+  :package-version '(copilot . "0.7"))
+
 (defcustom copilot-enable-parentheses-balancer t
   "Whether to post-process completions to balance parentheses in Lisp modes.
 When non-nil, completions in Lisp modes are adjusted to ensure that
@@ -788,7 +798,13 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
           (:workspaceFolders t)
           :textDocument
           (:inlineCompletion
-           (:dynamicRegistration :json-false)))
+           (:dynamicRegistration :json-false))
+          ;; Opt into the server's public-code matching notifications
+          ;; (`copilot/ipCodeCitation'); off by default server-side, and
+          ;; only requested when the user wants them so disabling the
+          ;; option also stops the underlying traffic.
+          :copilot
+          (:ipCodeCitation ,(if copilot-show-code-citations t :json-false)))
          ,@(when folders `(:workspaceFolders ,folders))
          :initializationOptions
          (:editorInfo
@@ -1010,6 +1026,13 @@ Sends `$/cancelRequest' to the server and resets the stored request ID."
     (concat "file:///" (url-encode-url path)))
    (t
     (concat "file://" (url-encode-url path)))))
+
+(defun copilot--uri-to-path (uri)
+  "Convert a file URI to a percent-decoded path.
+Non-file URIs are returned unchanged."
+  (if (string-prefix-p "file://" uri)
+      (url-unhex-string (string-remove-prefix "file://" uri))
+    uri))
 
 (defun copilot--get-uri ()
   "Get URI of current buffer."
@@ -1324,6 +1347,69 @@ SNAPSHOT is a plist with :percentRemaining and :unlimited."
       (if parts
           (message "Copilot quota - %s" (string-join parts ", "))
         (message "Copilot: quota details unavailable.")))))
+
+(defconst copilot--code-references-buffer-name "*copilot-code-references*"
+  "Name of the buffer collecting public-code citation details.")
+
+(defun copilot--citation-licenses (citations)
+  "Return a comma-separated, de-duplicated license list from CITATIONS."
+  (let ((seen '()))
+    (dolist (c (append citations nil))
+      (when-let* ((license (plist-get c :license)))
+        (cl-pushnew license seen :test #'equal)))
+    (string-join (nreverse seen) ", ")))
+
+(defun copilot--citation-file-name (uri)
+  "Return a display file name for citation URI, or a placeholder."
+  (if (and (stringp uri) (not (string-empty-p uri)))
+      (file-name-nondirectory (copilot--uri-to-path uri))
+    "unknown file"))
+
+(defun copilot--record-code-citation (name line matching citations)
+  "Append a public-code match to the code references buffer.
+NAME, LINE, MATCHING and CITATIONS describe the matched region."
+  (with-current-buffer (get-buffer-create copilot--code-references-buffer-name)
+    ;; Set the mode only when the buffer is first created, so reading it
+    ;; isn't disturbed as later matches are appended.
+    (unless (derived-mode-p 'special-mode)
+      (special-mode))
+    (let ((inhibit-read-only t))
+      (goto-char (point-max))
+      (insert (propertize (format "%s:%s\n" name line) 'face 'bold))
+      (when (and (stringp matching) (not (string-empty-p matching)))
+        (insert (format "  near: %s\n" (car (split-string matching "\n")))))
+      (dolist (c (append citations nil))
+        (insert (format "  [%s] %s\n"
+                        (or (plist-get c :license) "unknown")
+                        (or (plist-get c :url) ""))))
+      (insert "\n"))))
+
+(defun copilot--handle-code-citation (msg)
+  "Handle a `copilot/ipCodeCitation' notification MSG.
+Announce the public-code match and record its details."
+  (when copilot-show-code-citations
+    (let* ((name (copilot--citation-file-name (plist-get msg :uri)))
+           (citations (plist-get msg :citations))
+           (start (plist-get (plist-get msg :range) :start))
+           (line (if (numberp (plist-get start :line))
+                     (1+ (plist-get start :line))
+                   "-"))
+           (licenses (copilot--citation-licenses citations)))
+      (copilot--record-code-citation name line (plist-get msg :matchingText)
+                                     citations)
+      (message "Copilot: suggestion near %s:%s matches public code%s"
+               name line
+               (if (string-empty-p licenses) "" (format " (%s)" licenses))))))
+
+(copilot-on-notification 'copilot/ipCodeCitation
+                         #'copilot--handle-code-citation)
+
+(defun copilot-list-code-citations ()
+  "Show the buffer collecting public-code citation details."
+  (interactive)
+  (if-let* ((buf (get-buffer copilot--code-references-buffer-name)))
+      (display-buffer buf)
+    (message "Copilot: no public-code matches recorded yet.")))
 
 (copilot-on-request
  'window/showMessageRequest

@@ -242,6 +242,7 @@ Customization:
 - **`copilot-chat-model`** — model to use for chat (default `nil`, meaning a default chat model is resolved from the server)
 - **`copilot-chat-use-agent-mode`** — let Copilot run tools (shell commands, file edits, reads, etc.) during a chat (default `nil`)
 - **`copilot-chat-preview-tool-edits`** — in agent mode, preview file changes in a temporary buffer before you confirm an edit tool (default `t`)
+- **`copilot-chat-ripgrep-program`** — ripgrep executable used for agent-mode workspace search (default `"rg"`)
 - **`copilot-chat-auto-approve-tools`** — tool names that skip the confirmation prompt (default `'("get_errors")`)
 
 At each tool confirmation prompt you can answer `yes`, `no`, or `always`; `always` approves that tool for the rest of the conversation so it stops asking.

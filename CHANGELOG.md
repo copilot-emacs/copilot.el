@@ -4,6 +4,7 @@
 
 ### New Features
 
+- Answer the server's `workspace/findFiles` and `workspace/findTextInFiles` requests so agent mode can search the project by file glob and by text/regex (via ripgrep), a step toward whole-workspace questions.
 - Attach extra context to a chat message: `copilot-chat-add-file-reference` (`C-c C-f`) and `copilot-chat-add-region-reference` send specific files or selections along with the next message, and `copilot-chat-clear-references` drops anything pending.
 - Add `copilot-chat-slash-command` (`C-c /`) to pick and send a chat slash command (`/explain`, `/fix`, `/tests`, `/doc`, etc.) fetched from the server, with optional arguments.
 - Act on chat code blocks: `copilot-chat-insert-code-block` (`C-c C-i`) inserts the block at point into the source buffer, and `copilot-chat-copy-code-block` (`C-c M-w`) copies it to the kill ring, instead of leaving chat output as read-only text.

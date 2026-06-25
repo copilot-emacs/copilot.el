@@ -1165,6 +1165,135 @@
                           (buffer-list))
               :to-equal nil)))
 
+  ;;
+  ;; Workspace search
+  ;;
+
+  (describe "copilot-chat--run-argv"
+    (it "captures output and a zero exit code"
+      (let ((result (copilot-chat--run-argv "t" '("echo" "hi") 30)))
+        (expect (plist-get result :status) :to-equal 'success)
+        (expect (plist-get result :output) :to-match "hi")
+        (expect (plist-get result :exit-code) :to-equal 0))))
+
+  (describe "copilot-chat--run-ripgrep"
+    (it "returns matching lines from a real ripgrep run"
+      (assume (copilot-chat--ripgrep) "ripgrep not installed")
+      (let* ((dir (make-temp-file "copilot-rg" t)))
+        (unwind-protect
+            (progn
+              (with-temp-file (expand-file-name "a.txt" dir) (insert "needle\n"))
+              (with-temp-file (expand-file-name "b.txt" dir) (insert "hay\n"))
+              ;; exit 0: a match exists.
+              (expect (copilot-chat--run-ripgrep
+                       '("--no-heading" "-e" "needle" ".") dir)
+                      :to-be-truthy)
+              ;; exit 1: no match, treated as empty (not an error).
+              (expect (copilot-chat--run-ripgrep
+                       '("--no-heading" "-e" "zzzmissing" ".") dir)
+                      :to-be nil))
+          (delete-directory dir t))))
+
+    (it "returns nil when ripgrep is unavailable"
+      (spy-on 'copilot-chat--ripgrep :and-return-value nil)
+      (expect (copilot-chat--run-ripgrep '("-e" "x" ".") "/tmp") :to-be nil)))
+
+  (describe "copilot-chat--parse-rg-match"
+    (it "parses a path:line:text match relative to dir"
+      (let ((m (copilot-chat--parse-rg-match "src/foo.el:42:  (defun bar ())"
+                                             "/proj/")))
+        (expect (plist-get m :lineNumber) :to-equal 42)
+        (expect (plist-get m :lineText) :to-equal "  (defun bar ())")
+        (expect (plist-get m :uri) :to-match "/proj/src/foo\\.el")))
+
+    (it "returns nil for a non-match line"
+      (expect (copilot-chat--parse-rg-match "no colon number here" "/p")
+              :to-be nil)))
+
+  (describe "copilot-chat--handle-find-files"
+    (it "returns matching files as a vector of URIs"
+      (spy-on 'copilot-chat--run-ripgrep :and-return-value
+              '("src/a.el" "src/b.el"))
+      (let* ((result (copilot-chat--handle-find-files
+                      (list :baseUri "file:///proj" :pattern "*.el")))
+             (uris (plist-get result :uris)))
+        (expect (vectorp uris) :to-be-truthy)
+        (expect (length uris) :to-equal 2)
+        (expect (aref uris 0) :to-match "/proj/src/a\\.el")))
+
+    (it "caps results at maxResults"
+      (spy-on 'copilot-chat--run-ripgrep :and-return-value
+              '("a" "b" "c" "d"))
+      (let ((result (copilot-chat--handle-find-files
+                     (list :baseUri "file:///proj" :maxResults 2))))
+        (expect (length (plist-get result :uris)) :to-equal 2)))
+
+    (it "returns an empty vector when ripgrep is unavailable"
+      (spy-on 'copilot-chat--run-ripgrep :and-return-value nil)
+      (let ((result (copilot-chat--handle-find-files
+                     (list :baseUri "file:///proj" :pattern "*.el"))))
+        (expect (plist-get result :uris) :to-equal [])))
+
+    (it "returns an empty vector when no directory can be resolved"
+      (spy-on 'copilot--workspace-root :and-return-value nil)
+      (spy-on 'copilot-chat--run-ripgrep)
+      (let ((result (copilot-chat--handle-find-files (list :pattern "*.el"))))
+        (expect (plist-get result :uris) :to-equal [])
+        (expect 'copilot-chat--run-ripgrep :not :to-have-been-called))))
+
+  (describe "copilot-chat--handle-find-text-in-files"
+    (it "returns parsed matches as a vector"
+      (spy-on 'copilot-chat--run-ripgrep :and-return-value
+              '("src/a.el:3:hello" "src/b.el:7:hello world"))
+      (let* ((result (copilot-chat--handle-find-text-in-files
+                      (list :baseUri "file:///proj" :query "hello")))
+             (matches (plist-get result :matches)))
+        (expect (length matches) :to-equal 2)
+        (expect (plist-get (aref matches 0) :lineNumber) :to-equal 3)
+        (expect (plist-get (aref matches 1) :lineText) :to-equal "hello world")))
+
+    (it "treats the query as a regex by default"
+      (let (captured)
+        (spy-on 'copilot-chat--run-ripgrep :and-call-fake
+                (lambda (args _dir) (setq captured args) nil))
+        (copilot-chat--handle-find-text-in-files
+         (list :baseUri "file:///proj" :query "f.*o" :isRegexp t))
+        (expect (member "--fixed-strings" captured) :to-be nil)))
+
+    (it "passes --fixed-strings for a literal query"
+      (let (captured)
+        (spy-on 'copilot-chat--run-ripgrep :and-call-fake
+                (lambda (args _dir) (setq captured args) nil))
+        (copilot-chat--handle-find-text-in-files
+         (list :baseUri "file:///proj" :query "literal"))
+        (expect (member "--fixed-strings" captured) :to-be-truthy)))
+
+    (it "passes the query after -e so a dash query is not a flag"
+      (let (captured)
+        (spy-on 'copilot-chat--run-ripgrep :and-call-fake
+                (lambda (args _dir) (setq captured args) nil))
+        (copilot-chat--handle-find-text-in-files
+         (list :baseUri "file:///proj" :query "-foo"))
+        ;; "-foo" appears immediately after "-e".
+        (expect (cadr (member "-e" captured)) :to-equal "-foo")))
+
+    (it "passes an explicit search path so ripgrep never reads stdin"
+      ;; Without a path argument, a piped-stdin ripgrep hangs waiting for
+      ;; input instead of searching the directory.
+      (let (captured)
+        (spy-on 'copilot-chat--run-ripgrep :and-call-fake
+                (lambda (args _dir) (setq captured args) nil))
+        (copilot-chat--handle-find-text-in-files
+         (list :baseUri "file:///proj" :query "x"))
+        (expect (member "." captured) :to-be-truthy)))
+
+    (it "returns no matches and runs nothing for a missing query"
+      (spy-on 'copilot-chat--run-ripgrep)
+      (let ((result (copilot-chat--handle-find-text-in-files
+                     (list :baseUri "file:///proj"))))
+        (expect (plist-get result :matches) :to-equal [])
+        (expect 'copilot-chat--run-ripgrep :not :to-have-been-called))))
+
   (describe "copilot-chat--truncate-output"
     (it "keeps short output unchanged"
       (expect (copilot-chat--truncate-output "short") :to-equal "short"))

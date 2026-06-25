@@ -1048,6 +1048,102 @@ CALLBACK is called with the response containing conversationId and turnId."
             (propertize "Copilot:" 'face 'bold) "\n")))
 
 ;;
+;; Code blocks
+;;
+
+(defconst copilot-chat--code-block-re
+  "^[ \t]*```[ \t]*\\([^\n]*\\)\n\\(\\(?:.*\n\\)*?\\)[ \t]*```[ \t]*$"
+  "Regexp matching a fenced code block.
+Group 1 is the info string (language); group 2 is the body.")
+
+(defun copilot-chat--code-blocks ()
+  "Return the fenced code blocks in the current buffer.
+Each element is a plist with :lang, :code, :start, and :end.
+
+Note: a block whose body itself contains an indented ``` line ends at
+that inner fence, since the parser does not track fence nesting."
+  (let ((blocks '()))
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward copilot-chat--code-block-re nil t)
+        ;; Read every match-data-derived field before any call (such as
+        ;; `string-trim') that could clobber the match data.
+        (let ((lang (match-string-no-properties 1))
+              (code (match-string-no-properties 2))
+              (start (match-beginning 0))
+              (end (match-end 0)))
+          (push (list :lang (string-trim lang) :code code
+                      :start start :end end)
+                blocks))))
+    (nreverse blocks)))
+
+(defun copilot-chat--read-code-block (blocks)
+  "Return a code block from BLOCKS: the one at point, or one chosen.
+Signal a `user-error' when BLOCKS is empty."
+  (or (seq-find (lambda (b)
+                  (and (>= (point) (plist-get b :start))
+                       (<= (point) (plist-get b :end))))
+                blocks)
+      (cond
+       ((null blocks) (user-error "No code blocks in this chat"))
+       ((= (length blocks) 1) (car blocks))
+       (t
+        (let* ((choices
+                (seq-map-indexed
+                 (lambda (b i)
+                   (cons (format "%d: [%s] %s" (1+ i)
+                                 (if (string-empty-p (plist-get b :lang))
+                                     "?" (plist-get b :lang))
+                                 (car (split-string (plist-get b :code) "\n")))
+                         b))
+                 blocks))
+               (choice (completing-read "Code block: " choices nil t)))
+          (cdr (assoc choice choices)))))))
+
+(defun copilot-chat--current-code-block ()
+  "Return a chosen code block from the chat buffer.
+Signal a `user-error' outside the chat buffer or when the block is empty."
+  (unless (derived-mode-p 'copilot-chat-mode)
+    (user-error "Not in a Copilot chat buffer"))
+  (let* ((block (copilot-chat--read-code-block (copilot-chat--code-blocks)))
+         (code (plist-get block :code)))
+    (when (or (null code) (string-empty-p (string-trim code)))
+      (user-error "That code block is empty"))
+    block))
+
+(defun copilot-chat-copy-code-block ()
+  "Copy a chat code block to the kill ring.
+Use the block at point, or prompt when point is not inside one."
+  (interactive)
+  (kill-new (plist-get (copilot-chat--current-code-block) :code))
+  (message "Copied code block to kill ring"))
+
+(defun copilot-chat-insert-code-block ()
+  "Insert a chat code block into the source buffer at its point.
+Use the block at point, or prompt when point is not inside one.  When
+there is no live source buffer, prompt for a target buffer.  Focus stays
+in the chat buffer."
+  (interactive)
+  (let* ((code (plist-get (copilot-chat--current-code-block) :code))
+         (target (if (buffer-live-p copilot-chat--source-buffer)
+                     copilot-chat--source-buffer
+                   (get-buffer (read-buffer "Insert into buffer: "
+                                            nil t)))))
+    (unless (buffer-live-p target)
+      (user-error "No target buffer to insert into"))
+    (with-current-buffer target
+      (when buffer-read-only
+        (user-error "Target buffer %s is read-only" (buffer-name)))
+      ;; Insert at point in the target's visible window when there is
+      ;; one, so the snippet lands where the user is looking rather than
+      ;; at a stale point; never steal focus from the chat.
+      (let ((win (get-buffer-window target t)))
+        (if win
+            (with-selected-window win (insert code))
+          (insert code))))
+    (message "Inserted code block into %s" (buffer-name target))))
+
+;;
 ;; Major mode
 ;;
 
@@ -1056,6 +1152,8 @@ CALLBACK is called with the response containing conversationId and turnId."
     (define-key map (kbd "C-c RET") #'copilot-chat-send)
     (define-key map (kbd "C-c C-c") #'copilot-chat-send)
     (define-key map (kbd "C-c C-k") #'copilot-chat-stop)
+    (define-key map (kbd "C-c C-i") #'copilot-chat-insert-code-block)
+    (define-key map (kbd "C-c M-w") #'copilot-chat-copy-code-block)
     (define-key map (kbd "q") #'quit-window)
     map)
   "Keymap for `copilot-chat-mode'.")

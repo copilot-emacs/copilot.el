@@ -690,6 +690,68 @@
           (expect (get-text-property 0 'face result) :to-equal 'shadow)))))
 
   ;;
+  ;; Quota
+  ;;
+
+  (describe "copilot--quota-snapshot-string"
+    (it "describes an unlimited snapshot"
+      (expect (copilot--quota-snapshot-string "chat" '(:unlimited t))
+              :to-equal "chat: unlimited"))
+
+    (it "describes a percent-remaining snapshot"
+      (expect (copilot--quota-snapshot-string "premium" '(:percentRemaining 42))
+              :to-equal "premium: 42% remaining"))
+
+    (it "keeps a fractional sliver from rounding to zero"
+      (expect (copilot--quota-snapshot-string "premium" '(:percentRemaining 0.4))
+              :to-equal "premium: 0.4% remaining"))
+
+    (it "returns nil when the snapshot has no usable data"
+      (expect (copilot--quota-snapshot-string "chat" '(:foo "bar")) :to-be nil))
+
+    (it "returns nil for a nil snapshot"
+      (expect (copilot--quota-snapshot-string "chat" nil) :to-be nil)))
+
+  (describe "copilot-quota"
+    (it "reports when no quota has been seen"
+      (let ((copilot--quota nil))
+        (spy-on 'message)
+        (copilot-quota)
+        (expect 'message :to-have-been-called-with
+                "Copilot: no quota information reported yet.")))
+
+    (it "summarizes the reported quota"
+      (let ((copilot--quota '(:copilotPlan "individual_pro"
+                              :premium_interactions (:percentRemaining 80)
+                              :chat (:unlimited t))))
+        (spy-on 'message)
+        (copilot-quota)
+        (expect 'message :to-have-been-called-with
+                "Copilot quota - %s"
+                "plan: individual_pro, chat: unlimited, premium: 80% remaining"))))
+
+  (describe "copilot/quotaChange handler"
+    (it "stores the reported quota"
+      (let ((copilot--quota nil))
+        (copilot--handle-notification nil 'copilot/quotaChange
+                                      '(:copilotPlan "business"))
+        (expect (plist-get copilot--quota :copilotPlan) :to-equal "business"))))
+
+  (describe "copilot/quotaWarning handler"
+    (it "logs the warning message"
+      (spy-on 'copilot--log)
+      (copilot--handle-notification nil 'copilot/quotaWarning
+                                    '(:type "warning" :message "almost out"))
+      (expect 'copilot--log :to-have-been-called-with
+              'warning "%s" "almost out"))
+
+    (it "logs an informational message at info level"
+      (spy-on 'copilot--log)
+      (copilot--handle-notification nil 'copilot/quotaWarning
+                                    '(:type "info" :message "fyi"))
+      (expect 'copilot--log :to-have-been-called-with 'info "%s" "fyi")))
+
+  ;;
   ;; didChangeStatus notification
   ;;
 

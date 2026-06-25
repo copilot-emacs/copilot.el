@@ -402,6 +402,7 @@ For example:
 | `copilot-login` | Log in to GitHub Copilot |
 | `copilot-logout` | Log out from GitHub Copilot |
 | `copilot-diagnose` | Restart the server and show diagnostic info |
+| `copilot-quota` | Show the current Copilot usage quota |
 | `copilot-select-completion-model` | Choose which model to use for completions |
 | `copilot-chat-select-model` | Choose which model to use for chat |
 | **Completion** | |

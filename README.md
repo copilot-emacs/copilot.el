@@ -259,6 +259,8 @@ When agent mode is enabled, you can extend Copilot with [Model Context Protocol]
 
 A server with a `:command` is launched locally over stdio; one with a `:type` of `"http"` or `"sse"` is reached at its `:url`. The value is serialized to JSON, so list-valued fields like `:args` must be vectors. Use `setopt` (or `customize`) so a running server picks up the change.
 
+Run `M-x copilot-chat-list-mcp-tools` to see the connected servers, their status, and the tools they expose. A server that fails to start is reported as a warning.
+
 For a more feature-rich chat experience, take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el).
 
 > [!WARNING]

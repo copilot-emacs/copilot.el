@@ -769,6 +769,22 @@ Return nil when no servers are configured or encoding fails."
       (setq settings (plist-put settings :mcp mcp)))
     settings))
 
+(defun copilot--client-capabilities ()
+  "Return the client capabilities sent in the `initialize' request.
+The `copilot' block opts into server features the user has enabled:
+public-code citations (`copilot/ipCodeCitation') and, for whole-codebase
+semantic search, watched files (`copilot/watchedFiles')."
+  `(:workspace
+    (:workspaceFolders t)
+    :textDocument
+    (:inlineCompletion (:dynamicRegistration :json-false))
+    :copilot
+    (:ipCodeCitation ,(if copilot-show-code-citations t :json-false)
+     ;; Gated on a chat-side option, read defensively in case chat
+     ;; isn't loaded.
+     :watchedFiles ,(if (bound-and-true-p copilot-chat-enable-semantic-search)
+                        t :json-false))))
+
 (defun copilot--start-server ()
   "Start the copilot server process in local."
   (cond
@@ -793,18 +809,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
        `(:processId
          ,(emacs-pid)
          ,@(when root-uri `(:rootUri ,root-uri))
-         :capabilities
-         (:workspace
-          (:workspaceFolders t)
-          :textDocument
-          (:inlineCompletion
-           (:dynamicRegistration :json-false))
-          ;; Opt into the server's public-code matching notifications
-          ;; (`copilot/ipCodeCitation'); off by default server-side, and
-          ;; only requested when the user wants them so disabling the
-          ;; option also stops the underlying traffic.
-          :copilot
-          (:ipCodeCitation ,(if copilot-show-code-citations t :json-false)))
+         :capabilities ,(copilot--client-capabilities)
          ,@(when folders `(:workspaceFolders ,folders))
          :initializationOptions
          (:editorInfo

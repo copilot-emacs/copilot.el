@@ -109,6 +109,21 @@ running command with \\[keyboard-quit]."
   :group 'copilot-chat
   :package-version '(copilot . "0.7"))
 
+(defcustom copilot-chat-enable-semantic-search nil
+  "When non-nil, let the server build a semantic-search index of the project.
+This declares the `watchedFiles' capability at server start, after
+which the server asks copilot.el for the workspace file list (via the
+`copilot/watchedFiles' request) and indexes it for whole-codebase
+\(\"@workspace\"-style) questions in chat.
+
+Indexing computes embeddings server-side over the project's files, so it
+uses CPU and network; leave it off if you do not need codebase-wide
+search.  Changing this takes effect when the server next starts (e.g.
+after \\[copilot-diagnose])."
+  :type 'boolean
+  :group 'copilot-chat
+  :package-version '(copilot . "0.7"))
+
 (defface copilot-chat-error-face
   '((t :inherit error))
   "Face for error messages in the chat buffer."
@@ -835,6 +850,9 @@ unavailable the search requests return an error result."
 (defconst copilot-chat--workspace-search-max-results 100
   "Fallback cap on workspace search results when the server sends none.")
 
+(defvar copilot-chat--ripgrep-warned nil
+  "Non-nil once the missing-ripgrep warning has been shown this session.")
+
 (defun copilot-chat--ripgrep ()
   "Return the ripgrep executable path, or nil when unavailable."
   (executable-find copilot-chat-ripgrep-program))
@@ -856,8 +874,9 @@ exits non-zero with no matches, which is treated as an empty result."
 
 (defun copilot-chat--search-dir (msg)
   "Return the directory to search for request MSG, or nil.
-Prefer the request's `:baseUri', else the workspace root."
-  (let ((base (plist-get msg :baseUri)))
+Prefer the request's base directory URI (`:baseUri' for the search
+requests, `:uri' for `copilot/watchedFiles'), else the workspace root."
+  (let ((base (or (plist-get msg :baseUri) (plist-get msg :uri))))
     (cond
      ((and (stringp base) (not (string-empty-p base)))
       (copilot--uri-to-path base))
@@ -869,6 +888,12 @@ Prefer the request's `:baseUri', else the workspace root."
   "Return the result cap for request MSG."
   (or (plist-get msg :maxResults)
       copilot-chat--workspace-search-max-results))
+
+(defun copilot-chat--rels-to-uri-vector (rels dir)
+  "Return a vector of file URIs for relative paths RELS under DIR."
+  (vconcat (mapcar (lambda (rel)
+                     (copilot--path-to-uri (expand-file-name rel dir)))
+                   rels)))
 
 (defun copilot-chat--handle-find-files (msg)
   "Handle a `workspace/findFiles' request MSG.
@@ -882,10 +907,7 @@ relative paths match the glob pattern."
                                   (not (string-empty-p pattern)))
                          (list "-g" pattern))))
          (files (and dir (copilot-chat--run-ripgrep args dir))))
-    (list :uris
-          (vconcat (mapcar (lambda (rel)
-                             (copilot--path-to-uri (expand-file-name rel dir)))
-                           (seq-take files max))))))
+    (list :uris (copilot-chat--rels-to-uri-vector (seq-take files max) dir))))
 
 (defun copilot-chat--parse-rg-match (line dir)
   "Parse a ripgrep LINE of the form PATH:LINENO:TEXT into a match plist.
@@ -938,6 +960,28 @@ Return (:matches VECTOR) of {uri, lineNumber, lineText} for the query."
 (copilot-on-request 'workspace/findFiles #'copilot-chat--handle-find-files)
 (copilot-on-request 'workspace/findTextInFiles
                     #'copilot-chat--handle-find-text-in-files)
+
+(defun copilot-chat--handle-watched-files (msg)
+  "Handle a `copilot/watchedFiles' request MSG.
+Return (:files VECTOR) of file URIs for the workspace, which the server
+indexes for semantic search.  Files are enumerated with ripgrep, so
+ignored files (per `.gitignore') are excluded.  The full list is
+returned deliberately: the server wants the whole tree to index and caps
+it on its end."
+  ;; Warn (once per session) when the index source can't be produced, so
+  ;; enabling semantic search without ripgrep doesn't silently no-op.
+  (unless (or (copilot-chat--ripgrep) copilot-chat--ripgrep-warned)
+    (setq copilot-chat--ripgrep-warned t)
+    (display-warning
+     'copilot
+     (format "Semantic search needs ripgrep; %s not found on PATH"
+             copilot-chat-ripgrep-program)
+     :warning))
+  (let* ((dir (copilot-chat--search-dir msg))
+         (files (and dir (copilot-chat--run-ripgrep '("--files") dir))))
+    (list :files (copilot-chat--rels-to-uri-vector files dir))))
+
+(copilot-on-request 'copilot/watchedFiles #'copilot-chat--handle-watched-files)
 
 (defconst copilot-chat--read-file-max-bytes 1000000
   "Maximum number of bytes read for a `workspace/readFile' request.")

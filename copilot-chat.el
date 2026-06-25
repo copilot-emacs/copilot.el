@@ -625,31 +625,30 @@ cleanup and leaving the tool request unanswered."
     (while (process-live-p proc)
       (accept-process-output proc 0.1))))
 
-(defun copilot-chat--run-process (command)
-  "Run shell COMMAND asynchronously, keeping Emacs responsive.
-Pump process and connection events with `accept-process-output' instead
-of blocking like `shell-command-to-string', so redisplay and the
-language-server connection keep working.  Honor
-`copilot-chat-terminal-timeout'.
+(defun copilot-chat--run-argv (name argv timeout)
+  "Run ARGV (a program followed by its arguments) asynchronously.
+NAME labels the process and its hidden output buffer.  Pump process and
+connection events with `accept-process-output' instead of blocking, so
+redisplay and the language-server connection keep working, and honor
+TIMEOUT seconds (nil for none).  \\[keyboard-quit] aborts the command.
 
-\\[keyboard-quit] aborts the running command (reported as `cancelled');
-it does not abort the whole agent turn, for which `copilot-chat-stop' is
-available.
-
-Return a plist with keys `:output' (combined stdout and stderr,
-truncated to `copilot-chat--terminal-max-output'), `:status' (one of
-`success', `error', `timeout', `cancelled'), and `:exit-code' (the
-process exit code for `success'/`error', nil otherwise)."
-  (let ((buffer (generate-new-buffer " *copilot-chat-terminal*")))
+Return a plist with keys `:output' (combined stdout and stderr),
+`:status' (one of `success', `error', `timeout', `cancelled'), and
+`:exit-code' (the process exit code for `success'/`error', nil
+otherwise)."
+  (let ((buffer (generate-new-buffer (format " *%s*" name))))
     (unwind-protect
         (let* ((proc (make-process
-                      :name "copilot-chat-terminal"
+                      :name name
                       :buffer buffer
-                      :command (list shell-file-name shell-command-switch command)
+                      :command argv
                       :connection-type 'pipe
-                      :noquery t))
-               (deadline (and copilot-chat-terminal-timeout
-                              (+ (float-time) copilot-chat-terminal-timeout)))
+                      :noquery t
+                      ;; Suppress the default "Process ... exited
+                      ;; abnormally" status line Emacs would otherwise
+                      ;; insert into the output buffer on a non-zero exit.
+                      :sentinel #'ignore))
+               (deadline (and timeout (+ (float-time) timeout)))
                (status 'success))
           (condition-case nil
               (while (process-live-p proc)
@@ -667,11 +666,25 @@ process exit code for `success'/`error', nil otherwise)."
           (let ((code (and (eq status 'success) (process-exit-status proc))))
             (when (and code (not (zerop code)))
               (setq status 'error))
-            (list :output (copilot-chat--truncate-output
-                           (with-current-buffer buffer (buffer-string)))
+            (list :output (with-current-buffer buffer (buffer-string))
                   :status status
                   :exit-code code)))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(defun copilot-chat--run-process (command)
+  "Run shell COMMAND asynchronously, keeping Emacs responsive.
+Honor `copilot-chat-terminal-timeout'.  \\[keyboard-quit] aborts the
+running command (reported as `cancelled'); it does not abort the whole
+agent turn, for which `copilot-chat-stop' is available.
+
+Return a plist as `copilot-chat--run-argv' does, with `:output'
+truncated to `copilot-chat--terminal-max-output'."
+  (let ((result (copilot-chat--run-argv
+                 "copilot-chat-terminal"
+                 (list shell-file-name shell-command-switch command)
+                 copilot-chat-terminal-timeout)))
+    (plist-put result :output
+               (copilot-chat--truncate-output (plist-get result :output)))))
 
 (defun copilot-chat--execute-run-in-terminal (input)
   "Execute run_in_terminal tool with INPUT."
@@ -801,6 +814,130 @@ Dispatch to the appropriate tool and return a LanguageModelToolResult."
 
 (copilot-on-request 'conversation/invokeClientTool
                     #'copilot-chat--handle-tool-invocation)
+
+;;
+;; Workspace search (server -> client requests)
+;;
+
+(defcustom copilot-chat-ripgrep-program "rg"
+  "Name or path of the ripgrep executable used for workspace search.
+Workspace file and text search (the `workspace/findFiles' and
+`workspace/findTextInFiles' requests the server makes during agent
+mode) shell out to ripgrep, which honors `.gitignore'.  When ripgrep is
+unavailable the search requests return an error result."
+  :type 'string
+  :group 'copilot-chat
+  :package-version '(copilot . "0.7"))
+
+(defconst copilot-chat--workspace-search-timeout 30
+  "Seconds to allow a workspace search subprocess to run.")
+
+(defconst copilot-chat--workspace-search-max-results 100
+  "Fallback cap on workspace search results when the server sends none.")
+
+(defun copilot-chat--ripgrep ()
+  "Return the ripgrep executable path, or nil when unavailable."
+  (executable-find copilot-chat-ripgrep-program))
+
+(defun copilot-chat--run-ripgrep (args dir)
+  "Run ripgrep with ARGS in DIR and return its stdout lines.
+Return nil when ripgrep is unavailable or the search fails.  Ripgrep
+exits non-zero with no matches, which is treated as an empty result."
+  (when-let* ((rg (copilot-chat--ripgrep)))
+    (let* ((default-directory (file-name-as-directory dir))
+           (result (copilot-chat--run-argv "copilot-chat-search"
+                                           (cons rg args)
+                                           copilot-chat--workspace-search-timeout))
+           (code (plist-get result :exit-code)))
+      ;; rg: 0 = matches, 1 = no matches, 2 = error.
+      (when (memq code '(0 1))
+        (seq-remove #'string-empty-p
+                    (split-string (plist-get result :output) "\n"))))))
+
+(defun copilot-chat--search-dir (msg)
+  "Return the directory to search for request MSG, or nil.
+Prefer the request's `:baseUri', else the workspace root."
+  (let ((base (plist-get msg :baseUri)))
+    (cond
+     ((and (stringp base) (not (string-empty-p base)))
+      (copilot--uri-to-path base))
+     ;; The root is already a path, so use it directly rather than
+     ;; round-tripping through a URI (which would munge a literal `%').
+     ((copilot--workspace-root)))))
+
+(defun copilot-chat--search-max-results (msg)
+  "Return the result cap for request MSG."
+  (or (plist-get msg :maxResults)
+      copilot-chat--workspace-search-max-results))
+
+(defun copilot-chat--handle-find-files (msg)
+  "Handle a `workspace/findFiles' request MSG.
+Return (:uris VECTOR) of file URIs under the requested base whose
+relative paths match the glob pattern."
+  (let* ((dir (copilot-chat--search-dir msg))
+         (pattern (plist-get msg :pattern))
+         (max (copilot-chat--search-max-results msg))
+         (args (append '("--files")
+                       (when (and (stringp pattern)
+                                  (not (string-empty-p pattern)))
+                         (list "-g" pattern))))
+         (files (and dir (copilot-chat--run-ripgrep args dir))))
+    (list :uris
+          (vconcat (mapcar (lambda (rel)
+                             (copilot--path-to-uri (expand-file-name rel dir)))
+                           (seq-take files max))))))
+
+(defun copilot-chat--parse-rg-match (line dir)
+  "Parse a ripgrep LINE of the form PATH:LINENO:TEXT into a match plist.
+PATH is resolved relative to DIR.  Return nil when LINE does not have
+that shape."
+  (when (string-match "\\`\\(.*?\\):\\([0-9]+\\):\\(.*\\)\\'" line)
+    ;; Read every group before calling `copilot--path-to-uri', whose
+    ;; `url-encode-url' clobbers the match data via its own `string-match'.
+    (let ((path (match-string 1 line))
+          (lineno (string-to-number (match-string 2 line)))
+          (text (match-string 3 line)))
+      (list :uri (copilot--path-to-uri (expand-file-name path dir))
+            :lineNumber lineno
+            :lineText text))))
+
+(defun copilot-chat--handle-find-text-in-files (msg)
+  "Handle a `workspace/findTextInFiles' request MSG.
+Return (:matches VECTOR) of {uri, lineNumber, lineText} for the query."
+  (let* ((dir (copilot-chat--search-dir msg))
+         (query (plist-get msg :query))
+         (max (copilot-chat--search-max-results msg))
+         (include (plist-get msg :includePattern))
+         (lines
+          (when (and dir (stringp query) (not (string-empty-p query)))
+            (copilot-chat--run-ripgrep
+             (append (unless (eq (plist-get msg :isRegexp) t)
+                       ;; ripgrep treats the pattern as a regex by
+                       ;; default; mark it literal otherwise.
+                       (list "--fixed-strings"))
+                     (list
+                      ;; `-e' marks QUERY as the pattern so a dash-leading
+                      ;; query isn't read as a flag, and `--max-count'
+                      ;; bounds ripgrep's own per-file work.
+                      "-e" query
+                      "--max-count" (number-to-string max)
+                      "--no-heading" "--line-number" "--with-filename"
+                      "--color" "never")
+                     (when (and (stringp include)
+                                (not (string-empty-p include)))
+                       (list "-g" include))
+                     ;; Explicit search path: with a piped stdin (no TTY)
+                     ;; and no path, ripgrep reads stdin and hangs.
+                     (list "."))
+             dir))))
+    (list :matches
+          (vconcat (delq nil (mapcar (lambda (line)
+                                       (copilot-chat--parse-rg-match line dir))
+                                     (seq-take lines max)))))))
+
+(copilot-on-request 'workspace/findFiles #'copilot-chat--handle-find-files)
+(copilot-on-request 'workspace/findTextInFiles
+                    #'copilot-chat--handle-find-text-in-files)
 
 ;;
 ;; MCP server status

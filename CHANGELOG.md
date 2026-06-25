@@ -4,6 +4,7 @@
 
 ### New Features
 
+- Attach extra context to a chat message: `copilot-chat-add-file-reference` (`C-c C-f`) and `copilot-chat-add-region-reference` send specific files or selections along with the next message, and `copilot-chat-clear-references` drops anything pending.
 - Add `copilot-chat-slash-command` (`C-c /`) to pick and send a chat slash command (`/explain`, `/fix`, `/tests`, `/doc`, etc.) fetched from the server, with optional arguments.
 - Act on chat code blocks: `copilot-chat-insert-code-block` (`C-c C-i`) inserts the block at point into the source buffer, and `copilot-chat-copy-code-block` (`C-c M-w`) copies it to the kill ring, instead of leaving chat output as read-only text.
 - Announce when a suggestion matches public code, and collect the matches (with licenses and reference URLs) in a buffer shown by `copilot-list-code-citations`. Controlled by `copilot-show-code-citations` (default on). ([#471](https://github.com/copilot-emacs/copilot.el/issues/471))

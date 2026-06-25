@@ -1181,6 +1181,85 @@
                   "GPT-4o (gpt-4o)"))
         (copilot-chat-select-model)
         (expect (length captured-choices) :to-equal 1)
-        (expect (cdar captured-choices) :to-equal "gpt-4o")))))
+        (expect (cdar captured-choices) :to-equal "gpt-4o"))))
+
+  (describe "copilot-chat--handle-mcp-tools"
+    (before-each (setq copilot-chat--mcp-servers nil
+                       copilot-chat--mcp-warned-errors nil))
+    (after-each (setq copilot-chat--mcp-servers nil
+                      copilot-chat--mcp-warned-errors nil))
+
+    (it "caches the reported servers"
+      (copilot-chat--handle-mcp-tools
+       (list :servers (vector (list :name "fetch" :status "running"
+                                    :tools (vector (list :name "get"))))))
+      (expect (length copilot-chat--mcp-servers) :to-equal 1)
+      (expect (plist-get (car copilot-chat--mcp-servers) :name)
+              :to-equal "fetch"))
+
+    (it "warns once about a newly failed server"
+      (spy-on 'copilot--log)
+      (let ((msg (list :servers
+                       (vector (list :name "bad" :status "error"
+                                     :error "spawn failed")))))
+        (copilot-chat--handle-mcp-tools msg)
+        ;; A repeat notification with the same error does not warn again.
+        (copilot-chat--handle-mcp-tools msg))
+      (expect 'copilot--log :to-have-been-called-times 1))
+
+    (it "does not warn about a healthy server"
+      (spy-on 'copilot--log)
+      (copilot-chat--handle-mcp-tools
+       (list :servers (vector (list :name "ok" :status "running"))))
+      (expect 'copilot--log :not :to-have-been-called))
+
+    (it "does not warn about an empty error string"
+      (spy-on 'copilot--log)
+      (copilot-chat--handle-mcp-tools
+       (list :servers (vector (list :name "ok" :status "stopped" :error ""))))
+      (expect 'copilot--log :not :to-have-been-called)))
+
+  (describe "copilot-chat-list-mcp-tools"
+    (after-each
+      (setq copilot-chat--mcp-servers nil)
+      (when (get-buffer "*copilot-mcp-tools*")
+        (kill-buffer "*copilot-mcp-tools*")))
+
+    (it "lists servers, status, and tools"
+      (let ((copilot-chat--mcp-servers
+             (list (list :name "fetch" :status "running"
+                         :tools (vector (list :name "get_url"
+                                              :description "Fetch a URL"))))))
+        (spy-on 'display-buffer)
+        (copilot-chat-list-mcp-tools)
+        (with-current-buffer "*copilot-mcp-tools*"
+          (let ((text (buffer-string)))
+            (expect text :to-match "fetch")
+            (expect text :to-match "running")
+            (expect text :to-match "get_url")
+            (expect text :to-match "Fetch a URL")))))
+
+    (it "renders tools with a missing name or non-string description"
+      (let ((copilot-chat--mcp-servers
+             (list (list :name "weird" :status "running"
+                         :tools (vector (list :description 42))))))
+        (spy-on 'display-buffer)
+        ;; Must not raise on the non-string description.
+        (copilot-chat-list-mcp-tools)
+        (with-current-buffer "*copilot-mcp-tools*"
+          (expect (buffer-string) :to-match "(unnamed)"))))
+
+    (it "distinguishes unconfigured from not-yet-reported"
+      (spy-on 'display-buffer)
+      (let ((copilot-chat--mcp-servers nil)
+            (copilot-mcp-servers nil))
+        (copilot-chat-list-mcp-tools)
+        (with-current-buffer "*copilot-mcp-tools*"
+          (expect (buffer-string) :to-match "No MCP servers configured")))
+      (let ((copilot-chat--mcp-servers nil)
+            (copilot-mcp-servers '(:fetch (:command "uvx"))))
+        (copilot-chat-list-mcp-tools)
+        (with-current-buffer "*copilot-mcp-tools*"
+          (expect (buffer-string) :to-match "reported yet"))))))
 
 ;;; copilot-chat-test.el ends here

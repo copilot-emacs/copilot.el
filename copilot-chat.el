@@ -758,6 +758,82 @@ Dispatch to the appropriate tool and return a LanguageModelToolResult."
                     #'copilot-chat--handle-tool-invocation)
 
 ;;
+;; MCP server status
+;;
+
+(defconst copilot-chat--mcp-buffer-name "*copilot-mcp-tools*"
+  "Name of the buffer listing MCP servers and their tools.")
+
+(defvar copilot-chat--mcp-servers nil
+  "Latest MCP server snapshots reported by the language server.
+A list of plists with keys such as :name, :status, :tools, and :error,
+refreshed from `copilot/mcpTools' notifications.")
+
+(defvar copilot-chat--mcp-warned-errors nil
+  "Alist of MCP server name to the last error string warned about.
+Kept across notifications so a server that flaps in and out of the
+reported set is not warned about repeatedly for the same failure.")
+
+(defun copilot-chat--handle-mcp-tools (msg)
+  "Handle a `copilot/mcpTools' notification MSG.
+Cache the server snapshots and warn once about any newly failed server,
+which the language server otherwise reports only silently."
+  (setq copilot-chat--mcp-servers (append (plist-get msg :servers) nil))
+  (dolist (server copilot-chat--mcp-servers)
+    (let ((name (plist-get server :name))
+          (err (plist-get server :error)))
+      (when (and (stringp err) (not (string-empty-p err))
+                 (not (equal err (alist-get name copilot-chat--mcp-warned-errors
+                                            nil nil #'equal))))
+        (copilot--log 'warning "MCP server %s failed: %s" name err)
+        (setf (alist-get name copilot-chat--mcp-warned-errors nil nil #'equal)
+              err)))))
+
+(copilot-on-notification 'copilot/mcpTools #'copilot-chat--handle-mcp-tools)
+
+(defun copilot-chat--insert-mcp-server (server)
+  "Insert a description of MCP SERVER into the current buffer."
+  (insert (propertize (or (plist-get server :name) "(unnamed)") 'face 'bold)
+          (format " [%s]\n" (or (plist-get server :status) "unknown")))
+  (let ((err (plist-get server :error)))
+    (when (and (stringp err) (not (string-empty-p err)))
+      (insert (propertize (format "  error: %s\n" err)
+                          'face 'copilot-chat-error-face))))
+  (let ((tools (append (plist-get server :tools) nil)))
+    (if tools
+        (dolist (tool tools)
+          (insert (format "  - %s" (or (plist-get tool :name) "(unnamed)")))
+          (let ((desc (plist-get tool :description)))
+            (when (stringp desc)
+              (insert (format ": %s" (car (split-string desc "\n"))))))
+          (insert "\n"))
+      (insert "  (no tools)\n")))
+  (insert "\n"))
+
+(defun copilot-chat-list-mcp-tools ()
+  "Display the MCP servers and tools currently available to Copilot.
+Servers are configured via `copilot-mcp-servers'."
+  (interactive)
+  (let ((buf (get-buffer-create copilot-chat--mcp-buffer-name)))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (cond
+         (copilot-chat--mcp-servers
+          (mapc #'copilot-chat--insert-mcp-server copilot-chat--mcp-servers))
+         (copilot-mcp-servers
+          (insert "No MCP servers reported yet.\n\n"
+                  "They appear once the language server connects them in "
+                  "agent mode.\n"))
+         (t
+          (insert "No MCP servers configured.\n\n"
+                  "Set `copilot-mcp-servers' and enable "
+                  "`copilot-chat-use-agent-mode'.\n")))
+        (goto-char (point-min)))
+      (special-mode))
+    (display-buffer buf)))
+
+;;
 ;; Context doc generation
 ;;
 

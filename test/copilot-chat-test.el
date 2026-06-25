@@ -889,15 +889,72 @@
   ;; Tool execution
   ;;
 
+  (describe "copilot-chat--run-process"
+    (it "captures output and a zero exit code on success"
+      (let ((result (copilot-chat--run-process "echo hello")))
+        (expect (plist-get result :status) :to-equal 'success)
+        (expect (plist-get result :output) :to-match "hello")
+        (expect (plist-get result :exit-code) :to-equal 0)))
+
+    (it "reports a non-zero exit as error with its code"
+      (let ((result (copilot-chat--run-process "exit 3")))
+        (expect (plist-get result :status) :to-equal 'error)
+        (expect (plist-get result :exit-code) :to-equal 3)))
+
+    (it "leaves no stray process buffers behind"
+      (copilot-chat--run-process "echo hi")
+      (expect (seq-filter (lambda (b)
+                            (string-prefix-p " *copilot-chat-terminal*"
+                                             (buffer-name b)))
+                          (buffer-list))
+              :to-equal nil)))
+
+  (describe "copilot-chat--truncate-output"
+    (it "keeps short output unchanged"
+      (expect (copilot-chat--truncate-output "short") :to-equal "short"))
+
+    (it "truncates long output to the tail with a marker"
+      (let* ((copilot-chat--terminal-max-output 10)
+             (result (copilot-chat--truncate-output "0123456789ABCDEF")))
+        (expect result :to-match "\\[output truncated\\]")
+        ;; The tail is preserved.
+        (expect result :to-match "ABCDEF")
+        (expect result :not :to-match "012345"))))
+
   (describe "copilot-chat--execute-run-in-terminal"
+    (before-each (spy-on 'copilot-chat--insert-tool-status))
+
     (it "runs shell command and returns output"
-      ;; Suppress chat buffer insertion
-      (spy-on 'copilot-chat--insert-tool-status)
       (let ((result (copilot-chat--execute-run-in-terminal
                      (list :command "echo hello"))))
         (expect (plist-get result :status) :to-equal "success")
         (expect (plist-get (aref (plist-get result :content) 0) :value)
-                :to-match "hello"))))
+                :to-match "hello")))
+
+    (it "passes a non-zero exit to the model as output with the code"
+      (spy-on 'copilot-chat--run-process :and-return-value
+              '(:output "boom" :status error :exit-code 2))
+      (let ((result (copilot-chat--execute-run-in-terminal
+                     (list :command "false"))))
+        (expect (plist-get result :status) :to-equal "success")
+        (expect (plist-get (aref (plist-get result :content) 0) :value)
+                :to-match "exited with status 2")))
+
+    (it "reports a timed-out command as an error"
+      (spy-on 'copilot-chat--run-process :and-return-value
+              '(:output "" :status timeout :exit-code nil))
+      (let ((result (copilot-chat--execute-run-in-terminal
+                     (list :command "sleep 99"))))
+        (expect (plist-get result :status) :to-equal "error")
+        (expect (plist-get (aref (plist-get result :content) 0) :value)
+                :to-match "timed out")))
+
+    (it "reports a cancelled command as cancelled"
+      (spy-on 'copilot-chat--run-process :and-return-value
+              '(:output "" :status cancelled :exit-code nil))
+      (let ((result (copilot-chat--execute-run-in-terminal
+                     (list :command "sleep 99"))))
+        (expect (plist-get result :status) :to-equal "cancelled"))))
 
   (describe "copilot-chat--execute-create-file"
     (it "creates a file with content"

@@ -13,6 +13,7 @@
 
 ### Bug Fixes
 
+- Report Flycheck diagnostics for the agent-mode `get_errors` tool, not just Flymake, so Flycheck users get real diagnostics instead of "no diagnostics available".
 - Surface a turn-level error reported by the server at the end of a chat turn, instead of leaving only an empty reply. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
 - Stop the `copilot--infer-indentation-offset` warning from firing while generating chat context, so chatting from a buffer whose mode has no configured indentation offset no longer nags. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
 - Resolve a concrete default chat model from the server when `copilot-chat-model` is nil (preferring the server's designated chat default, then an `auto` model) instead of leaving the model unset, which some servers answer with an empty reply. The lookup runs once per session, only against an already-running server. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))

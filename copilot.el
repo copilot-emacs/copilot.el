@@ -1031,7 +1031,14 @@ Sends `$/cancelRequest' to the server and resets the stored request ID."
   "Convert a file URI to a percent-decoded path.
 Non-file URIs are returned unchanged."
   (if (string-prefix-p "file://" uri)
-      (url-unhex-string (string-remove-prefix "file://" uri))
+      (let ((path (url-unhex-string (string-remove-prefix "file://" uri))))
+        ;; A Windows file URI is file:///c:/...; drop the leading slash
+        ;; before the drive letter so the path isn't read as /c:/...
+        ;; (which Emacs resolves against the current drive).
+        (if (and (eq system-type 'windows-nt)
+                 (string-match-p "\\`/[a-zA-Z]:" path))
+            (substring path 1)
+          path))
     uri))
 
 (defun copilot--get-uri ()

@@ -238,6 +238,8 @@ Customization:
 - **`copilot-chat-preview-tool-edits`** — in agent mode, preview file changes in a temporary buffer before you confirm an edit tool (default `t`)
 - **`copilot-chat-auto-approve-tools`** — tool names that skip the confirmation prompt (default `'("get_errors")`)
 
+At each tool confirmation prompt you can answer `yes`, `no`, or `always`; `always` approves that tool for the rest of the conversation so it stops asking.
+
 > [!TIP]
 >
 > Install [`markdown-mode`](https://github.com/jrblevin/markdown-mode) for rich markdown rendering (headings, code blocks, emphasis, etc.) in the chat buffer. Without it, only basic highlighting is used.

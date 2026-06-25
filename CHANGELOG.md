@@ -6,6 +6,7 @@
 
 - Run the agent-mode `run_in_terminal` tool asynchronously instead of blocking Emacs for the whole command. The editor stays responsive, the language-server connection keeps flowing, `C-g` aborts a running command, and `copilot-chat-terminal-timeout` (default 30s) kills runaways. The command's exit status is now reported back to the model.
 - Show a status line in the chat buffer when Copilot runs one of its own built-in or MCP tools that asks for confirmation (`read_file`, the edit tools, etc.), so those tool calls leave a trace, not just the ones copilot.el executes locally.
+- Offer an `always` choice at agent-mode tool confirmation prompts, alongside yes and no, to approve a tool for the rest of the conversation instead of confirming each call. The choice is remembered until a new conversation starts.
 - Add MCP (Model Context Protocol) server support for agent mode via the new `copilot-mcp-servers` option. Configured servers are forwarded to the language server and their tools become available in `copilot-chat`, each prompting for confirmation like the built-in tools.
 - Preview file changes in a temporary buffer before confirming an agent-mode edit tool (`create_file`, `insert_edit_into_file`, `replace_string_in_file`), so you can see what will be written before approving. Controlled by `copilot-chat-preview-tool-edits` (default on).
 

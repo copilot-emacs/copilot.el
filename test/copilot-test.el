@@ -8,6 +8,9 @@
 
 (require 'buttercup)
 (require 'copilot)
+;; `copilot--client-capabilities' reads a chat-side option; load it so the
+;; variable is a known special for dynamic let-binding in the specs.
+(require 'copilot-chat)
 
 (describe "copilot"
   (describe "loading"
@@ -473,6 +476,25 @@
   ;;
   ;; Effective LSP settings
   ;;
+
+  (describe "copilot--client-capabilities"
+    (it "declares watchedFiles when semantic search is enabled"
+      (let ((copilot-chat-enable-semantic-search t))
+        (expect (plist-get (plist-get (copilot--client-capabilities) :copilot)
+                           :watchedFiles)
+                :to-equal t)))
+
+    (it "disables watchedFiles when semantic search is off"
+      (let ((copilot-chat-enable-semantic-search nil))
+        (expect (plist-get (plist-get (copilot--client-capabilities) :copilot)
+                           :watchedFiles)
+                :to-equal :json-false)))
+
+    (it "reflects the code-citations option"
+      (let ((copilot-show-code-citations nil))
+        (expect (plist-get (plist-get (copilot--client-capabilities) :copilot)
+                           :ipCodeCitation)
+                :to-equal :json-false))))
 
   (describe "copilot--effective-lsp-settings"
     (it "returns copilot-lsp-settings unchanged when completion model is nil"

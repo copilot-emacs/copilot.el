@@ -1294,6 +1294,40 @@
         (expect (plist-get result :matches) :to-equal [])
         (expect 'copilot-chat--run-ripgrep :not :to-have-been-called))))
 
+  (describe "copilot-chat--handle-watched-files"
+    (it "returns workspace files as a vector of URIs"
+      (spy-on 'copilot-chat--run-ripgrep :and-return-value
+              '("a.el" "src/b.el"))
+      (let* ((result (copilot-chat--handle-watched-files
+                      (list :uri "file:///proj")))
+             (files (plist-get result :files)))
+        (expect (vectorp files) :to-be-truthy)
+        (expect (length files) :to-equal 2)
+        (expect (aref files 0) :to-match "/proj/a\\.el")))
+
+    (it "enumerates files with ripgrep --files"
+      (let (captured)
+        (spy-on 'copilot-chat--run-ripgrep :and-call-fake
+                (lambda (args _dir) (setq captured args) nil))
+        (copilot-chat--handle-watched-files (list :uri "file:///proj"))
+        (expect (member "--files" captured) :to-be-truthy)))
+
+    (it "returns an empty vector when no directory resolves"
+      (spy-on 'copilot--workspace-root :and-return-value nil)
+      (spy-on 'copilot-chat--run-ripgrep)
+      (let ((result (copilot-chat--handle-watched-files nil)))
+        (expect (plist-get result :files) :to-equal [])
+        (expect 'copilot-chat--run-ripgrep :not :to-have-been-called)))
+
+    (it "warns once when ripgrep is unavailable"
+      (let ((copilot-chat--ripgrep-warned nil))
+        (spy-on 'copilot-chat--ripgrep :and-return-value nil)
+        (spy-on 'copilot-chat--run-ripgrep)
+        (spy-on 'display-warning)
+        (copilot-chat--handle-watched-files (list :uri "file:///proj"))
+        (copilot-chat--handle-watched-files (list :uri "file:///proj"))
+        (expect 'display-warning :to-have-been-called-times 1))))
+
   (describe "copilot-chat--handle-read-file"
     (it "returns the file contents"
       (let ((tmp (make-temp-file "copilot-read")))

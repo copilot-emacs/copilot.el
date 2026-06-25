@@ -268,6 +268,12 @@ A server with a `:command` is launched locally over stdio; one with a `:type` of
 
 Run `M-x copilot-chat-list-mcp-tools` to see the connected servers, their status, and the tools they expose. A server that fails to start is reported as a warning.
 
+#### Workspace search
+
+In agent mode, Copilot can search the project: copilot.el answers the server's file-glob, text-search, file-read, and directory-list requests using [ripgrep](https://github.com/BurntSushi/ripgrep) (so `.gitignore` is honored). Make sure `rg` is on your `PATH`, or point `copilot-chat-ripgrep-program` at it.
+
+Set `copilot-chat-enable-semantic-search` to `t` to also let the server build a semantic index of the workspace, for whole-codebase ("@workspace"-style) questions. Indexing computes embeddings server-side, so it uses CPU and network; it is off by default and takes effect when the server next starts.
+
 For a more feature-rich chat experience, take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el).
 
 > [!WARNING]

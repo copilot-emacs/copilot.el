@@ -93,6 +93,19 @@ you can see what will be written before answering."
   :group 'copilot-chat
   :package-version '(copilot . "0.7"))
 
+(defcustom copilot-chat-terminal-timeout 30
+  "Seconds to allow an agent-mode `run_in_terminal' command to run.
+When the limit is reached the command is killed and reported as timed
+out.  Set to nil to allow commands to run without a timeout.
+
+The command runs asynchronously: Emacs stays responsive while it works,
+the language-server connection keeps flowing, and you can abort a
+running command with \\[keyboard-quit]."
+  :type '(choice (const :tag "No timeout" nil)
+                 (natnum :tag "Seconds"))
+  :group 'copilot-chat
+  :package-version '(copilot . "0.7"))
+
 (defface copilot-chat-error-face
   '((t :inherit error))
   "Face for error messages in the chat buffer."
@@ -496,6 +509,76 @@ the tool call or (:result \"dismiss\") to decline it."
   (list :status status
         :content (vector (list :value value))))
 
+(defconst copilot-chat--terminal-max-output 100000
+  "Maximum number of characters of `run_in_terminal' output to return.
+Longer output is truncated (keeping the tail) before being handed to
+the model, to bound memory and payload size.")
+
+(defun copilot-chat--truncate-output (output)
+  "Truncate OUTPUT to `copilot-chat--terminal-max-output', keeping the tail."
+  (if (> (length output) copilot-chat--terminal-max-output)
+      (concat "[output truncated]\n"
+              (substring output (- (length output)
+                                   copilot-chat--terminal-max-output)))
+    output))
+
+(defun copilot-chat--drain-process (proc)
+  "Kill PROC and wait for it to die.
+`inhibit-quit' keeps a stray \\[keyboard-quit] from escaping this
+cleanup and leaving the tool request unanswered."
+  (let ((inhibit-quit t))
+    (when (process-live-p proc) (kill-process proc))
+    (while (process-live-p proc)
+      (accept-process-output proc 0.1))))
+
+(defun copilot-chat--run-process (command)
+  "Run shell COMMAND asynchronously, keeping Emacs responsive.
+Pump process and connection events with `accept-process-output' instead
+of blocking like `shell-command-to-string', so redisplay and the
+language-server connection keep working.  Honor
+`copilot-chat-terminal-timeout'.
+
+\\[keyboard-quit] aborts the running command (reported as `cancelled');
+it does not abort the whole agent turn, for which `copilot-chat-stop' is
+available.
+
+Return a plist with keys `:output' (combined stdout and stderr,
+truncated to `copilot-chat--terminal-max-output'), `:status' (one of
+`success', `error', `timeout', `cancelled'), and `:exit-code' (the
+process exit code for `success'/`error', nil otherwise)."
+  (let ((buffer (generate-new-buffer " *copilot-chat-terminal*")))
+    (unwind-protect
+        (let* ((proc (make-process
+                      :name "copilot-chat-terminal"
+                      :buffer buffer
+                      :command (list shell-file-name shell-command-switch command)
+                      :connection-type 'pipe
+                      :noquery t))
+               (deadline (and copilot-chat-terminal-timeout
+                              (+ (float-time) copilot-chat-terminal-timeout)))
+               (status 'success))
+          (condition-case nil
+              (while (process-live-p proc)
+                (if (and deadline (> (float-time) deadline))
+                    (progn
+                      (setq status 'timeout)
+                      (copilot-chat--drain-process proc))
+                  (accept-process-output proc 0.1)))
+            (quit
+             (setq status 'cancelled)
+             (copilot-chat--drain-process proc)))
+          ;; The process has exited; flush any output still buffered in
+          ;; the pipe so a fast command's last lines aren't lost.
+          (while (accept-process-output proc 0.05))
+          (let ((code (and (eq status 'success) (process-exit-status proc))))
+            (when (and code (not (zerop code)))
+              (setq status 'error))
+            (list :output (copilot-chat--truncate-output
+                           (with-current-buffer buffer (buffer-string)))
+                  :status status
+                  :exit-code code)))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (defun copilot-chat--execute-run-in-terminal (input)
   "Execute run_in_terminal tool with INPUT."
   (let ((command (plist-get input :command))
@@ -505,9 +588,30 @@ the tool call or (:result \"dismiss\") to decline it."
         (default-directory (or (copilot--workspace-root) default-directory)))
     (copilot-chat--insert-tool-status "run_in_terminal" (format "Running: %s" command))
     (condition-case err
-        (let ((output (shell-command-to-string command)))
-          (copilot-chat--insert-tool-status "run_in_terminal" "Done.")
-          (copilot-chat--tool-result "success" output))
+        (let* ((result (copilot-chat--run-process command))
+               (output (plist-get result :output))
+               (code (plist-get result :exit-code)))
+          (pcase (plist-get result :status)
+            ('success
+             (copilot-chat--insert-tool-status "run_in_terminal" "Done.")
+             (copilot-chat--tool-result "success" output))
+            ('error
+             (copilot-chat--insert-tool-status
+              "run_in_terminal" (format "Exited with status %s." code))
+             ;; Still a successful tool call: hand the model the output and
+             ;; the exit code so it can react to the failure.
+             (copilot-chat--tool-result
+              "success"
+              (format "%s\n[command exited with status %s]" output code)))
+            ('timeout
+             (copilot-chat--insert-tool-status "run_in_terminal" "Timed out.")
+             (copilot-chat--tool-result
+              "error"
+              (format "%s\n[timed out after %s seconds]"
+                      output copilot-chat-terminal-timeout)))
+            ('cancelled
+             (copilot-chat--insert-tool-status "run_in_terminal" "Cancelled.")
+             (copilot-chat--tool-result "cancelled" "Command cancelled."))))
       (error
        (copilot-chat--tool-result "error" (error-message-string err))))))
 

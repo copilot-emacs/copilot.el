@@ -4,6 +4,7 @@
 
 ### New Features
 
+- Announce when a suggestion matches public code, and collect the matches (with licenses and reference URLs) in a buffer shown by `copilot-list-code-citations`. Controlled by `copilot-show-code-citations` (default on). ([#471](https://github.com/copilot-emacs/copilot.el/issues/471))
 - Track Copilot usage quota: surface the server's quota warnings and add `copilot-quota` to show how much of your chat, completion, and premium-request allowance is left.
 - Run the agent-mode `run_in_terminal` tool asynchronously instead of blocking Emacs for the whole command. The editor stays responsive, the language-server connection keeps flowing, `C-g` aborts a running command, and `copilot-chat-terminal-timeout` (default 30s) kills runaways. The command's exit status is now reported back to the model.
 - Show a status line in the chat buffer when Copilot runs one of its own built-in or MCP tools that asks for confirmation (`read_file`, the edit tools, etc.), so those tool calls leave a trace, not just the ones copilot.el executes locally.

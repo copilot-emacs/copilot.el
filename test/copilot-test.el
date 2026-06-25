@@ -752,6 +752,63 @@
       (expect 'copilot--log :to-have-been-called-with 'info "%s" "fyi")))
 
   ;;
+  ;; Public code citations (#471)
+  ;;
+
+  (describe "copilot--citation-licenses"
+    (it "joins and de-duplicates licenses"
+      (expect (copilot--citation-licenses
+               (vector '(:license "MIT") '(:license "GPL-2.0") '(:license "MIT")))
+              :to-equal "MIT, GPL-2.0"))
+
+    (it "returns empty string when there are no licenses"
+      (expect (copilot--citation-licenses []) :to-equal "")))
+
+  (describe "copilot--handle-code-citation"
+    (after-each
+      (when (get-buffer "*copilot-code-references*")
+        (kill-buffer "*copilot-code-references*")))
+
+    (it "announces a match and records its details"
+      (let ((copilot-show-code-citations t))
+        (spy-on 'message)
+        (copilot--handle-code-citation
+         (list :uri "file:///tmp/foo%20bar.js"
+               :range '(:start (:line 6 :character 12))
+               :matchingText "function fizzBuzz() {"
+               :citations (vector '(:license "GPL-2.0"
+                                    :url "https://example.com/ref"))))
+        ;; Echo-area announcement names the decoded file, 1-based line,
+        ;; and license.
+        (expect 'message :to-have-been-called-with
+                "Copilot: suggestion near %s:%s matches public code%s"
+                "foo bar.js" 7 " (GPL-2.0)")
+        ;; Full detail, with URL, is collected in the references buffer.
+        (with-current-buffer "*copilot-code-references*"
+          (let ((text (buffer-string)))
+            (expect text :to-match "foo bar.js:7")
+            (expect text :to-match "GPL-2.0")
+            (expect text :to-match "https://example.com/ref")))))
+
+    (it "uses a placeholder when the uri is missing"
+      (let ((copilot-show-code-citations t))
+        (spy-on 'message)
+        (copilot--handle-code-citation
+         (list :citations (vector '(:license "MIT" :url "u"))))
+        (expect 'message :to-have-been-called-with
+                "Copilot: suggestion near %s:%s matches public code%s"
+                "unknown file" "-" " (MIT)")))
+
+    (it "does nothing when copilot-show-code-citations is nil"
+      (let ((copilot-show-code-citations nil))
+        (spy-on 'message)
+        (copilot--handle-code-citation
+         (list :uri "file:///tmp/foo.js"
+               :citations (vector '(:license "MIT" :url "u"))))
+        (expect 'message :not :to-have-been-called)
+        (expect (get-buffer "*copilot-code-references*") :to-be nil))))
+
+  ;;
   ;; didChangeStatus notification
   ;;
 

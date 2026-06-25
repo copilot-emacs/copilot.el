@@ -56,7 +56,114 @@
         (expect (lookup-key copilot-chat-mode-map (kbd "C-c C-c"))
                 :to-equal #'copilot-chat-send)
         (expect (lookup-key copilot-chat-mode-map (kbd "C-c C-k"))
-                :to-equal #'copilot-chat-stop))))
+                :to-equal #'copilot-chat-stop)
+        (expect (lookup-key copilot-chat-mode-map (kbd "C-c C-i"))
+                :to-equal #'copilot-chat-insert-code-block))))
+
+  ;;
+  ;; Code blocks
+  ;;
+
+  (describe "copilot-chat--code-blocks"
+    (it "parses fenced blocks with language and body"
+      (with-temp-buffer
+        (insert "intro\n```elisp\n(foo)\n(bar)\n```\nmid\n```\nplain\n```\n")
+        (let ((blocks (copilot-chat--code-blocks)))
+          (expect (length blocks) :to-equal 2)
+          (expect (plist-get (nth 0 blocks) :lang) :to-equal "elisp")
+          (expect (plist-get (nth 0 blocks) :code) :to-equal "(foo)\n(bar)\n")
+          (expect (plist-get (nth 1 blocks) :lang) :to-equal "")
+          (expect (plist-get (nth 1 blocks) :code) :to-equal "plain\n"))))
+
+    (it "returns nil when there are no code blocks"
+      (with-temp-buffer
+        (insert "just prose, no fences")
+        (expect (copilot-chat--code-blocks) :to-be nil))))
+
+  (describe "copilot-chat--read-code-block"
+    (it "returns the block surrounding point"
+      (with-temp-buffer
+        (insert "```js\nconsole.log(1)\n```\n")
+        (goto-char (point-min))
+        (forward-line 1)
+        (let ((blocks (copilot-chat--code-blocks)))
+          (expect (plist-get (copilot-chat--read-code-block blocks) :code)
+                  :to-equal "console.log(1)\n"))))
+
+    (it "uses the only block when point is outside any block"
+      (with-temp-buffer
+        (insert "prose\n```js\nx\n```\n")
+        (goto-char (point-min))
+        (let ((blocks (copilot-chat--code-blocks)))
+          (expect (plist-get (copilot-chat--read-code-block blocks) :code)
+                  :to-equal "x\n"))))
+
+    (it "errors when there are no blocks"
+      (expect (copilot-chat--read-code-block nil) :to-throw 'user-error)))
+
+  (describe "copilot-chat-copy-code-block"
+    (it "copies the block at point to the kill ring"
+      (with-temp-buffer
+        (copilot-chat-mode)
+        (let ((inhibit-read-only t))
+          (insert "```py\nprint(1)\n```\n"))
+        (goto-char (point-min))
+        (forward-line 1)
+        (spy-on 'message)
+        (copilot-chat-copy-code-block)
+        (expect (current-kill 0) :to-equal "print(1)\n")))
+
+    (it "errors when there are no code blocks"
+      (with-temp-buffer
+        (copilot-chat-mode)
+        (expect (copilot-chat-copy-code-block) :to-throw 'user-error)))
+
+    (it "errors on an empty code block"
+      (with-temp-buffer
+        (copilot-chat-mode)
+        (let ((inhibit-read-only t))
+          (insert "```\n\n```\n"))
+        (goto-char (point-min))
+        (forward-line 1)
+        (expect (copilot-chat-copy-code-block) :to-throw 'user-error)))
+
+    (it "errors outside a chat buffer"
+      (with-temp-buffer
+        (insert "```py\nx\n```\n")
+        (expect (copilot-chat-copy-code-block) :to-throw 'user-error))))
+
+  (describe "copilot-chat-insert-code-block"
+    (it "inserts the block into the source buffer"
+      (let ((src (get-buffer-create "*copilot-apply-src*")))
+        (unwind-protect
+            (with-temp-buffer
+              (copilot-chat-mode)
+              (setq copilot-chat--source-buffer src)
+              (let ((inhibit-read-only t))
+                (insert "```c\nint x;\n```\n"))
+              (goto-char (point-min))
+              (forward-line 1)
+              (spy-on 'message)
+              (copilot-chat-insert-code-block)
+              (expect (with-current-buffer src (buffer-string))
+                      :to-match "int x;"))
+          (kill-buffer src))))
+
+    (it "refuses to insert into a read-only target"
+      (let ((src (get-buffer-create "*copilot-apply-ro*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer src (setq buffer-read-only t))
+              (with-temp-buffer
+                (copilot-chat-mode)
+                (setq copilot-chat--source-buffer src)
+                (let ((inhibit-read-only t))
+                  (insert "```c\ny\n```\n"))
+                (goto-char (point-min))
+                (forward-line 1)
+                (expect (copilot-chat-insert-code-block)
+                        :to-throw 'user-error)))
+          (kill-buffer src)))))
 
   ;;
   ;; Progress handler

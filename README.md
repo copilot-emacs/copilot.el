@@ -232,6 +232,7 @@ Key bindings in the `*copilot-chat*` buffer:
 - **C-c C-k** — cancel streaming, or reset if idle
 - **C-c C-i** — insert the code block at point into the source buffer
 - **C-c M-w** — copy the code block at point to the kill ring
+- **C-c /** — pick and send a slash command (`/explain`, `/fix`, `/tests`, ...)
 - **q** — quit the chat window
 
 Customization:

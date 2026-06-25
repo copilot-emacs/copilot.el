@@ -38,6 +38,9 @@
 (declare-function flymake-diagnostics "flymake")
 (declare-function flymake-diagnostic-beg "flymake")
 (declare-function flymake-diagnostic-text "flymake")
+(declare-function flycheck-current-errors "flycheck")
+(declare-function flycheck-error-line "flycheck")
+(declare-function flycheck-error-message "flycheck")
 
 ;;
 ;; Customization
@@ -718,29 +721,44 @@ process exit code for `success'/`error', nil otherwise)."
       (error
        (copilot-chat--tool-result "error" (error-message-string err))))))
 
+(defun copilot-chat--buffer-diagnostics (path)
+  "Return diagnostic strings for the current buffer, labelled with PATH.
+Collect from Flymake and Flycheck whenever they are active (both, if
+both are on), and report when no backend is available at all."
+  (let ((backends 0)
+        (diagnostics '()))
+    (when (bound-and-true-p flymake-mode)
+      (setq backends (1+ backends))
+      (dolist (diag (flymake-diagnostics))
+        (push (format "%s:%d: %s" path
+                      (line-number-at-pos (flymake-diagnostic-beg diag))
+                      (flymake-diagnostic-text diag))
+              diagnostics)))
+    (when (bound-and-true-p flycheck-mode)
+      (setq backends (1+ backends))
+      (dolist (err (flycheck-current-errors))
+        (push (format "%s:%d: %s" path
+                      (or (flycheck-error-line err) 0)
+                      (flycheck-error-message err))
+              diagnostics)))
+    (cond
+     ((zerop backends) (list (format "%s: no diagnostics available" path)))
+     ((null diagnostics) (list (format "%s: no errors" path)))
+     (t (nreverse diagnostics)))))
+
 (defun copilot-chat--execute-get-errors (input)
   "Execute get_errors tool with INPUT."
-  (let ((file-paths (plist-get input :filePaths))
-        (results '()))
-    (copilot-chat--insert-tool-status "get_errors" "Collecting diagnostics...")
-    (dolist (path (append file-paths nil))
-      (let ((buf (find-buffer-visiting path)))
-        (if (and buf (buffer-live-p buf))
-            (with-current-buffer buf
-              (if (bound-and-true-p flymake-mode)
-                  (let ((diags (flymake-diagnostics)))
-                    (if diags
-                        (dolist (diag diags)
-                          (push (format "%s:%d: %s"
-                                        path
-                                        (line-number-at-pos
-                                         (flymake-diagnostic-beg diag))
-                                        (flymake-diagnostic-text diag))
-                                results))
-                      (push (format "%s: no errors" path) results)))
-                (push (format "%s: no diagnostics available" path) results)))
-          (push (format "%s: not open in editor" path) results))))
-    (copilot-chat--tool-result "success" (string-join (nreverse results) "\n"))))
+  (copilot-chat--insert-tool-status "get_errors" "Collecting diagnostics...")
+  (let ((results
+         (mapcan
+          (lambda (path)
+            (let ((buf (find-buffer-visiting path)))
+              (if (and buf (buffer-live-p buf))
+                  (with-current-buffer buf
+                    (copilot-chat--buffer-diagnostics path))
+                (list (format "%s: not open in editor" path)))))
+          (append (plist-get input :filePaths) nil))))
+    (copilot-chat--tool-result "success" (string-join results "\n"))))
 
 (defun copilot-chat--execute-fetch-web-page (input)
   "Execute fetch_web_page tool with INPUT."

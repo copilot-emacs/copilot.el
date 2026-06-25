@@ -1132,6 +1132,49 @@
         (expect (plist-get (aref (plist-get result :content) 0) :value)
                 :to-match "not open in editor"))))
 
+  (describe "copilot-chat--buffer-diagnostics"
+    (it "uses flymake diagnostics when flymake-mode is on"
+      (with-temp-buffer
+        (setq-local flymake-mode t)
+        (cl-letf (((symbol-function 'flymake-diagnostics) (lambda () (list 'd)))
+                  ((symbol-function 'flymake-diagnostic-beg) (lambda (_) (point-min)))
+                  ((symbol-function 'flymake-diagnostic-text) (lambda (_) "flym err")))
+          (expect (copilot-chat--buffer-diagnostics "/x.el")
+                  :to-equal '("/x.el:1: flym err")))))
+
+    (it "falls back to flycheck diagnostics when only flycheck-mode is on"
+      (with-temp-buffer
+        (setq-local flycheck-mode t)
+        (cl-letf (((symbol-function 'flycheck-current-errors) (lambda () (list 'e)))
+                  ((symbol-function 'flycheck-error-line) (lambda (_) 7))
+                  ((symbol-function 'flycheck-error-message) (lambda (_) "flyc err")))
+          (expect (copilot-chat--buffer-diagnostics "/x.el")
+                  :to-equal '("/x.el:7: flyc err")))))
+
+    (it "reports no errors when a backend is on but clean"
+      (with-temp-buffer
+        (setq-local flycheck-mode t)
+        (cl-letf (((symbol-function 'flycheck-current-errors) (lambda () nil)))
+          (expect (copilot-chat--buffer-diagnostics "/x.el")
+                  :to-equal '("/x.el: no errors")))))
+
+    (it "reports when no diagnostics backend is available"
+      (with-temp-buffer
+        (expect (copilot-chat--buffer-diagnostics "/x.el")
+                :to-equal '("/x.el: no diagnostics available"))))
+
+    (it "merges both backends when flymake and flycheck are both on"
+      (with-temp-buffer
+        (setq-local flymake-mode t flycheck-mode t)
+        (cl-letf (((symbol-function 'flymake-diagnostics) (lambda () (list 'd)))
+                  ((symbol-function 'flymake-diagnostic-beg) (lambda (_) (point-min)))
+                  ((symbol-function 'flymake-diagnostic-text) (lambda (_) "flym err"))
+                  ((symbol-function 'flycheck-current-errors) (lambda () (list 'e)))
+                  ((symbol-function 'flycheck-error-line) (lambda (_) 7))
+                  ((symbol-function 'flycheck-error-message) (lambda (_) "flyc err")))
+          (expect (copilot-chat--buffer-diagnostics "/x.el")
+                  :to-equal '("/x.el:1: flym err" "/x.el:7: flyc err"))))))
+
   ;;
   ;; Tool status display
   ;;

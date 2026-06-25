@@ -1294,6 +1294,93 @@
         (expect (plist-get result :matches) :to-equal [])
         (expect 'copilot-chat--run-ripgrep :not :to-have-been-called))))
 
+  (describe "copilot-chat--handle-read-file"
+    (it "returns the file contents"
+      (let ((tmp (make-temp-file "copilot-read")))
+        (unwind-protect
+            (progn
+              (with-temp-file tmp (insert "hello world\n"))
+              (let ((result (copilot-chat--handle-read-file
+                             (list :uri (copilot--path-to-uri tmp)))))
+                (expect (plist-get result :content) :to-equal "hello world\n")))
+          (delete-file tmp))))
+
+    (it "caps content at the byte limit without splitting a character"
+      (let ((tmp (make-temp-file "copilot-read"))
+            (copilot-chat--read-file-max-bytes 5)
+            (coding-system-for-write 'utf-8-unix))
+        (unwind-protect
+            (progn
+              ;; "é" is two UTF-8 bytes; the 5-byte cap lands mid-character.
+              (with-temp-file tmp (insert "aaaaéb"))
+              (let ((content (plist-get (copilot-chat--handle-read-file
+                                         (list :uri (copilot--path-to-uri tmp)))
+                                        :content)))
+                ;; No raw partial byte at the tail.
+                (expect content :to-equal "aaaa")))
+          (delete-file tmp))))
+
+    (it "signals an error for an unreadable file"
+      (expect (copilot-chat--handle-read-file
+               (list :uri "file:///no/such/file.xyz"))
+              :to-throw))
+
+    (it "signals an error for a non-file URI"
+      (expect (copilot-chat--handle-read-file (list :uri "untitled:/x"))
+              :to-throw)))
+
+  (describe "copilot-chat--attr-file-type"
+    (it "reports 1 for a regular file (nil attr type)"
+      (expect (copilot-chat--attr-file-type "f" "/d" nil) :to-equal 1))
+
+    (it "reports 2 for a directory (t attr type)"
+      (expect (copilot-chat--attr-file-type "d" "/d" t) :to-equal 2))
+
+    (it "sets the symlink bit over the target type"
+      (let ((target (make-temp-file "copilot-ft"))
+            (dir (make-temp-file "copilot-ft" t)))
+        (unwind-protect
+            (progn
+              (make-symbolic-link target (expand-file-name "flink" dir))
+              ;; attr type for a symlink is the target path string.
+              (expect (copilot-chat--attr-file-type "flink" dir target)
+                      :to-equal 65))
+          (delete-file target)
+          (delete-directory dir t)))))
+
+  (describe "copilot-chat--handle-read-directory"
+    (it "lists children with their file types"
+      (let ((dir (make-temp-file "copilot-rd" t)))
+        (unwind-protect
+            (progn
+              (with-temp-file (expand-file-name "a.txt" dir) (insert "x"))
+              (make-directory (expand-file-name "sub" dir))
+              (let* ((result (copilot-chat--handle-read-directory
+                              (list :uri (copilot--path-to-uri dir))))
+                     ;; Render the entries and match structurally, avoiding
+                     ;; a byte-compiled `plist-get' quirk on some Emacsen.
+                     (s (prin1-to-string (plist-get result :entries))))
+                (expect (length (plist-get result :entries)) :to-equal 2)
+                (expect s :to-match ":name \"a.txt\" :type 1")
+                (expect s :to-match ":name \"sub\" :type 2")))
+          (delete-directory dir t))))
+
+    (it "returns an empty vector for a non-directory file URI"
+      (let ((result (copilot-chat--handle-read-directory
+                     (list :uri "file:///no/such/dir"))))
+        (expect (plist-get result :entries) :to-equal [])))
+
+    (it "lists hidden entries too"
+      (let ((dir (make-temp-file "copilot-rd" t)))
+        (unwind-protect
+            (progn
+              (with-temp-file (expand-file-name ".hidden" dir) (insert "x"))
+              (let ((result (copilot-chat--handle-read-directory
+                             (list :uri (copilot--path-to-uri dir)))))
+                (expect (prin1-to-string (plist-get result :entries))
+                        :to-match ":name \"\\.hidden\"")))
+          (delete-directory dir t)))))
+
   (describe "copilot-chat--truncate-output"
     (it "keeps short output unchanged"
       (expect (copilot-chat--truncate-output "short") :to-equal "short"))

@@ -939,6 +939,76 @@ Return (:matches VECTOR) of {uri, lineNumber, lineText} for the query."
 (copilot-on-request 'workspace/findTextInFiles
                     #'copilot-chat--handle-find-text-in-files)
 
+(defconst copilot-chat--read-file-max-bytes 1000000
+  "Maximum number of bytes read for a `workspace/readFile' request.")
+
+(defun copilot-chat--file-uri-path (uri)
+  "Return the local path for file URI, or signal an error.
+The workspace read requests only make sense for `file://' URIs."
+  (unless (and (stringp uri) (string-prefix-p "file://" uri))
+    (error "Cannot handle non-file URI: %S" uri))
+  (copilot--uri-to-path uri))
+
+(defun copilot-chat--handle-read-file (msg)
+  "Handle a `workspace/readFile' request MSG.
+Return (:content STRING) with the requested file's contents, capped at
+`copilot-chat--read-file-max-bytes'.  Signal an error (reported to the
+server) when the file cannot be read, rather than masking it as empty."
+  (let ((path (copilot-chat--file-uri-path (plist-get msg :uri)))
+        ;; Decode as UTF-8 (what the protocol assumes) so a byte cap that
+        ;; splits a character leaves an eight-bit char consistently across
+        ;; platforms, rather than a latin-1-decoded byte on some.
+        (coding-system-for-read 'utf-8))
+    (with-temp-buffer
+      (insert-file-contents path nil 0 copilot-chat--read-file-max-bytes)
+      ;; Drop any partial multibyte sequence (eight-bit chars) left at the
+      ;; tail by the byte cap.
+      (goto-char (point-max))
+      (while (and (> (point) (point-min))
+                  (>= (char-before) #x3fff80))
+        (delete-char -1))
+      (list :content (buffer-string)))))
+
+(defun copilot-chat--attr-file-type (name dir attr-type)
+  "Return the VS Code FileType integer for an entry.
+NAME is the entry under DIR and ATTR-TYPE is its `file-attribute-type'
+\(t for a directory, nil for a regular file, a string for a symlink).
+1 is a regular file, 2 a directory, 64 the symbolic-link bit combined
+with the link target's type."
+  (cond
+   ((eq attr-type t) 2)
+   ((null attr-type) 1)
+   ;; Symlink: resolve the target's type for the combined bit.  This is
+   ;; the only case needing an extra stat, and symlinks are rare.
+   ((stringp attr-type)
+    (logior 64 (if (file-directory-p (expand-file-name name dir)) 2 1)))
+   (t 0)))
+
+(defun copilot-chat--handle-read-directory (msg)
+  "Handle a `workspace/readDirectory' request MSG.
+Return (:entries VECTOR) of {name, type} for the directory's children,
+fetched in a single directory scan."
+  (let ((dir (copilot-chat--file-uri-path (plist-get msg :uri))))
+    (list :entries
+          (vconcat
+           (when (file-directory-p dir)
+             (delq nil
+                   (mapcar
+                    (lambda (entry)
+                      (let ((name (car entry)))
+                        ;; `directory-files-and-attributes' includes "."
+                        ;; and ".."; skip them.  Hidden files are kept.
+                        (unless (member name '("." ".."))
+                          (list :name name
+                                :type (copilot-chat--attr-file-type
+                                       name dir
+                                       (file-attribute-type (cdr entry)))))))
+                    (directory-files-and-attributes dir))))))))
+
+(copilot-on-request 'workspace/readFile #'copilot-chat--handle-read-file)
+(copilot-on-request 'workspace/readDirectory
+                    #'copilot-chat--handle-read-directory)
+
 ;;
 ;; MCP server status
 ;;

@@ -1398,6 +1398,80 @@
           (expect msg :to-match "```emacs-lisp")
           (expect msg :to-match "(\\+ 1 2)")))))
 
+  (describe "context references"
+    ;; Start from a clean slate: no stale chat buffer leaked from an
+    ;; earlier spec, so the "create if needed" path is exercised honestly.
+    (before-each
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name)))
+    (after-each
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name)))
+
+    (it "builds a file reference with a file URI"
+      (let ((ref (copilot-chat--file-reference "/tmp/foo.el")))
+        ;; Compare the whole plist so any divergence prints both values.
+        (expect (prin1-to-string ref) :to-match
+                "\\`(:type \"file\" :uri \"file://")))
+
+    (it "creates the chat buffer when none exists"
+      (spy-on 'message)
+      (with-temp-buffer
+        (expect (get-buffer copilot-chat--buffer-name) :to-be nil)
+        (copilot-chat-add-file-reference "/tmp/foo.el")
+        (expect (get-buffer copilot-chat--buffer-name) :to-be-truthy)))
+
+    (it "attaches a region reference with the selection range"
+      (spy-on 'message)
+      (let ((src (get-buffer-create "*copilot-ref-src*")))
+        (unwind-protect
+            (with-current-buffer src
+              (setq buffer-file-name "/tmp/ref-src.el")
+              (insert "line1\nline2\nline3\n")
+              (copilot-chat-add-region-reference (point-min) (point-max))
+              (with-current-buffer copilot-chat--buffer-name
+                (let ((ref (car copilot-chat--references)))
+                  (expect (plist-get ref :uri) :to-match "ref-src.el")
+                  (expect (plist-get (plist-get ref :selection) :start)
+                          :to-be-truthy)
+                  (expect (plist-get (plist-get ref :selection) :end)
+                          :to-be-truthy))))
+          (with-current-buffer src (set-buffer-modified-p nil))
+          (kill-buffer src))))
+
+    (it "errors on a region reference outside a file"
+      (with-temp-buffer
+        (insert "x")
+        (expect (copilot-chat-add-region-reference (point-min) (point-max))
+                :to-throw 'user-error)))
+
+    (it "builds a (:references VECTOR) param without consuming it"
+      (with-current-buffer (get-buffer-create copilot-chat--buffer-name)
+        (copilot-chat-mode)
+        (setq copilot-chat--references
+              (list (list :type "file" :uri "file:///a")
+                    (list :type "file" :uri "file:///b")))
+        (let ((param (copilot-chat--references-param)))
+          (expect (vectorp (plist-get param :references)) :to-be-truthy)
+          (expect (length (plist-get param :references)) :to-equal 2)
+          ;; Reverses to insertion order: /b was pushed last, /a first.
+          (expect (plist-get (aref (plist-get param :references) 0) :uri)
+                  :to-equal "file:///b"))
+        ;; Building the param leaves the pending list intact so a failed
+        ;; request does not lose the attachment.
+        (expect (length copilot-chat--references) :to-equal 2)
+        (copilot-chat--consume-references)
+        (expect copilot-chat--references :to-be nil)))
+
+    (it "clears pending references on request"
+      (with-current-buffer (get-buffer-create copilot-chat--buffer-name)
+        (copilot-chat-mode)
+        (setq copilot-chat--references (list (list :type "file" :uri "x"))))
+      (spy-on 'message)
+      (copilot-chat-clear-references)
+      (with-current-buffer copilot-chat--buffer-name
+        (expect copilot-chat--references :to-be nil))))
+
   (describe "copilot-chat--chat-templates"
     ;; copilot--request is a macro over jsonrpc-request, so stub the
     ;; transport rather than the macro.

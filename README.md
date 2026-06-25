@@ -233,7 +233,10 @@ Key bindings in the `*copilot-chat*` buffer:
 - **C-c C-i** — insert the code block at point into the source buffer
 - **C-c M-w** — copy the code block at point to the kill ring
 - **C-c /** — pick and send a slash command (`/explain`, `/fix`, `/tests`, ...)
+- **C-c C-f** — attach a file as context for the next message
 - **q** — quit the chat window
+
+Attach extra context for the next message with `copilot-chat-add-file-reference` (`C-c C-f`) or `copilot-chat-add-region-reference`; `copilot-chat-clear-references` drops anything pending.
 
 Customization:
 - **`copilot-chat-model`** — model to use for chat (default `nil`, meaning a default chat model is resolved from the server)

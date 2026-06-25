@@ -155,6 +155,11 @@ which may be slightly after `copilot-chat--request-id' is set.")
 (defvar-local copilot-chat--source-buffer nil
   "The code buffer providing context for this chat.")
 
+(defvar-local copilot-chat--references nil
+  "References to attach to the next chat turn.
+A list of plists like (:type \"file\" :uri URI), sent as the turn's
+`references' and cleared once a message is sent.")
+
 (defvar-local copilot-chat--follow-up nil
   "Follow-up suggestion from the last turn.")
 
@@ -976,8 +981,13 @@ CALLBACK is called with the response containing conversationId and turnId."
                                          (directory-file-name root)))))))
              (when copilot-chat-use-agent-mode
                (list :chatMode "Agent"
-                     :needToolCallConfirmation t)))
+                     :needToolCallConfirmation t))
+             (copilot-chat--references-param))
             :success-fn (lambda (result)
+                          (when-let* ((buf (get-buffer
+                                            copilot-chat--buffer-name)))
+                            (with-current-buffer buf
+                              (copilot-chat--consume-references)))
                           (when copilot-chat-use-agent-mode
                             (copilot-chat--register-tools))
                           (funcall callback result))
@@ -1003,10 +1013,12 @@ CALLBACK is called with the response containing conversationId and turnId."
                       :conversationId conv-id
                       :message message
                       :source "panel")
-                (when doc (list :doc doc)))
+                (when doc (list :doc doc))
+                (copilot-chat--references-param))
                :success-fn (lambda (result)
                              (when (buffer-live-p chat-buf)
                                (with-current-buffer chat-buf
+                                 (copilot-chat--consume-references)
                                  (setq copilot-chat--current-turn-id
                                        (plist-get result :turnId)))))
                :error-fn (lambda (err)
@@ -1144,6 +1156,72 @@ in the chat buffer."
     (message "Inserted code block into %s" (buffer-name target))))
 
 ;;
+;; Context references
+;;
+
+(defun copilot-chat--add-reference (ref)
+  "Add REF to the pending references in the chat buffer.
+Create the chat buffer when none exists, so context can be attached
+before the first message."
+  (with-current-buffer (get-buffer-create copilot-chat--buffer-name)
+    (unless (derived-mode-p 'copilot-chat-mode)
+      (copilot-chat-mode))
+    (let ((added (not (member ref copilot-chat--references))))
+      (when added
+        ;; `setq-local' rather than relying on the defvar-local default,
+        ;; so the binding is unambiguously buffer-local right after the
+        ;; major mode has reset local variables.
+        (setq-local copilot-chat--references
+                    (cons ref copilot-chat--references)))
+      (message (if added "Attached %d reference(s) to the next message"
+                 "Reference already attached (%d total)")
+               (length copilot-chat--references)))))
+
+(defun copilot-chat--references-param ()
+  "Return a (:references VECTOR) plist for the pending references, or nil.
+The references are left in place; clear them with
+`copilot-chat--consume-references' once the message is sent."
+  (when copilot-chat--references
+    (list :references (vconcat (reverse copilot-chat--references)))))
+
+(defun copilot-chat--consume-references ()
+  "Clear the pending references in the current chat buffer."
+  (setq copilot-chat--references nil))
+
+(defun copilot-chat--file-reference (file)
+  "Return a file-reference plist for FILE."
+  (list :type "file" :uri (copilot--path-to-uri (expand-file-name file))))
+
+;;;###autoload
+(defun copilot-chat-add-file-reference (file)
+  "Attach FILE as context for the next Copilot Chat message."
+  (interactive "fAttach file: ")
+  (copilot-chat--add-reference (copilot-chat--file-reference file)))
+
+;;;###autoload
+(defun copilot-chat-add-region-reference (start end)
+  "Attach the region between START and END as context for the next message.
+The reference points at the current file with the region's range."
+  (interactive "r")
+  (unless buffer-file-name
+    (user-error "Buffer is not visiting a file"))
+  (let ((sel (list :start (copilot--lsp-pos start)
+                   :end (copilot--lsp-pos end))))
+    (copilot-chat--add-reference
+     (list :type "file"
+           :uri (copilot--path-to-uri buffer-file-name)
+           :selection sel))))
+
+;;;###autoload
+(defun copilot-chat-clear-references ()
+  "Drop the references pending for the next Copilot Chat message."
+  (interactive)
+  (when-let* ((buf (get-buffer copilot-chat--buffer-name)))
+    (with-current-buffer buf
+      (copilot-chat--consume-references)))
+  (message "Cleared pending chat references"))
+
+;;
 ;; Major mode
 ;;
 
@@ -1155,6 +1233,7 @@ in the chat buffer."
     (define-key map (kbd "C-c C-i") #'copilot-chat-insert-code-block)
     (define-key map (kbd "C-c M-w") #'copilot-chat-copy-code-block)
     (define-key map (kbd "C-c /") #'copilot-chat-slash-command)
+    (define-key map (kbd "C-c C-f") #'copilot-chat-add-file-reference)
     (define-key map (kbd "q") #'quit-window)
     map)
   "Keymap for `copilot-chat-mode'.")

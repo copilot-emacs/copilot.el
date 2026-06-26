@@ -2,6 +2,8 @@
 
 ## main (unreleased)
 
+## 0.7.0 (2026-06-26)
+
 ### New Features
 
 Agent mode tooling:

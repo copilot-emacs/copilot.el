@@ -417,7 +417,7 @@ For example:
 | `copilot-logout` | Log out from GitHub Copilot |
 | `copilot-diagnose` | Restart the server and show diagnostic info |
 | `copilot-quota` | Show the current Copilot usage quota |
-| `copilot-list-code-citations` | Show suggestions that matched public code |
+| `copilot-list-code-references` | Show suggestions that matched public code |
 | `copilot-select-completion-model` | Choose which model to use for completions |
 | `copilot-chat-select-model` | Choose which model to use for chat |
 | **Completion** | |
@@ -635,12 +635,22 @@ reply.
 
 ### Public code references
 
-Copilot can detect when a suggestion closely matches public code. When
-`copilot-show-code-citations` is non-nil (the default), such matches are
-announced in the echo area and collected, with their licenses and reference
-URLs, in a buffer you can open with `M-x copilot-list-code-citations`. Set the
-option to `nil` to turn the feature off, including the underlying server
-traffic.
+Copilot can detect when a suggestion closely matches publicly available code.
+GitHub calls these matches [code
+references](https://docs.github.com/en/copilot/how-tos/get-code-suggestions/find-matching-code)
+(or "code referencing"), and copilot.el uses the same term throughout.
+
+> [!NOTE]
+>
+> "Code references" here are GitHub's public-code matches. They have nothing to
+> do with Emacs `xref` (jumping to definitions and finding references to a
+> symbol). We follow GitHub's naming so the feature is easy to recognize, but
+> the overlap with `xref` is purely a coincidence of vocabulary.
+
+When `copilot-show-code-references` is non-nil (the default), such matches are
+announced in the echo area and collected, with their licenses and source URLs,
+in a buffer you can open with `M-x copilot-list-code-references`. Set the option
+to `nil` to turn the feature off, including the underlying server traffic.
 
 ## Reporting Bugs
 

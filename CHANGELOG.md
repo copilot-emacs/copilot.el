@@ -2,6 +2,10 @@
 
 ## main (unreleased)
 
+### Changes
+
+- Rename the public-code matching feature to use "references" consistently (matching GitHub's own "code references" terminology): `copilot-show-code-citations` is now `copilot-show-code-references` and `copilot-list-code-citations` is now `copilot-list-code-references`. The old names from 0.7.0 still work as obsolete aliases. ([#496](https://github.com/copilot-emacs/copilot.el/pull/496))
+
 ## 0.7.0 (2026-06-26)
 
 ### New Features

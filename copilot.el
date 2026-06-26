@@ -137,15 +137,22 @@ find indentation offset."
   :type 'boolean
   :package-version '(copilot . "0.1"))
 
-(defcustom copilot-show-code-citations t
+(defcustom copilot-show-code-references t
   "When non-nil, report when a suggestion matches public code.
-GitHub Copilot can detect when a suggestion closely matches public
-code.  When enabled, such matches are announced in the echo area and
-collected, with their licenses and reference URLs, in the
-`*copilot-code-references*' buffer (see `copilot-list-code-citations')."
+GitHub Copilot can detect when a suggestion closely matches publicly
+available code.  GitHub calls such matches \"code references\"; when
+enabled, they are announced in the echo area and collected, with their
+licenses and source URLs, in the `*copilot-code-references*' buffer (see
+`copilot-list-code-references').
+
+Note that these are GitHub's public-code references and have nothing to
+do with Emacs `xref' (cross-references to definitions and uses)."
   :group 'copilot
   :type 'boolean
   :package-version '(copilot . "0.7"))
+
+(define-obsolete-variable-alias 'copilot-show-code-citations
+  'copilot-show-code-references "0.7.1")
 
 (defcustom copilot-enable-parentheses-balancer t
   "Whether to post-process completions to balance parentheses in Lisp modes.
@@ -779,7 +786,7 @@ semantic search, watched files (`copilot/watchedFiles')."
     :textDocument
     (:inlineCompletion (:dynamicRegistration :json-false))
     :copilot
-    (:ipCodeCitation ,(if copilot-show-code-citations t :json-false)
+    (:ipCodeCitation ,(if copilot-show-code-references t :json-false)
      ;; Gated on a chat-side option, read defensively in case chat
      ;; isn't loaded.
      :watchedFiles ,(if (bound-and-true-p copilot-chat-enable-semantic-search)
@@ -1361,25 +1368,25 @@ SNAPSHOT is a plist with :percentRemaining and :unlimited."
         (message "Copilot: quota details unavailable.")))))
 
 (defconst copilot--code-references-buffer-name "*copilot-code-references*"
-  "Name of the buffer collecting public-code citation details.")
+  "Name of the buffer collecting public-code reference details.")
 
-(defun copilot--citation-licenses (citations)
-  "Return a comma-separated, de-duplicated license list from CITATIONS."
+(defun copilot--code-reference-licenses (references)
+  "Return a comma-separated, de-duplicated license list from REFERENCES."
   (let ((seen '()))
-    (dolist (c (append citations nil))
-      (when-let* ((license (plist-get c :license)))
+    (dolist (ref (append references nil))
+      (when-let* ((license (plist-get ref :license)))
         (cl-pushnew license seen :test #'equal)))
     (string-join (nreverse seen) ", ")))
 
-(defun copilot--citation-file-name (uri)
-  "Return a display file name for citation URI, or a placeholder."
+(defun copilot--code-reference-file-name (uri)
+  "Return a display file name for reference URI, or a placeholder."
   (if (and (stringp uri) (not (string-empty-p uri)))
       (file-name-nondirectory (copilot--uri-to-path uri))
     "unknown file"))
 
-(defun copilot--record-code-citation (name line matching citations)
+(defun copilot--record-code-reference (name line matching references)
   "Append a public-code match to the code references buffer.
-NAME, LINE, MATCHING and CITATIONS describe the matched region."
+NAME, LINE, MATCHING and REFERENCES describe the matched region."
   (with-current-buffer (get-buffer-create copilot--code-references-buffer-name)
     ;; Set the mode only when the buffer is first created, so reading it
     ;; isn't disturbed as later matches are appended.
@@ -1390,38 +1397,46 @@ NAME, LINE, MATCHING and CITATIONS describe the matched region."
       (insert (propertize (format "%s:%s\n" name line) 'face 'bold))
       (when (and (stringp matching) (not (string-empty-p matching)))
         (insert (format "  near: %s\n" (car (split-string matching "\n")))))
-      (dolist (c (append citations nil))
+      (dolist (ref (append references nil))
         (insert (format "  [%s] %s\n"
-                        (or (plist-get c :license) "unknown")
-                        (or (plist-get c :url) ""))))
+                        (or (plist-get ref :license) "unknown")
+                        (or (plist-get ref :url) ""))))
       (insert "\n"))))
 
-(defun copilot--handle-code-citation (msg)
+(defun copilot--handle-code-reference (msg)
   "Handle a `copilot/ipCodeCitation' notification MSG.
-Announce the public-code match and record its details."
-  (when copilot-show-code-citations
-    (let* ((name (copilot--citation-file-name (plist-get msg :uri)))
-           (citations (plist-get msg :citations))
+Announce the public-code match and record its details.  The server's
+method name keeps GitHub's \"citation\" wording, but copilot.el calls
+these \"code references\" throughout."
+  (when copilot-show-code-references
+    (let* ((name (copilot--code-reference-file-name (plist-get msg :uri)))
+           ;; `:citations' is the field name in the server payload.
+           (references (plist-get msg :citations))
            (start (plist-get (plist-get msg :range) :start))
            (line (if (numberp (plist-get start :line))
                      (1+ (plist-get start :line))
                    "-"))
-           (licenses (copilot--citation-licenses citations)))
-      (copilot--record-code-citation name line (plist-get msg :matchingText)
-                                     citations)
+           (licenses (copilot--code-reference-licenses references)))
+      (copilot--record-code-reference name line (plist-get msg :matchingText)
+                                      references)
       (message "Copilot: suggestion near %s:%s matches public code%s"
                name line
                (if (string-empty-p licenses) "" (format " (%s)" licenses))))))
 
 (copilot-on-notification 'copilot/ipCodeCitation
-                         #'copilot--handle-code-citation)
+                         #'copilot--handle-code-reference)
 
-(defun copilot-list-code-citations ()
-  "Show the buffer collecting public-code citation details."
+(defun copilot-list-code-references ()
+  "Show the buffer collecting public-code reference details.
+These are GitHub's public-code references (suggestions that match
+publicly available code), unrelated to Emacs `xref' cross-references."
   (interactive)
   (if-let* ((buf (get-buffer copilot--code-references-buffer-name)))
       (display-buffer buf)
     (message "Copilot: no public-code matches recorded yet.")))
+
+(define-obsolete-function-alias 'copilot-list-code-citations
+  'copilot-list-code-references "0.7.1")
 
 (copilot-on-request
  'window/showMessageRequest

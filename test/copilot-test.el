@@ -490,8 +490,8 @@
                            :watchedFiles)
                 :to-equal :json-false)))
 
-    (it "reflects the code-citations option"
-      (let ((copilot-show-code-citations nil))
+    (it "reflects the code-references option"
+      (let ((copilot-show-code-references nil))
         (expect (plist-get (plist-get (copilot--client-capabilities) :copilot)
                            :ipCodeCitation)
                 :to-equal :json-false))))
@@ -777,24 +777,24 @@
   ;; Public code citations (#471)
   ;;
 
-  (describe "copilot--citation-licenses"
+  (describe "copilot--code-reference-licenses"
     (it "joins and de-duplicates licenses"
-      (expect (copilot--citation-licenses
+      (expect (copilot--code-reference-licenses
                (vector '(:license "MIT") '(:license "GPL-2.0") '(:license "MIT")))
               :to-equal "MIT, GPL-2.0"))
 
     (it "returns empty string when there are no licenses"
-      (expect (copilot--citation-licenses []) :to-equal "")))
+      (expect (copilot--code-reference-licenses []) :to-equal "")))
 
-  (describe "copilot--handle-code-citation"
+  (describe "copilot--handle-code-reference"
     (after-each
       (when (get-buffer "*copilot-code-references*")
         (kill-buffer "*copilot-code-references*")))
 
     (it "announces a match and records its details"
-      (let ((copilot-show-code-citations t))
+      (let ((copilot-show-code-references t))
         (spy-on 'message)
-        (copilot--handle-code-citation
+        (copilot--handle-code-reference
          (list :uri "file:///tmp/foo%20bar.js"
                :range '(:start (:line 6 :character 12))
                :matchingText "function fizzBuzz() {"
@@ -813,22 +813,31 @@
             (expect text :to-match "https://example.com/ref")))))
 
     (it "uses a placeholder when the uri is missing"
-      (let ((copilot-show-code-citations t))
+      (let ((copilot-show-code-references t))
         (spy-on 'message)
-        (copilot--handle-code-citation
+        (copilot--handle-code-reference
          (list :citations (vector '(:license "MIT" :url "u"))))
         (expect 'message :to-have-been-called-with
                 "Copilot: suggestion near %s:%s matches public code%s"
                 "unknown file" "-" " (MIT)")))
 
-    (it "does nothing when copilot-show-code-citations is nil"
-      (let ((copilot-show-code-citations nil))
+    (it "does nothing when copilot-show-code-references is nil"
+      (let ((copilot-show-code-references nil))
         (spy-on 'message)
-        (copilot--handle-code-citation
+        (copilot--handle-code-reference
          (list :uri "file:///tmp/foo.js"
                :citations (vector '(:license "MIT" :url "u"))))
         (expect 'message :not :to-have-been-called)
         (expect (get-buffer "*copilot-code-references*") :to-be nil))))
+
+  (describe "code-references obsolete aliases"
+    (it "keeps the 0.7.0 option name working as an alias"
+      (expect (indirect-variable 'copilot-show-code-citations)
+              :to-be 'copilot-show-code-references))
+
+    (it "keeps the 0.7.0 command name working as an alias"
+      (expect (indirect-function 'copilot-list-code-citations)
+              :to-be (symbol-function 'copilot-list-code-references))))
 
   ;;
   ;; didChangeStatus notification

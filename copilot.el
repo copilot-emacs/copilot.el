@@ -609,7 +609,7 @@ downloading precompiled native binaries from the npm registry."
   "Delete a Copilot server from `copilot-install-dir'."
   (interactive)
   (unless (file-directory-p copilot-install-dir)
-    (user-error "Couldn't find %s directory" copilot-install-dir))
+    (user-error "Copilot: Couldn't find %s directory" copilot-install-dir))
   (delete-directory copilot-install-dir 'recursive)
   (copilot--log 'warning "Server `%s' uninstalled." (file-name-nondirectory (directory-file-name copilot-install-dir))))
 
@@ -796,7 +796,7 @@ semantic search, watched files (`copilot/watchedFiles')."
   "Start the copilot server process in local."
   (cond
    ((not (file-exists-p (copilot-server-executable)))
-    (user-error "Server is not installed, please install via `M-x copilot-install-server`"))
+    (user-error "Copilot: Server is not installed, install it via `M-x copilot-install-server`"))
    (t
     (let ((installed-version (copilot-installed-version)))
       (when (and copilot-lsp-server-version (not (equal installed-version copilot-lsp-server-version)))
@@ -840,7 +840,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
       (status user ((:userCode user-code)) ((:verificationUri verification-uri)))
       (copilot--request 'signInInitiate nil)
     (when (string-equal status "AlreadySignedIn")
-      (user-error "Already signed in as %s" user))
+      (user-error "Copilot: Already signed in as %s" user))
     (if (display-graphic-p)
         (progn
           (gui-set-selection 'CLIPBOARD user-code)
@@ -855,7 +855,7 @@ automatically, browse to %s." user-code verification-uri))
     (condition-case err
         (copilot--request 'signInConfirm (list :userCode user-code))
       (jsonrpc-error
-       (user-error "Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
+       (user-error "Copilot: Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
     (copilot--dbind (user) (copilot--request 'checkStatus nil)
       (copilot--log 'info "Authenticated as GitHub user %s." user))))
 
@@ -914,7 +914,7 @@ on success, or an error/timeout message on failure."
           (setq copilot-completion-model model-id)
           (copilot--notify 'workspace/didChangeConfiguration
                            `(:settings ,(copilot--effective-lsp-settings)))
-          (message "Only one completion model available: %s" model-id))
+          (message "Copilot: Only one completion model available: %s" model-id))
       (let* ((choice (completing-read "Completion model: " choices nil t))
              (model-id (cdr (assoc choice choices))))
         (setq copilot-completion-model model-id)

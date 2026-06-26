@@ -5,6 +5,7 @@
 ### Changes
 
 - Rename the public-code matching feature to use "references" consistently (matching GitHub's own "code references" terminology): `copilot-show-code-citations` is now `copilot-show-code-references` and `copilot-list-code-citations` is now `copilot-list-code-references`. The old names from 0.7.0 still work as obsolete aliases. ([#496](https://github.com/copilot-emacs/copilot.el/pull/496))
+- Give user-facing messages a consistent `Copilot:`/`Copilot Chat:` prefix, and describe attached chat context as "context" throughout (the `copilot-chat-add-file-reference` family keeps its names, which match the server's `references` field).
 
 ## 0.7.0 (2026-06-26)
 

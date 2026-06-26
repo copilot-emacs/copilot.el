@@ -391,7 +391,7 @@ NES does not start or sync the language server on its own; it relies on
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (when (and copilot-nes-mode (not (bound-and-true-p copilot-mode)))
-        (message "copilot-nes-mode needs copilot-mode enabled in this buffer to receive suggestions")))))
+        (message "Copilot: `copilot-nes-mode' needs `copilot-mode' enabled in this buffer to receive suggestions")))))
 
 ;;;###autoload
 (define-minor-mode copilot-nes-mode

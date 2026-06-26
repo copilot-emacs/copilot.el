@@ -65,6 +65,10 @@ Account and usage:
 - Fix NES insertion text never rendering because its zero-width overlay was marked `evaporate` and got deleted immediately. ([#451](https://github.com/copilot-emacs/copilot.el/issues/451))
 - Suppress "Request was canceled" error messages in the echo area. ([#464](https://github.com/copilot-emacs/copilot.el/pull/464))
 
+### New Features
+
+- Make copilot-panel interactive. This helps the user to select from multiple suggestions and directly insert one into the source buffer.
+
 ## 0.5.0 (2026-03-16)
 
 ### New Features

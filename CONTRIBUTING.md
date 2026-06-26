@@ -22,7 +22,7 @@ do so.
 
 * Use a topic branch to easily amend a pull request later, if necessary.
 * Write [good commit messages][2].
-* Mention related tickets in the commit messages (e.g. `[Fix #N] Make balancer syntax-aware`).
+* Reference related tickets as a prefix in the commit subject: `[#N]` for a related issue, or `[Fix #N]` when the commit fully closes it (e.g. `[Fix #N] Make balancer syntax-aware`).
 * Update the [changelog][3].
 * Use the same coding conventions as the rest of the project.
 * Verify your Emacs Lisp code with `checkdoc` (<kbd>C-c ? d</kbd>).

@@ -1348,7 +1348,7 @@ Signal a `user-error' when BLOCKS is empty."
                        (<= (point) (plist-get b :end))))
                 blocks)
       (cond
-       ((null blocks) (user-error "No code blocks in this chat"))
+       ((null blocks) (user-error "Copilot Chat: No code blocks in this chat"))
        ((= (length blocks) 1) (car blocks))
        (t
         (let* ((choices
@@ -1367,11 +1367,11 @@ Signal a `user-error' when BLOCKS is empty."
   "Return a chosen code block from the chat buffer.
 Signal a `user-error' outside the chat buffer or when the block is empty."
   (unless (derived-mode-p 'copilot-chat-mode)
-    (user-error "Not in a Copilot chat buffer"))
+    (user-error "Copilot Chat: Not in a chat buffer"))
   (let* ((block (copilot-chat--read-code-block (copilot-chat--code-blocks)))
          (code (plist-get block :code)))
     (when (or (null code) (string-empty-p (string-trim code)))
-      (user-error "That code block is empty"))
+      (user-error "Copilot Chat: That code block is empty"))
     block))
 
 (defun copilot-chat-copy-code-block ()
@@ -1379,7 +1379,7 @@ Signal a `user-error' outside the chat buffer or when the block is empty."
 Use the block at point, or prompt when point is not inside one."
   (interactive)
   (kill-new (plist-get (copilot-chat--current-code-block) :code))
-  (message "Copied code block to kill ring"))
+  (message "Copilot Chat: Copied code block to kill ring"))
 
 (defun copilot-chat-insert-code-block ()
   "Insert a chat code block into the source buffer at its point.
@@ -1393,10 +1393,10 @@ in the chat buffer."
                    (get-buffer (read-buffer "Insert into buffer: "
                                             nil t)))))
     (unless (buffer-live-p target)
-      (user-error "No target buffer to insert into"))
+      (user-error "Copilot Chat: No target buffer to insert into"))
     (with-current-buffer target
       (when buffer-read-only
-        (user-error "Target buffer %s is read-only" (buffer-name)))
+        (user-error "Copilot Chat: Target buffer %s is read-only" (buffer-name)))
       ;; Insert at point in the target's visible window when there is
       ;; one, so the snippet lands where the user is looking rather than
       ;; at a stale point; never steal focus from the chat.
@@ -1404,7 +1404,7 @@ in the chat buffer."
         (if win
             (with-selected-window win (insert code))
           (insert code))))
-    (message "Inserted code block into %s" (buffer-name target))))
+    (message "Copilot Chat: Inserted code block into %s" (buffer-name target))))
 
 ;;
 ;; Context references
@@ -1424,8 +1424,8 @@ before the first message."
         ;; major mode has reset local variables.
         (setq-local copilot-chat--references
                     (cons ref copilot-chat--references)))
-      (message (if added "Attached %d reference(s) to the next message"
-                 "Reference already attached (%d total)")
+      (message (if added "Copilot Chat: Attached context for the next message (%d pending)"
+                 "Copilot Chat: That context is already attached (%d pending)")
                (length copilot-chat--references)))))
 
 (defun copilot-chat--references-param ()
@@ -1452,7 +1452,7 @@ The references are left in place; clear them with
 ;;;###autoload
 (defun copilot-chat-add-region-reference (start end)
   "Attach the region between START and END as context for the next message.
-The reference points at the current file with the region's range."
+The context points at the current file with the region's range."
   (interactive "r")
   (unless buffer-file-name
     (user-error "Buffer is not visiting a file"))
@@ -1465,12 +1465,12 @@ The reference points at the current file with the region's range."
 
 ;;;###autoload
 (defun copilot-chat-clear-references ()
-  "Drop the references pending for the next Copilot Chat message."
+  "Drop the context pending for the next Copilot Chat message."
   (interactive)
   (when-let* ((buf (get-buffer copilot-chat--buffer-name)))
     (with-current-buffer buf
       (copilot-chat--consume-references)))
-  (message "Cleared pending chat references"))
+  (message "Copilot Chat: Cleared pending context"))
 
 ;;
 ;; Major mode
@@ -1542,7 +1542,7 @@ Otherwise, create a new conversation."
               "Copilot Chat (follow-up): "
             "Copilot Chat: "))))
   (when (string-empty-p message)
-    (user-error "Empty message"))
+    (user-error "Copilot Chat: Empty message"))
   ;; Only attach the originating buffer as context when it is a real
   ;; file-visiting buffer.  `copilot-chat' can be invoked from anywhere
   ;; (dired, *scratch*, the chat buffer itself, ...), and sending an
@@ -1574,13 +1574,13 @@ Otherwise, create a new conversation."
 When called interactively, prompt for the message."
   (interactive (list (read-string "Copilot Chat: ")))
   (when (string-empty-p message)
-    (user-error "Empty message"))
+    (user-error "Copilot Chat: Empty message"))
   (let ((chat-buf (get-buffer copilot-chat--buffer-name)))
     (unless chat-buf
-      (user-error "No active chat buffer"))
+      (user-error "Copilot Chat: No active chat buffer"))
     (with-current-buffer chat-buf
       (when copilot-chat--streaming-p
-        (user-error "A response is currently being streamed"))
+        (user-error "Copilot Chat: A response is currently being streamed"))
       (copilot-chat--insert-prompt message)
       (if copilot-chat--conversation-id
           (copilot-chat--send-turn message)
@@ -1601,7 +1601,7 @@ When called interactively, prompt for the message."
    (if (use-region-p)
        (list (region-beginning) (region-end)
              (read-string "Prompt (optional): "))
-     (user-error "No active region")))
+     (user-error "Copilot Chat: No active region")))
   (let* ((code (buffer-substring-no-properties start end))
          (lang (copilot--get-language-id))
          (message (if (and prompt (not (string-empty-p prompt)))
@@ -1650,7 +1650,7 @@ command."
   (interactive)
   (let ((templates (copilot-chat--chat-templates)))
     (unless templates
-      (user-error "No slash commands available"))
+      (user-error "Copilot Chat: No slash commands available"))
     (let* ((choices
             (mapcar (lambda (tpl)
                       (cons (format "/%s  %s" (plist-get tpl :id)
@@ -1706,7 +1706,7 @@ If not currently streaming, reset the conversation instead."
           ;; Forget any cached default so clearing the model later
           ;; re-resolves from the server.
           copilot-chat--model-resolved nil)
-    (message "Chat model set to %s" model-id)))
+    (message "Copilot Chat: Model set to %s" model-id)))
 
 (provide 'copilot-chat)
 ;;; copilot-chat.el ends here

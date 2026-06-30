@@ -677,7 +677,9 @@
                         (setq captured-params params)
                         (cons nil nil)))
               (copilot-chat--create "hello" #'ignore)
-              (expect (plist-get captured-params :model) :to-equal "gpt-4o"))
+              (expect (plist-get captured-params :model) :to-equal "gpt-4o")
+              (expect (plist-get (plist-get captured-params :modelInfo) :id)
+                      :to-equal "gpt-4o"))
           (kill-buffer buf))))
 
     (it "sends a server-resolved default when copilot-chat-model is nil"
@@ -696,7 +698,9 @@
                         (setq captured-params params)
                         (cons nil nil)))
               (copilot-chat--create "hello" #'ignore)
-              (expect (plist-get captured-params :model) :to-equal "auto"))
+              (expect (plist-get captured-params :model) :to-equal "auto")
+              (expect (plist-get (plist-get captured-params :modelInfo) :id)
+                      :to-equal "auto"))
           (kill-buffer buf))))
 
     (it "omits model when no default can be resolved"
@@ -715,7 +719,9 @@
                         (setq captured-params params)
                         (cons nil nil)))
               (copilot-chat--create "hello" #'ignore)
-              (expect (plist-member captured-params :model) :not :to-be-truthy))
+              (expect (plist-member captured-params :model) :not :to-be-truthy)
+              (expect (plist-member captured-params :modelInfo)
+                      :not :to-be-truthy))
           (kill-buffer buf))))
 
     (it "clears session tool approvals for a new conversation"
@@ -731,6 +737,76 @@
                       :and-return-value (cons nil nil))
               (copilot-chat--create "hello" #'ignore)
               (expect copilot-chat--session-approved-tools :to-be nil))
+          (kill-buffer buf)))))
+
+  ;;
+  ;; Follow-up turn params
+  ;;
+
+  (describe "copilot-chat--send-turn"
+    (it "includes model when copilot-chat-model is set"
+      (let ((captured-params nil)
+            (copilot-chat-model "gpt-4o")
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--conversation-id "conv-1"))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--send-turn "follow-up")
+              (expect (plist-get captured-params :model) :to-equal "gpt-4o")
+              (expect (plist-get (plist-get captured-params :modelInfo) :id)
+                      :to-equal "gpt-4o"))
+          (kill-buffer buf))))
+
+    (it "sends a server-resolved default when copilot-chat-model is nil"
+      (let ((captured-params nil)
+            (copilot-chat-model nil)
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--conversation-id "conv-1"))
+              (spy-on 'copilot-chat--default-model :and-return-value "auto")
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--send-turn "follow-up")
+              (expect (plist-get captured-params :model) :to-equal "auto")
+              (expect (plist-get (plist-get captured-params :modelInfo) :id)
+                      :to-equal "auto"))
+          (kill-buffer buf))))
+
+    (it "omits model when no default can be resolved"
+      (let ((captured-params nil)
+            (copilot-chat-model nil)
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--conversation-id "conv-1"))
+              (spy-on 'copilot-chat--default-model :and-return-value nil)
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--send-turn "follow-up")
+              (expect (plist-member captured-params :model) :not :to-be-truthy)
+              (expect (plist-member captured-params :modelInfo)
+                      :not :to-be-truthy))
           (kill-buffer buf)))))
 
   ;;

@@ -2,6 +2,10 @@
 
 ## main (unreleased)
 
+### Bug Fixes
+
+- Send the selected chat model on every conversation turn, not just the first one, so follow-up messages no longer fail with "A model id is required" on recent language-server versions. The model is now sent via the modern `modelInfo` field, with the deprecated `model` field kept as a fallback for older servers. ([#508](https://github.com/copilot-emacs/copilot.el/issues/508))
+
 ### Changes
 
 - Rename the public-code matching feature to use "references" consistently (matching GitHub's own "code references" terminology): `copilot-show-code-citations` is now `copilot-show-code-references` and `copilot-list-code-citations` is now `copilot-list-code-references`. The old names from 0.7.0 still work as obsolete aliases. ([#496](https://github.com/copilot-emacs/copilot.el/pull/496))

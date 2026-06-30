@@ -252,6 +252,15 @@ result, including nil, is cached."
 Use `copilot-chat-model' when set, otherwise a server-resolved default."
   (or copilot-chat-model (copilot-chat--default-model)))
 
+(defun copilot-chat--model-param ()
+  "Return request params identifying the chat model to use.
+Send the modern `modelInfo' object alongside the deprecated `model'
+field so both current and older language servers resolve a model.
+Return nil when no model can be resolved, letting the server pick."
+  (when-let* ((model (copilot-chat--model)))
+    (list :modelInfo (list :id model)
+          :model model)))
+
 ;;
 ;; Internal helpers
 ;;
@@ -1222,8 +1231,7 @@ CALLBACK is called with the response containing conversationId and turnId."
                    :capabilities (list :skills (vector "current-editor")
                                        :allSkills t)
                    :source "panel")
-             (when-let* ((model (copilot-chat--model)))
-               (list :model model))
+             (copilot-chat--model-param)
              (list :workspaceFolders
                    (vconcat
                     (when-let* ((root (copilot--workspace-root)))
@@ -1264,6 +1272,7 @@ CALLBACK is called with the response containing conversationId and turnId."
                       :conversationId conv-id
                       :message message
                       :source "panel")
+                (copilot-chat--model-param)
                 (when doc (list :doc doc))
                 (copilot-chat--references-param))
                :success-fn (lambda (result)

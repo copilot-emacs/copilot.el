@@ -1242,6 +1242,51 @@
       (let ((system-type 'windows-nt))
         (expect (copilot--native-binary-name) :to-equal "copilot-language-server.exe"))))
 
+  (describe "copilot--executable-version"
+    (before-each
+      (setq copilot--executable-version-cache nil))
+
+    (it "parses the version from the executable's --version output"
+      (spy-on 'copilot-server-executable :and-return-value "/opt/copilot-language-server")
+      (spy-on 'call-process :and-call-fake
+              (lambda (&rest _) (insert "1.504.0\n") 0))
+      (expect (copilot--executable-version) :to-equal "1.504.0"))
+
+    (it "returns nil when the executable exits non-zero"
+      (spy-on 'copilot-server-executable :and-return-value "/opt/copilot-language-server")
+      (spy-on 'call-process :and-call-fake
+              (lambda (&rest _) (insert "boom\n") 1))
+      (expect (copilot--executable-version) :to-be nil))
+
+    (it "returns nil when no executable can be resolved"
+      (spy-on 'copilot-server-executable :and-call-fake
+              (lambda () (error "not installed")))
+      (expect (copilot--executable-version) :to-be nil))
+
+    (it "caches the result per executable path"
+      (spy-on 'copilot-server-executable :and-return-value "/opt/copilot-language-server")
+      (spy-on 'call-process :and-call-fake
+              (lambda (&rest _) (insert "1.504.0\n") 0))
+      (copilot--executable-version)
+      (copilot--executable-version)
+      (expect 'call-process :to-have-been-called-times 1)))
+
+  (describe "copilot-installed-version"
+    (it "prefers the resolved executable version"
+      (spy-on 'copilot--executable-version :and-return-value "1.504.0")
+      (spy-on 'copilot--install-dir-version :and-return-value "1.272.0")
+      (expect (copilot-installed-version) :to-equal "1.504.0"))
+
+    (it "falls back to the install-dir version when the executable is unavailable"
+      (spy-on 'copilot--executable-version :and-return-value nil)
+      (spy-on 'copilot--install-dir-version :and-return-value "1.272.0")
+      (expect (copilot-installed-version) :to-equal "1.272.0"))
+
+    (it "returns nil when no version can be determined"
+      (spy-on 'copilot--executable-version :and-return-value nil)
+      (spy-on 'copilot--install-dir-version :and-return-value nil)
+      (expect (copilot-installed-version) :to-be nil)))
+
   (describe "copilot--path-to-uri"
     (it "creates a file URI for unix paths"
       (expect (copilot--path-to-uri "/home/user/project")

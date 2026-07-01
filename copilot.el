@@ -410,8 +410,10 @@ recently updated session."
 ;;; Copilot Server Installation
 ;;
 
-(defun copilot-installed-version ()
-  "Return the version number of currently installed `copilot-server-package-name'."
+(defun copilot--install-dir-version ()
+  "Return the server version installed under `copilot-install-dir'.
+Read it from the `package.json' dropped by `copilot-install-server'.
+Return nil when no installed package is found."
   (let ((possible-paths (list
                          (when (eq system-type 'windows-nt)
                            (file-name-concat copilot-install-dir "node_modules" copilot-server-package-name "package.json"))
@@ -472,6 +474,45 @@ native binary from the npm package."
         (error "The package %s is not installed.  Unable to find %s"
                copilot-server-package-name path))
       path))))
+
+(defvar copilot--executable-version-cache nil
+  "Cached version of the resolved Copilot server executable.
+A cons cell of (EXECUTABLE-PATH . VERSION) so a change to
+`copilot-server-executable' is picked up automatically.  Cleared by
+`copilot-uninstall-server'.")
+
+(defun copilot--executable-version ()
+  "Return the version reported by the resolved server executable.
+Run the executable returned by `copilot-server-executable' with
+`--version' and parse a semantic version from its output.  Return nil
+when the executable cannot be found or run, or when its output has no
+recognizable version.  The result is cached per executable path in
+`copilot--executable-version-cache'."
+  (when-let* ((executable (ignore-errors (copilot-server-executable))))
+    (if (equal (car copilot--executable-version-cache) executable)
+        (cdr copilot--executable-version-cache)
+      (let ((version
+             (with-temp-buffer
+               (when (ignore-errors
+                       (eq 0 (call-process executable nil t nil "--version")))
+                 (goto-char (point-min))
+                 (when (re-search-forward
+                        "\\([0-9]+\\.[0-9]+\\.[0-9]+\\)" nil t)
+                   (match-string 1))))))
+        (setq copilot--executable-version-cache (cons executable version))
+        version))))
+
+(defun copilot-installed-version ()
+  "Return the version of the copilot-language-server copilot.el will use.
+Query the resolved `copilot-server-executable' with `--version', so the
+reported version reflects the server actually in use even when
+`copilot-server-executable' points to a binary outside
+`copilot-install-dir' (for example one provided by the system
+package manager).  Fall back to the package metadata under
+`copilot-install-dir' when the executable cannot be queried.  Return
+nil when no version can be determined."
+  (or (copilot--executable-version)
+      (copilot--install-dir-version)))
 
 ;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
 ;; function for more information.
@@ -611,6 +652,7 @@ downloading precompiled native binaries from the npm registry."
   (unless (file-directory-p copilot-install-dir)
     (user-error "Copilot: Couldn't find %s directory" copilot-install-dir))
   (delete-directory copilot-install-dir 'recursive)
+  (setq copilot--executable-version-cache nil)
   (copilot--log 'warning "Server `%s' uninstalled." (file-name-nondirectory (directory-file-name copilot-install-dir))))
 
 ;;;###autoload

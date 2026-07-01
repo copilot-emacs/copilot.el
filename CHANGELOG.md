@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 
+- Report the version of the copilot-language-server that is actually in use. `copilot-installed-version` now queries the resolved `copilot-server-executable` with `--version`, falling back to the package metadata under `copilot-install-dir`. This fixes a spurious NES "requires copilot-language-server >= X" warning (and the "tested for version X" warning) when `copilot-server-executable` points to a binary outside `copilot-install-dir`, such as one provided by the system package manager.
 - Send the selected chat model on every conversation turn, not just the first one, so follow-up messages no longer fail with "A model id is required" on recent language-server versions. The model is now sent via the modern `modelInfo` field, with the deprecated `model` field kept as a fallback for older servers. ([#508](https://github.com/copilot-emacs/copilot.el/issues/508))
 
 ### Changes

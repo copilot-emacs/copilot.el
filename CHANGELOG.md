@@ -15,6 +15,7 @@
 - Stop chat from failing with "A model id is required" for the rest of the session when the default model lookup timed out on a freshly started server: a failed lookup is now retried after a short delay, and `auto` is sent in the meantime. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
 - Find and install the language server on the local machine when the current buffer visits a remote (TRAMP) file, instead of searching the remote host, which failed with "Unable to find nil" on Emacs 31, or running the local `npm` in the remote shell. ([#403](https://github.com/copilot-emacs/copilot.el/issues/403))
 - Bring back `copilot-node-executable`, dropped without notice in 0.1.0, so the server and `copilot-install-server` can run under a different Node than the first one on `PATH`. ([#467](https://github.com/copilot-emacs/copilot.el/issues/467))
+- Report the version of the language server actually in use, by asking `copilot-server-executable` for its `--version`, so a server installed outside `copilot-install-dir` (e.g. by a system package manager) no longer triggers spurious "tested for version X" and NES version warnings. ([#511](https://github.com/copilot-emacs/copilot.el/pull/511))
 
 ## 0.9.0 (2026-07-06)
 

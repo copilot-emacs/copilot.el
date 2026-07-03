@@ -12,6 +12,7 @@
   - `copilot-chat-optimize`
   - `copilot-chat-write-tests`
 - Add `copilot-chat-insert-commit-message` to generate a commit message from the staged changes and insert it at point (handy in a Magit or `git-commit` buffer), with the instruction sent to Copilot customizable via `copilot-chat-commit-message-prompt` and a pending generation cancellable with `copilot-chat-stop`.
+- Add `copilot-menu`, a transient (magit-style) menu that gathers the most common Copilot commands (completions, chat, agent mode, account and usage info, and server management) and shows the current state of `copilot-mode`, agent mode, and the selected chat model. Requires the `transient` package (bundled with Emacs 28.1 and newer) but only when the menu itself is used.
 
 ### Bug Fixes
 

@@ -12,7 +12,7 @@ interactive commands.
 
 ## Architecture
 
-The package is split into four files, each with a clear responsibility:
+The package is split into five files, each with a clear responsibility:
 
 | File | Role |
 |---|---|
@@ -20,6 +20,7 @@ The package is split into four files, each with a clear responsibility:
 | `copilot-chat.el` | Chat UI via `conversation/*` JSON-RPC methods |
 | `copilot-nes.el` | Next Edit Suggestions via `textDocument/copilotInlineEdit` |
 | `copilot-balancer.el` | Lisp parentheses post-processor for completions |
+| `copilot-menu.el` | Transient menu (`copilot-menu`) tying the interactive commands together |
 
 `copilot-chat.el` and `copilot-nes.el` depend on the core for the server
 connection and the handler registries, but they are otherwise self-contained

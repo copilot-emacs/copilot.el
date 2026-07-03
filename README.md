@@ -419,14 +419,28 @@ For example:
   (lambda (msg) (message (plist-get msg :message))))
 ```
 
+## The Copilot Menu
+
+`M-x copilot-menu` opens a transient menu (in the style of Magit) that puts the
+most common commands one keystroke away: completions, chat, agent mode, account
+and usage info, and server management. It also shows the current state of
+`copilot-mode`, agent mode, and the selected chat model, so it doubles as a
+quick status overview.
+
+The menu is built on the `transient` package, which is bundled with Emacs 28.1
+and newer. It is a soft dependency: on Emacs 27.2 (where current transient
+releases are not installable) the rest of copilot.el works as usual and
+`copilot-menu` explains what is missing if invoked.
+
 ## Commands
 
 > [!TIP]
 >
-> You don't need to memorize the list — just type `M-x copilot-` followed by TAB, or use the Copilot menu in the menubar.
+> You don't need to memorize the list — just type `M-x copilot-` followed by TAB, use `M-x copilot-menu`, or use the Copilot menu in the menubar.
 
 | Command | Description |
 |---------|-------------|
+| `copilot-menu` | Open a transient menu with the most common commands |
 | **Setup** | |
 | `copilot-install-server` | Install the language server |
 | `copilot-uninstall-server` | Remove the installed language server |

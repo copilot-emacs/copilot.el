@@ -2,6 +2,10 @@
 
 ## main (unreleased)
 
+### New Features
+
+- Show a status header line in the chat buffer with the chat mode (Agent or Ask), the active model, and in agent mode the number of available tools; disable it with `copilot-chat-show-status-header`. ([#509](https://github.com/copilot-emacs/copilot.el/discussions/509))
+
 ### Bug Fixes
 
 - Send the selected chat model on every conversation turn, not just the first one, so follow-up messages no longer fail with "A model id is required" on recent language-server versions. The model is now sent via the modern `modelInfo` field, with the deprecated `model` field kept as a fallback for older servers. ([#508](https://github.com/copilot-emacs/copilot.el/issues/508))

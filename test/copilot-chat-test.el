@@ -58,7 +58,65 @@
         (expect (lookup-key copilot-chat-mode-map (kbd "C-c C-k"))
                 :to-equal #'copilot-chat-stop)
         (expect (lookup-key copilot-chat-mode-map (kbd "C-c C-i"))
-                :to-equal #'copilot-chat-insert-code-block))))
+                :to-equal #'copilot-chat-insert-code-block)))
+
+    (it "sets a status header line"
+      (with-temp-buffer
+        (copilot-chat-mode)
+        (expect header-line-format :to-be-truthy)))
+
+    (it "sets no header line when copilot-chat-show-status-header is nil"
+      (let ((copilot-chat-show-status-header nil))
+        (with-temp-buffer
+          (copilot-chat-mode)
+          (expect header-line-format :to-be nil)))))
+
+  ;;
+  ;; Status header
+  ;;
+
+  (describe "copilot-chat--status-header"
+    (it "shows agent mode with the model and the tool count"
+      (let ((copilot-chat-use-agent-mode t)
+            (copilot-chat-model "gpt-5-codex")
+            (copilot-chat--mcp-servers nil))
+        (expect (substring-no-properties (copilot-chat--status-header))
+                :to-equal
+                (format "Copilot Chat  Agent mode  •  gpt-5-codex  •  %d tools"
+                        (length (copilot-chat--client-tool-names))))))
+
+    (it "shows ask mode without a tool count"
+      (let ((copilot-chat-use-agent-mode nil)
+            (copilot-chat-model "gpt-4o"))
+        (expect (substring-no-properties (copilot-chat--status-header))
+                :to-equal "Copilot Chat  Ask mode  •  gpt-4o")))
+
+    (it "falls back to the resolved model when no model is customized"
+      (let ((copilot-chat-use-agent-mode nil)
+            (copilot-chat-model nil)
+            (copilot-chat--resolved-model "gpt-4.1"))
+        (expect (substring-no-properties (copilot-chat--status-header))
+                :to-equal "Copilot Chat  Ask mode  •  gpt-4.1")))
+
+    (it "falls back to the default model when nothing is resolved"
+      (let ((copilot-chat-use-agent-mode nil)
+            (copilot-chat-model nil)
+            (copilot-chat--resolved-model nil))
+        (expect (substring-no-properties (copilot-chat--status-header))
+                :to-equal "Copilot Chat  Ask mode  •  default model")))
+
+    (it "counts MCP tools reported by the server"
+      (let ((copilot-chat-use-agent-mode t)
+            (copilot-chat-model "gpt-5-codex")
+            (copilot-chat--mcp-servers
+             '((:name "fetch" :status "running"
+                :tools [(:name "fetch_url") (:name "fetch_html")])
+               (:name "memory" :status "running"
+                :tools [(:name "store")]))))
+        (expect (substring-no-properties (copilot-chat--status-header))
+                :to-match
+                (format "%d tools\\'"
+                        (+ 3 (length (copilot-chat--client-tool-names))))))))
 
   ;;
   ;; Code blocks

@@ -124,9 +124,24 @@ after \\[copilot-diagnose])."
   :group 'copilot-chat
   :package-version '(copilot . "0.7"))
 
+(defcustom copilot-chat-show-status-header t
+  "When non-nil, show a status header line in the chat buffer.
+The header shows at a glance whether Agent or Ask mode is active, which
+model answers, and in agent mode how many tools are available.  It is
+set up when the chat buffer is created, so changing this takes effect
+for new chat buffers."
+  :type 'boolean
+  :group 'copilot-chat
+  :package-version '(copilot . "0.8"))
+
 (defface copilot-chat-error-face
   '((t :inherit error))
   "Face for error messages in the chat buffer."
+  :group 'copilot-chat)
+
+(defface copilot-chat-status-header-face
+  '((t :inherit (shadow header-line)))
+  "Face for the status header line in the chat buffer."
   :group 'copilot-chat)
 
 (defface copilot-chat-follow-up-face
@@ -1540,12 +1555,41 @@ The context points at the current file with the region's range."
       " Copilot-Chat[Streaming]"
     " Copilot-Chat"))
 
+(defun copilot-chat--tool-count ()
+  "Return the number of tools available in agent mode.
+Count copilot.el's own client tools plus the tools of the MCP servers
+last reported by the language server (`copilot-chat--mcp-servers')."
+  (+ (length (copilot-chat--client-tool-names))
+     (seq-reduce (lambda (acc server)
+                   (+ acc (length (plist-get server :tools))))
+                 copilot-chat--mcp-servers
+                 0)))
+
+(defun copilot-chat--status-header ()
+  "Return the status header line for the chat buffer.
+Show the chat mode (Agent or Ask), the active model, and in agent mode
+the number of available tools.  Built only from variables already in
+memory (`copilot-chat-model', the cached `copilot-chat--resolved-model'
+and `copilot-chat--mcp-servers'), so it is cheap enough to evaluate on
+every redisplay and never contacts the server."
+  (let ((segments
+         (list (concat "Copilot Chat  "
+                       (if copilot-chat-use-agent-mode "Agent mode" "Ask mode"))
+               (or copilot-chat-model
+                   copilot-chat--resolved-model
+                   "default model")
+               (when copilot-chat-use-agent-mode
+                 (format "%d tools" (copilot-chat--tool-count))))))
+    (propertize (string-join (delq nil segments) "  •  ")
+                'face 'copilot-chat-status-header-face)))
+
 (declare-function gfm-mode "ext:markdown-mode" ())
 
 (defun copilot-chat--setup-mode ()
-  "Set up font-lock, mode-line, and visual-line for `copilot-chat-mode'.
-When `markdown-mode' is available, enable GFM font-lock for full
-markdown rendering; otherwise use basic highlighting."
+  "Set up font-lock, mode-line, header-line, and visual-line settings.
+Used by `copilot-chat-mode'.  When `markdown-mode' is available, enable
+GFM font-lock for full markdown rendering; otherwise use basic
+highlighting."
   (when (require 'markdown-mode nil t)
     (setq-local markdown-fontify-code-blocks-natively t)
     (setq-local font-lock-defaults
@@ -1555,6 +1599,8 @@ markdown rendering; otherwise use basic highlighting."
     (font-lock-flush))
   (font-lock-add-keywords nil copilot-chat--font-lock-keywords t)
   (setq mode-name '(:eval (copilot-chat--mode-line)))
+  (when copilot-chat-show-status-header
+    (setq header-line-format '(:eval (copilot-chat--status-header))))
   (visual-line-mode 1)
   (setq word-wrap t))
 

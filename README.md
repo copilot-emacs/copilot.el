@@ -248,6 +248,10 @@ Customization:
 
 At each tool confirmation prompt you can answer `yes`, `no`, or `always`; `always` approves that tool for the rest of the conversation so it stops asking.
 
+> [!IMPORTANT]
+>
+> Agent mode only works with a model that can call tools. Some chat models (and whatever default the server resolves when `copilot-chat-model` is `nil`) can't, and then Copilot just describes the commands to run instead of running them, so agent mode looks inactive. Pick a tool-capable model with `M-x copilot-chat-select-model`. copilot.el also warns when it starts an agent-mode conversation whose model lacks tool support.
+
 > [!TIP]
 >
 > Install [`markdown-mode`](https://github.com/jrblevin/markdown-mode) for rich markdown rendering (headings, code blocks, emphasis, etc.) in the chat buffer. Without it, only basic highlighting is used.

@@ -252,6 +252,36 @@ result, including nil, is cached."
 Use `copilot-chat-model' when set, otherwise a server-resolved default."
   (or copilot-chat-model (copilot-chat--default-model)))
 
+(defun copilot-chat--model-supports-tools-p (model-id)
+  "Return non-nil unless MODEL-ID is known to lack tool-call support.
+Consult the model's `capabilities.supports.tool_calls' flag from the
+server's model list.  Return non-nil when the flag is absent (older
+servers omit it, and the `auto' router model carries no capabilities) so
+agent mode is never wrongly flagged; return nil only when the server
+positively reports that the model cannot call tools."
+  (let* ((model (seq-find (lambda (m) (equal (plist-get m :id) model-id))
+                          (copilot-chat--chat-models)))
+         (supports (plist-get (plist-get model :capabilities) :supports)))
+    (not (eq (plist-get supports :tool_calls) :json-false))))
+
+(defun copilot-chat--maybe-warn-model-lacks-tools ()
+  "Warn when agent mode is on but the active model cannot call tools.
+Without tool support the model just tells the user which commands to run
+instead of running them, which reads as agent mode not working.  This is
+best-effort: it stays silent when tool support can't be determined and
+never blocks starting a conversation."
+  (when copilot-chat-use-agent-mode
+    (condition-case nil
+        (when-let* ((model (copilot-chat--model)))
+          (unless (copilot-chat--model-supports-tools-p model)
+            (message
+             (concat "Copilot Chat: Agent mode is on but model %s does not "
+                     "support tool calls, so Copilot can't run tools itself.  "
+                     "Pick a tool-capable model with "
+                     "M-x copilot-chat-select-model.")
+             model)))
+      (error nil))))
+
 (defun copilot-chat--model-param ()
   "Return request params identifying the chat model to use.
 Send the modern `modelInfo' object alongside the deprecated `model'
@@ -1216,6 +1246,7 @@ CALLBACK is called with the response containing conversationId and turnId."
   (let ((token (format "copilot-chat-%s" (float-time))))
     ;; A fresh conversation starts with a clean slate of session approvals.
     (setq copilot-chat--session-approved-tools nil)
+    (copilot-chat--maybe-warn-model-lacks-tools)
     (with-current-buffer (get-buffer copilot-chat--buffer-name)
       (setq copilot-chat--work-done-token token)
       (push (cons token (current-buffer)) copilot-chat--active-buffers))

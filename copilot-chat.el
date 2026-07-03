@@ -140,8 +140,11 @@ for new chat buffers."
   :group 'copilot-chat)
 
 (defface copilot-chat-status-header-face
-  '((t :inherit (shadow header-line)))
-  "Face for the status header line in the chat buffer."
+  '((t :inherit shadow))
+  "Face for the status header line in the chat buffer.
+Inheriting `header-line' as well would paint active-window colors into
+inactive windows on Emacs 31+, which splits the two into separate
+faces; the underlying `header-line' face still applies on its own."
   :group 'copilot-chat)
 
 (defface copilot-chat-follow-up-face
@@ -1555,11 +1558,18 @@ The context points at the current file with the region's range."
       " Copilot-Chat[Streaming]"
     " Copilot-Chat"))
 
+(defvar copilot-chat--client-tool-count nil
+  "Cached count of copilot.el's own client tools.
+The definitions are static, but building them allocates; the header
+line evaluates on every redisplay, so it must not do that each time.")
+
 (defun copilot-chat--tool-count ()
   "Return the number of tools available in agent mode.
 Count copilot.el's own client tools plus the tools of the MCP servers
 last reported by the language server (`copilot-chat--mcp-servers')."
-  (+ (length (copilot-chat--client-tool-names))
+  (+ (or copilot-chat--client-tool-count
+         (setq copilot-chat--client-tool-count
+               (length (copilot-chat--client-tool-names))))
      (seq-reduce (lambda (acc server)
                    (+ acc (length (plist-get server :tools))))
                  copilot-chat--mcp-servers
@@ -1568,10 +1578,11 @@ last reported by the language server (`copilot-chat--mcp-servers')."
 (defun copilot-chat--status-header ()
   "Return the status header line for the chat buffer.
 Show the chat mode (Agent or Ask), the active model, and in agent mode
-the number of available tools.  Built only from variables already in
-memory (`copilot-chat-model', the cached `copilot-chat--resolved-model'
-and `copilot-chat--mcp-servers'), so it is cheap enough to evaluate on
-every redisplay and never contacts the server."
+the number of available tools.  Built from variables already in memory
+\(`copilot-chat-model', the cached `copilot-chat--resolved-model' and
+`copilot-chat--mcp-servers') plus a memoized client-tool count, so it
+is cheap enough to evaluate on every redisplay and never contacts the
+server."
   (let ((segments
          (list (concat "Copilot Chat  "
                        (if copilot-chat-use-agent-mode "Agent mode" "Ask mode"))

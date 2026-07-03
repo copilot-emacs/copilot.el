@@ -1842,6 +1842,95 @@
           (expect msg :to-match "```emacs-lisp")
           (expect msg :to-match "(\\+ 1 2)")))))
 
+  ;;
+  ;; One-shot task commands
+  ;;
+
+  (describe "copilot-chat--task-bounds"
+    (it "uses the active region when there is one"
+      (with-temp-buffer
+        (insert "(defun foo () 1)\n(defun bar () 2)\n")
+        (let ((transient-mark-mode t))
+          (goto-char (point-min))
+          (set-mark (point))
+          (goto-char (line-end-position))
+          (expect (copilot-chat--task-bounds)
+                  :to-equal (cons (point-min) (line-end-position))))))
+
+    (it "falls back to the defun at point when no region is active"
+      (with-temp-buffer
+        (emacs-lisp-mode)
+        (insert "(defun foo ()\n  42)\n")
+        (goto-char (+ (point-min) 3))
+        (let ((bounds (copilot-chat--task-bounds)))
+          (expect (buffer-substring (car bounds) (cdr bounds))
+                  :to-match "defun foo"))))
+
+    (it "errors with neither a region nor a defun at point"
+      (with-temp-buffer
+        (expect (copilot-chat--task-bounds) :to-throw 'user-error))))
+
+  (describe "copilot-chat--task-prompt"
+    (it "looks up the task's prompt in copilot-chat-task-prompts"
+      (let ((copilot-chat-task-prompts '((review . "Do review:"))))
+        (expect (copilot-chat--task-prompt 'review) :to-equal "Do review:")))
+
+    (it "errors for a task without a configured prompt"
+      (let ((copilot-chat-task-prompts nil))
+        (expect (copilot-chat--task-prompt 'review) :to-throw 'user-error))))
+
+  (describe "copilot-chat-task"
+    (it "sends the defun at point with the task prompt through the chat"
+      (with-temp-buffer
+        (emacs-lisp-mode)
+        (insert "(defun foo ()\n  42)\n")
+        (goto-char (+ (point-min) 3))
+        (spy-on 'copilot-chat)
+        (copilot-chat-task 'review)
+        (let ((msg (car (spy-calls-args-for 'copilot-chat 0))))
+          (expect msg :to-match "Review the following code")
+          (expect msg :to-match "```emacs-lisp")
+          (expect msg :to-match "defun foo"))))
+
+    (it "sends only the active region, not the surrounding code"
+      (with-temp-buffer
+        (emacs-lisp-mode)
+        (insert "(defun foo () 1)\n(defun bar () 2)\n")
+        (spy-on 'copilot-chat)
+        (let ((transient-mark-mode t))
+          (goto-char (point-min))
+          (set-mark (point))
+          (goto-char (line-end-position))
+          (copilot-chat-task 'fix))
+        (let ((msg (car (spy-calls-args-for 'copilot-chat 0))))
+          (expect msg :to-match "defun foo")
+          (expect msg :not :to-match "defun bar"))))
+
+    (it "reads the task with completion when called interactively"
+      (with-temp-buffer
+        (emacs-lisp-mode)
+        (insert "(defun foo () 1)")
+        (goto-char (+ (point-min) 3))
+        (spy-on 'completing-read :and-return-value "tests")
+        (spy-on 'copilot-chat-send-region)
+        (call-interactively #'copilot-chat-task)
+        (expect (nth 2 (spy-calls-args-for 'copilot-chat-send-region 0))
+                :to-equal (alist-get 'tests copilot-chat-task-prompts)))))
+
+  (describe "named task commands"
+    (it "dispatches each command to its task"
+      (spy-on 'copilot-chat-task)
+      (copilot-chat-review)
+      (copilot-chat-fix)
+      (copilot-chat-doc)
+      (copilot-chat-optimize)
+      (copilot-chat-write-tests)
+      (expect 'copilot-chat-task :to-have-been-called-with 'review)
+      (expect 'copilot-chat-task :to-have-been-called-with 'fix)
+      (expect 'copilot-chat-task :to-have-been-called-with 'doc)
+      (expect 'copilot-chat-task :to-have-been-called-with 'optimize)
+      (expect 'copilot-chat-task :to-have-been-called-with 'tests)))
+
   (describe "context references"
     ;; Start from a clean slate: no stale chat buffer leaked from an
     ;; earlier spec, so the "create if needed" path is exercised honestly.

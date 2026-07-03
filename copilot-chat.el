@@ -34,6 +34,7 @@
 ;;; Code:
 
 (require 'copilot)
+(require 'thingatpt)
 
 (declare-function flymake-diagnostics "flymake")
 (declare-function flymake-diagnostic-beg "flymake")
@@ -131,6 +132,23 @@ model answers, and in agent mode how many tools are available.  It is
 set up when the chat buffer is created, so changing this takes effect
 for new chat buffers."
   :type 'boolean
+  :group 'copilot-chat
+  :package-version '(copilot . "0.8"))
+
+(defcustom copilot-chat-task-prompts
+  '((review . "Review the following code and point out bugs, risks, and possible improvements:")
+    (fix . "Fix the bugs or problems in the following code and explain what was wrong:")
+    (doc . "Document the following code: add docstrings and comments in the conventional style for its language:")
+    (optimize . "Optimize the following code for performance and readability, and explain each change:")
+    (tests . "Write a comprehensive set of unit tests for the following code:"))
+  "Prompts used by the one-shot Copilot Chat task commands.
+An alist mapping a task symbol to the instruction sent along with the
+selected code.  The known tasks are `review' (`copilot-chat-review'),
+`fix' (`copilot-chat-fix'), `doc' (`copilot-chat-doc'), `optimize'
+\(`copilot-chat-optimize'), and `tests' (`copilot-chat-write-tests');
+extra entries become available through `copilot-chat-task'."
+  :type '(alist :key-type (symbol :tag "Task")
+                :value-type (string :tag "Prompt"))
   :group 'copilot-chat
   :package-version '(copilot . "0.8"))
 
@@ -1705,6 +1723,68 @@ When called interactively, prompt for the message."
                       (format "%s\n\n```%s\n%s\n```" prompt lang code)
                     (format "```%s\n%s\n```" lang code))))
     (copilot-chat message)))
+
+;;
+;; One-shot task commands
+;;
+
+(defun copilot-chat--task-bounds ()
+  "Return the bounds of the code a task command should act on.
+Use the active region when there is one, otherwise the defun at point.
+Signal a `user-error' when neither is available."
+  (or (and (use-region-p) (cons (region-beginning) (region-end)))
+      (bounds-of-thing-at-point 'defun)
+      (user-error "Copilot Chat: No active region or function at point")))
+
+(defun copilot-chat--task-prompt (task)
+  "Return the prompt configured for TASK in `copilot-chat-task-prompts'.
+Signal a `user-error' when TASK has no prompt."
+  (or (alist-get task copilot-chat-task-prompts)
+      (user-error "Copilot Chat: No prompt configured for task `%s'" task)))
+
+;;;###autoload
+(defun copilot-chat-task (task)
+  "Send the region (or the defun at point) to Copilot Chat for TASK.
+TASK is a key of `copilot-chat-task-prompts', whose prompt is sent
+along with the code.  Interactively, pick the task with completion.
+The answer streams into the regular chat buffer."
+  (interactive
+   (list (intern (completing-read "Copilot Chat task: "
+                                  (mapcar #'car copilot-chat-task-prompts)
+                                  nil t))))
+  (let ((bounds (copilot-chat--task-bounds)))
+    (copilot-chat-send-region (car bounds) (cdr bounds)
+                              (copilot-chat--task-prompt task))))
+
+;;;###autoload
+(defun copilot-chat-review ()
+  "Ask Copilot Chat to review the region or the defun at point."
+  (interactive)
+  (copilot-chat-task 'review))
+
+;;;###autoload
+(defun copilot-chat-fix ()
+  "Ask Copilot Chat to fix the region or the defun at point."
+  (interactive)
+  (copilot-chat-task 'fix))
+
+;;;###autoload
+(defun copilot-chat-doc ()
+  "Ask Copilot Chat to document the region or the defun at point."
+  (interactive)
+  (copilot-chat-task 'doc))
+
+;;;###autoload
+(defun copilot-chat-optimize ()
+  "Ask Copilot Chat to optimize the region or the defun at point."
+  (interactive)
+  (copilot-chat-task 'optimize))
+
+;;;###autoload
+(defun copilot-chat-write-tests ()
+  "Ask Copilot Chat to write a test suite for the region or the defun at point."
+  (interactive)
+  (copilot-chat-task 'tests))
 
 (defvar copilot-chat--templates nil
   "Cached slash-command templates from `conversation/templates'.

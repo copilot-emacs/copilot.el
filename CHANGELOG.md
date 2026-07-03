@@ -5,6 +5,12 @@
 ### New Features
 
 - Show a status header line in the chat buffer with the chat mode (Agent or Ask), the active model, and in agent mode the number of available tools; disable it with `copilot-chat-show-status-header`. ([#509](https://github.com/copilot-emacs/copilot.el/discussions/509))
+- Add one-shot chat task commands that send the active region (or the defun at point) with a canned prompt, with the answer streaming into the regular chat buffer. The prompts are customizable via `copilot-chat-task-prompts`, and `copilot-chat-task` picks a task with completion:
+  - `copilot-chat-review`
+  - `copilot-chat-fix`
+  - `copilot-chat-doc`
+  - `copilot-chat-optimize`
+  - `copilot-chat-write-tests`
 
 ### Bug Fixes
 

@@ -853,6 +853,60 @@
       (copilot-chat--default-model)
       (expect 'copilot-chat--chat-models :to-have-been-called-times 1)))
 
+  (describe "copilot-chat--model-supports-tools-p"
+    (it "returns non-nil when the model reports tool support"
+      (spy-on 'copilot-chat--chat-models :and-return-value
+              (list (list :id "gpt-4o"
+                          :capabilities (list :supports (list :tool_calls t)))))
+      (expect (copilot-chat--model-supports-tools-p "gpt-4o") :to-be-truthy))
+
+    (it "returns nil when the model reports no tool support"
+      (spy-on 'copilot-chat--chat-models :and-return-value
+              (list (list :id "gpt-4o"
+                          :capabilities (list :supports
+                                              (list :tool_calls :json-false)))))
+      (expect (copilot-chat--model-supports-tools-p "gpt-4o") :to-be nil))
+
+    (it "assumes support when capabilities are absent"
+      (spy-on 'copilot-chat--chat-models :and-return-value
+              (list (list :id "auto")))
+      (expect (copilot-chat--model-supports-tools-p "auto") :to-be-truthy))
+
+    (it "assumes support when the model is unknown"
+      (spy-on 'copilot-chat--chat-models :and-return-value nil)
+      (expect (copilot-chat--model-supports-tools-p "mystery") :to-be-truthy)))
+
+  (describe "copilot-chat--maybe-warn-model-lacks-tools"
+    (before-each
+      (spy-on 'message))
+
+    (it "warns in agent mode when the model can't call tools"
+      (let ((copilot-chat-use-agent-mode t))
+        (spy-on 'copilot-chat--model :and-return-value "gpt-4o")
+        (spy-on 'copilot-chat--model-supports-tools-p :and-return-value nil)
+        (copilot-chat--maybe-warn-model-lacks-tools)
+        (expect 'message :to-have-been-called)))
+
+    (it "stays quiet when the model supports tools"
+      (let ((copilot-chat-use-agent-mode t))
+        (spy-on 'copilot-chat--model :and-return-value "gpt-4o")
+        (spy-on 'copilot-chat--model-supports-tools-p :and-return-value t)
+        (copilot-chat--maybe-warn-model-lacks-tools)
+        (expect 'message :not :to-have-been-called)))
+
+    (it "stays quiet when agent mode is off"
+      (let ((copilot-chat-use-agent-mode nil))
+        (spy-on 'copilot-chat--model-supports-tools-p)
+        (copilot-chat--maybe-warn-model-lacks-tools)
+        (expect 'copilot-chat--model-supports-tools-p :not :to-have-been-called)
+        (expect 'message :not :to-have-been-called)))
+
+    (it "never signals when tool support can't be determined"
+      (let ((copilot-chat-use-agent-mode t))
+        (spy-on 'copilot-chat--model :and-return-value "gpt-4o")
+        (spy-on 'copilot-chat--model-supports-tools-p :and-throw-error 'error)
+        (expect (copilot-chat--maybe-warn-model-lacks-tools) :not :to-throw))))
+
   ;;
   ;; Streaming cancellation
   ;;

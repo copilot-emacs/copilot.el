@@ -2228,6 +2228,165 @@
             (copilot-mcp-servers '(:fetch (:command "uvx"))))
         (copilot-chat-list-mcp-tools)
         (with-current-buffer "*copilot-mcp-tools*"
-          (expect (buffer-string) :to-match "reported yet"))))))
+          (expect (buffer-string) :to-match "reported yet")))))
+
+  ;;
+  ;; Commit message generation
+  ;;
+
+  (describe "copilot-chat--staged-diff"
+    (it "errors when not inside a git repository"
+      (spy-on 'locate-dominating-file :and-return-value nil)
+      (expect (copilot-chat--staged-diff) :to-throw 'user-error))
+
+    (it "errors when there are no staged changes"
+      (spy-on 'locate-dominating-file :and-return-value "/tmp/repo/")
+      (spy-on 'call-process :and-return-value 0)
+      (expect (copilot-chat--staged-diff) :to-throw 'user-error))
+
+    (it "errors when git fails"
+      (spy-on 'locate-dominating-file :and-return-value "/tmp/repo/")
+      (spy-on 'call-process :and-return-value 128)
+      (expect (copilot-chat--staged-diff) :to-throw 'user-error))
+
+    (it "returns the staged diff, collected from the repository root"
+      (spy-on 'locate-dominating-file :and-return-value "/tmp/repo/")
+      (let ((git-dir nil))
+        (spy-on 'call-process :and-call-fake
+                (lambda (&rest _args)
+                  (setq git-dir default-directory)
+                  (insert "diff --git a/f b/f\n+new line\n")
+                  0))
+        (expect (copilot-chat--staged-diff)
+                :to-equal "diff --git a/f b/f\n+new line\n")
+        (expect git-dir :to-equal "/tmp/repo/"))))
+
+  (describe "copilot-chat--commit-message-request"
+    (it "prepends the prompt to the staged diff"
+      (spy-on 'copilot-chat--staged-diff :and-return-value "THE DIFF")
+      (let ((copilot-chat-commit-message-prompt "Write a commit message."))
+        (expect (copilot-chat--commit-message-request)
+                :to-equal "Write a commit message.\n\nTHE DIFF"))))
+
+  (describe "copilot-chat--strip-code-fences"
+    (it "strips a fence wrapping the whole reply"
+      (expect (copilot-chat--strip-code-fences "```\nfeat: x\n\nbody\n```")
+              :to-equal "feat: x\n\nbody"))
+
+    (it "strips a fence with a language tag and trailing whitespace"
+      (expect (copilot-chat--strip-code-fences "```text\nfeat: x\n```\n")
+              :to-equal "feat: x"))
+
+    (it "leaves an unfenced reply alone, trimmed"
+      (expect (copilot-chat--strip-code-fences "feat: x\n\nbody\n")
+              :to-equal "feat: x\n\nbody"))
+
+    (it "keeps a fence that does not wrap the whole reply"
+      (expect (copilot-chat--strip-code-fences "feat: x\n\n```\ncode\n```")
+              :to-equal "feat: x\n\n```\ncode\n```")))
+
+  (describe "copilot-chat--handle-progress with a function sink"
+    (it "passes progress values to the sink and unregisters it on end"
+      (let* ((seen '())
+             (copilot-chat--active-buffers
+              (list (cons "tok" (lambda (value) (push value seen))))))
+        (copilot-chat--handle-progress
+         (list :token "tok" :value '(:kind "report" :reply "x")))
+        (copilot-chat--handle-progress
+         (list :token "tok" :value '(:kind "end")))
+        (expect (length seen) :to-equal 2)
+        (expect copilot-chat--active-buffers :not :to-be-truthy))))
+
+  (describe "copilot-chat--one-shot"
+    (it "collects the streamed reply and destroys the conversation"
+      (let ((copilot-chat--active-buffers nil)
+            (requests '())
+            (results '()))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'copilot-chat--default-model :and-return-value nil)
+        (spy-on 'jsonrpc--async-request-1
+                :and-call-fake
+                (lambda (_conn method params &rest args)
+                  (push (cons method params) requests)
+                  (when (eq method 'conversation/create)
+                    (funcall (plist-get args :success-fn)
+                             '(:conversationId "conv-1" :turnId "t-1")))
+                  (cons 1 nil)))
+        (copilot-chat--one-shot
+         "hello"
+         (lambda (reply error-msg) (push (list reply error-msg) results)))
+        (let ((token (plist-get (cdr (assq 'conversation/create requests))
+                                :workDoneToken)))
+          (copilot-chat--handle-progress
+           (list :token token :value '(:kind "report" :reply "feat: ")))
+          (copilot-chat--handle-progress
+           (list :token token :value '(:kind "report" :reply "thing")))
+          (copilot-chat--handle-progress
+           (list :token token :value '(:kind "end"))))
+        (expect results :to-equal '(("feat: thing" nil)))
+        (expect (plist-get (cdr (assq 'conversation/destroy requests))
+                           :conversationId)
+                :to-equal "conv-1")
+        (expect copilot-chat--active-buffers :not :to-be-truthy)))
+
+    (it "reports a request error and unregisters the token"
+      (let ((copilot-chat--active-buffers nil)
+            (results '()))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'copilot-chat--default-model :and-return-value nil)
+        (spy-on 'jsonrpc--async-request-1
+                :and-call-fake
+                (lambda (_conn _method _params &rest args)
+                  (funcall (plist-get args :error-fn) "boom")
+                  (cons 1 nil)))
+        (copilot-chat--one-shot
+         "hello"
+         (lambda (reply error-msg) (push (list reply error-msg) results)))
+        (expect results :to-equal '((nil "boom")))
+        (expect copilot-chat--active-buffers :not :to-be-truthy))))
+
+  (describe "copilot-chat-insert-commit-message"
+    (it "errors before sending when the diff cannot be collected"
+      (spy-on 'copilot-chat--staged-diff :and-throw-error 'user-error)
+      (spy-on 'copilot-chat--one-shot)
+      (expect (copilot-chat-insert-commit-message) :to-throw 'user-error)
+      (expect 'copilot-chat--one-shot :not :to-have-been-called))
+
+    (it "sends the prompt followed by the staged diff"
+      (spy-on 'copilot-chat--staged-diff :and-return-value "THE DIFF")
+      (spy-on 'copilot-chat--one-shot)
+      (spy-on 'message)
+      (let ((copilot-chat-commit-message-prompt "PROMPT"))
+        (with-temp-buffer (copilot-chat-insert-commit-message)))
+      (expect (car (spy-calls-args-for 'copilot-chat--one-shot 0))
+              :to-equal "PROMPT\n\nTHE DIFF"))
+
+    (it "inserts the fence-stripped reply into the originating buffer"
+      (let ((reply-fn nil))
+        (spy-on 'copilot-chat--staged-diff :and-return-value "diff")
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'message)
+        (with-temp-buffer
+          (copilot-chat-insert-commit-message)
+          (let ((origin (current-buffer)))
+            ;; The reply arrives later, with another buffer current.
+            (with-temp-buffer
+              (funcall reply-fn "```\nfeat: add thing\n```" nil))
+            (expect (with-current-buffer origin (buffer-string))
+                    :to-equal "feat: add thing")))))
+
+    (it "reports a server error instead of inserting"
+      (let ((reply-fn nil))
+        (spy-on 'copilot-chat--staged-diff :and-return-value "diff")
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'message)
+        (with-temp-buffer
+          (copilot-chat-insert-commit-message)
+          (funcall reply-fn nil "boom")
+          (expect (buffer-string) :to-equal ""))))))
 
 ;;; copilot-chat-test.el ends here

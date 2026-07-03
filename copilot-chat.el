@@ -152,6 +152,18 @@ extra entries become available through `copilot-chat-task'."
   :group 'copilot-chat
   :package-version '(copilot . "0.8"))
 
+(defcustom copilot-chat-commit-message-prompt
+  "Write a commit message for the following staged diff.
+Use the conventional commit format: a concise summary line of at most
+72 characters, then a blank line, then an optional short body explaining
+the why behind the change.  Return ONLY the commit message text, without
+markdown code fences and without any commentary."
+  "Instruction prepended to the staged diff when generating a commit message.
+Used by `copilot-chat-insert-commit-message'."
+  :type 'string
+  :group 'copilot-chat
+  :package-version '(copilot . "0.8"))
+
 (defface copilot-chat-error-face
   '((t :inherit error))
   "Face for error messages in the chat buffer."
@@ -222,7 +234,11 @@ A list of plists like (:type \"file\" :uri URI), sent as the turn's
 ;;
 
 (defvar copilot-chat--active-buffers nil
-  "Alist of (TOKEN . CHAT-BUFFER) for routing `$/progress'.")
+  "Alist of (TOKEN . SINK) for routing `$/progress'.
+SINK is normally the chat buffer the reply streams into, but it can also
+be a function called with each progress value (see
+`copilot-chat--collecting-sink'), which lets one-shot requests consume a
+reply without involving the chat buffer.")
 
 ;;
 ;; Buffer name
@@ -385,50 +401,85 @@ ERR may be a string, a structured object with a `:message', or absent."
   "Return MSG rendered as a styled chat error line."
   (propertize (format "[Error: %s]\n\n" msg) 'face 'copilot-chat-error-face))
 
+(defun copilot-chat--collecting-sink (callback)
+  "Return a progress sink that accumulates a whole reply for CALLBACK.
+The returned function consumes the `$/progress' values of one turn and
+concatenates the streamed reply chunks.  When the turn ends, CALLBACK is
+called with two arguments: the accumulated reply string and an error
+message string reported by the server (or nil)."
+  (let ((chunks '()))
+    (lambda (value)
+      (pcase (plist-get value :kind)
+        ("report"
+         (when-let* ((reply (copilot-chat--extract-reply value)))
+           (push reply chunks)))
+        ("end"
+         (let* ((result (plist-get value :result))
+                ;; The server normally sends an object here, but guard
+                ;; against any other shape.
+                (result (and (listp result) result)))
+           (funcall callback
+                    (apply #'concat (nreverse chunks))
+                    (copilot-chat--error-text (plist-get result :error)))))))))
+
 (defun copilot-chat--handle-progress (msg)
-  "Handle `$/progress' notification MSG for chat streaming."
+  "Handle `$/progress' notification MSG for chat streaming.
+Dispatch on the sink registered for the token in
+`copilot-chat--active-buffers': a function sink consumes the progress
+values itself, while a buffer sink streams the reply into the chat
+buffer."
   (copilot--dbind (token value) msg
     (when-let* ((entry (assoc token copilot-chat--active-buffers))
-                (chat-buf (cdr entry)))
-      (when (buffer-live-p chat-buf)
-        (with-current-buffer chat-buf
-          (let ((kind (plist-get value :kind)))
-            (cond
-             ((equal kind "begin")
-              (setq copilot-chat--streaming-p t)
-              (force-mode-line-update))
-             ((equal kind "report")
-              (when-let* ((reply (copilot-chat--extract-reply value)))
-                (let ((inhibit-read-only t))
-                  (goto-char (point-max))
-                  (insert reply))
-                (copilot-chat--scroll-to-bottom)))
-             ((equal kind "end")
-              (copilot-chat--end-streaming)
-              (let* ((result (plist-get value :result))
-                     ;; The server normally sends an object here, but
-                     ;; guard against any other shape.
-                     (result (and (listp result) result))
-                     (error-msg (copilot-chat--error-text
-                                 (plist-get result :error))))
-                ;; Reset the follow-up every turn so a stale one from a
-                ;; previous turn is never re-inserted.
-                (setq copilot-chat--follow-up (plist-get result :followUp))
-                (let ((inhibit-read-only t))
-                  (goto-char (point-max))
-                  (insert "\n\n")
-                  ;; Surface a turn-level error the server reports at the
-                  ;; end, which would otherwise leave only an empty reply.
-                  (when error-msg
-                    (insert (copilot-chat--format-error error-msg)))
-                  (when (and (stringp copilot-chat--follow-up)
-                             (not (string-empty-p copilot-chat--follow-up)))
-                    (insert (propertize
-                             (format "Follow-up: %s\n\n" copilot-chat--follow-up)
-                             'face 'copilot-chat-follow-up-face)))))
-              (copilot-chat--scroll-to-bottom)
+                (sink (cdr entry)))
+      (if (functionp sink)
+          (progn
+            (funcall sink value)
+            (when (equal (plist-get value :kind) "end")
               (setq copilot-chat--active-buffers
-                    (assoc-delete-all token copilot-chat--active-buffers))))))))))
+                    (assoc-delete-all token copilot-chat--active-buffers))))
+        (copilot-chat--handle-buffer-progress token sink value)))))
+
+(defun copilot-chat--handle-buffer-progress (token chat-buf value)
+  "Stream the progress VALUE of turn TOKEN into CHAT-BUF."
+  (when (buffer-live-p chat-buf)
+    (with-current-buffer chat-buf
+      (let ((kind (plist-get value :kind)))
+        (cond
+         ((equal kind "begin")
+          (setq copilot-chat--streaming-p t)
+          (force-mode-line-update))
+         ((equal kind "report")
+          (when-let* ((reply (copilot-chat--extract-reply value)))
+            (let ((inhibit-read-only t))
+              (goto-char (point-max))
+              (insert reply))
+            (copilot-chat--scroll-to-bottom)))
+         ((equal kind "end")
+          (copilot-chat--end-streaming)
+          (let* ((result (plist-get value :result))
+                 ;; The server normally sends an object here, but
+                 ;; guard against any other shape.
+                 (result (and (listp result) result))
+                 (error-msg (copilot-chat--error-text
+                             (plist-get result :error))))
+            ;; Reset the follow-up every turn so a stale one from a
+            ;; previous turn is never re-inserted.
+            (setq copilot-chat--follow-up (plist-get result :followUp))
+            (let ((inhibit-read-only t))
+              (goto-char (point-max))
+              (insert "\n\n")
+              ;; Surface a turn-level error the server reports at the
+              ;; end, which would otherwise leave only an empty reply.
+              (when error-msg
+                (insert (copilot-chat--format-error error-msg)))
+              (when (and (stringp copilot-chat--follow-up)
+                         (not (string-empty-p copilot-chat--follow-up)))
+                (insert (propertize
+                         (format "Follow-up: %s\n\n" copilot-chat--follow-up)
+                         'face 'copilot-chat-follow-up-face)))))
+          (copilot-chat--scroll-to-bottom)
+          (setq copilot-chat--active-buffers
+                (assoc-delete-all token copilot-chat--active-buffers))))))))
 
 (copilot-on-notification '$/progress #'copilot-chat--handle-progress)
 
@@ -1367,6 +1418,63 @@ CALLBACK is called with the response containing conversationId and turnId."
           (copilot-chat--end-streaming)
           (copilot-chat--remove-active-tokens chat-buf))))))
 
+(defun copilot-chat--destroy-one-shot (conversation-id)
+  "Destroy the one-shot conversation CONVERSATION-ID, if any.
+A nil CONVERSATION-ID and a dead connection are both quietly ignored:
+the conversation is throwaway, so there is nothing useful to report."
+  (when (and conversation-id (copilot--connection-alivep))
+    (copilot--async-request
+     'conversation/destroy
+     (list :conversationId conversation-id))))
+
+(defun copilot-chat--one-shot (message callback)
+  "Send MESSAGE as a stand-alone, throwaway conversation.
+The reply is accumulated internally instead of streaming into the chat
+buffer, so this neither needs the chat panel nor disturbs an ongoing
+conversation there.  CALLBACK is called with the complete reply string
+and an error message string (or nil) once the turn finishes, after which
+the conversation is destroyed."
+  (let ((token (format "copilot-chat-one-shot-%s" (float-time)))
+        (conversation-id nil)
+        (finished nil))
+    (push (cons token
+                (copilot-chat--collecting-sink
+                 (lambda (reply error-msg)
+                   (setq finished t)
+                   ;; When the reply somehow completes before the create
+                   ;; response has delivered the conversation id, the
+                   ;; success handler below destroys the conversation.
+                   (copilot-chat--destroy-one-shot conversation-id)
+                   (funcall callback reply error-msg))))
+          copilot-chat--active-buffers)
+    (copilot--async-request
+     'conversation/create
+     (append
+      (list :workDoneToken token
+            :turns (vector
+                    (list :request message
+                          :response ""
+                          :turnId ""))
+            ;; No editor context: the request carries everything it needs.
+            :capabilities (list :skills (vector)
+                                :allSkills :json-false)
+            :source "panel")
+      (copilot-chat--model-param)
+      (list :workspaceFolders
+            (vconcat
+             (when-let* ((root (copilot--workspace-root)))
+               (list (list :uri (concat "file://" root)
+                           :name (file-name-nondirectory
+                                  (directory-file-name root))))))))
+     :success-fn (lambda (result)
+                   (setq conversation-id (plist-get result :conversationId))
+                   (when finished
+                     (copilot-chat--destroy-one-shot conversation-id)))
+     :error-fn (lambda (err)
+                 (setq copilot-chat--active-buffers
+                       (assoc-delete-all token copilot-chat--active-buffers))
+                 (funcall callback nil (format "%s" err))))))
+
 ;;
 ;; UI helpers
 ;;
@@ -1547,6 +1655,77 @@ The context points at the current file with the region's range."
     (with-current-buffer buf
       (copilot-chat--consume-references)))
   (message "Copilot Chat: Cleared pending context"))
+
+;;
+;; Commit message generation
+;;
+
+(defun copilot-chat--staged-diff ()
+  "Return the staged diff of the repository around `default-directory'.
+The diff is taken from the repository root, so all staged changes are
+included regardless of the buffer's own directory.  Signal a
+`user-error' when there is no repository, when git fails, or when
+nothing is staged."
+  (let ((root (locate-dominating-file default-directory ".git")))
+    (unless root
+      (user-error "Copilot Chat: Not inside a git repository"))
+    (let* ((default-directory root)
+           (diff (with-temp-buffer
+                   (let ((status (call-process "git" nil t nil
+                                               "diff" "--cached" "--no-color")))
+                     (unless (eql status 0)
+                       (user-error "Copilot Chat: git diff failed (%s)" status)))
+                   (buffer-string))))
+      (when (string-empty-p (string-trim diff))
+        (user-error "Copilot Chat: No staged changes"))
+      diff)))
+
+(defun copilot-chat--commit-message-request ()
+  "Return the chat message asking for a commit message for the staged diff."
+  (concat copilot-chat-commit-message-prompt "\n\n" (copilot-chat--staged-diff)))
+
+(defun copilot-chat--strip-code-fences (reply)
+  "Return REPLY without enclosing markdown code fences, trimmed.
+The model is asked not to fence the commit message, but strip a fence
+wrapping the whole reply defensively when it adds one anyway."
+  (let ((text (string-trim reply)))
+    (if (string-match "\\````[^\n]*\n\\(\\(?:.\\|\n\\)*?\\)\n?```\\'" text)
+        (string-trim (match-string 1 text))
+      text)))
+
+;;;###autoload
+(defun copilot-chat-insert-commit-message ()
+  "Generate a commit message from the staged diff and insert it at point.
+Meant to be called from a commit message buffer (e.g. Magit's
+COMMIT_EDITMSG), but works from any buffer inside a git repository.
+The staged diff is sent to Copilot with
+`copilot-chat-commit-message-prompt', and the reply is inserted
+asynchronously at point once it arrives.  The request runs outside the
+chat panel and does not disturb an ongoing chat conversation."
+  (interactive)
+  (let ((request (copilot-chat--commit-message-request))
+        (buf (current-buffer))
+        (pos (point-marker)))
+    (message "Copilot Chat: Generating commit message...")
+    (copilot-chat--one-shot
+     request
+     (lambda (reply error-msg)
+       (let ((reply (and reply (copilot-chat--strip-code-fences reply))))
+         (cond
+          (error-msg
+           (message "Copilot Chat: Commit message generation failed: %s"
+                    error-msg))
+          ((or (null reply) (string-empty-p reply))
+           (message "Copilot Chat: Got an empty commit message"))
+          ((not (buffer-live-p buf))
+           (message "Copilot Chat: Commit message buffer is gone"))
+          (t
+           (with-current-buffer buf
+             (save-excursion
+               (goto-char pos)
+               (insert reply)))
+           (set-marker pos nil)
+           (message "Copilot Chat: Commit message inserted"))))))))
 
 ;;
 ;; Major mode

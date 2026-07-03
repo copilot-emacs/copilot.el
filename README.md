@@ -250,6 +250,8 @@ Attach extra context for the next message with `copilot-chat-add-file-reference`
 
 The chat buffer's header line shows at a glance whether Agent or Ask mode is active, which model answers, and in agent mode how many tools are available. Set `copilot-chat-show-status-header` to `nil` to hide it; the setting is read when the chat buffer is created, so it takes effect for new chat buffers.
 
+`copilot-chat-insert-commit-message` generates a commit message from the staged changes and inserts it at point. It is meant to be called from a commit message buffer (e.g. Magit's `COMMIT_EDITMSG` or any `git-commit` buffer), but works from any buffer inside a git repository. It runs outside the chat panel, so it never disturbs an ongoing conversation; the instruction sent along with the diff can be customized via `copilot-chat-commit-message-prompt`.
+
 Customization:
 - **`copilot-chat-model`** — model to use for chat (default `nil`, meaning a default chat model is resolved from the server)
 - **`copilot-chat-use-agent-mode`** — let Copilot run tools (shell commands, file edits, reads, etc.) during a chat (default `nil`)
@@ -463,6 +465,7 @@ For example:
 | `copilot-chat-write-tests` | Write tests for the region or defun at point |
 | `copilot-chat-stop` | Cancel streaming, or reset the conversation if idle |
 | `copilot-chat-reset` | Destroy the current conversation and clear the chat buffer |
+| `copilot-chat-insert-commit-message` | Generate a commit message for the staged changes and insert it at point |
 | **Next Edit Suggestions** | |
 | `copilot-nes-mode` | Toggle NES in the current buffer |
 | `copilot-nes-accept` | Accept (or jump to) the current NES suggestion |

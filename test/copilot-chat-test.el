@@ -60,10 +60,16 @@
         (expect (lookup-key copilot-chat-mode-map (kbd "C-c C-i"))
                 :to-equal #'copilot-chat-insert-code-block)))
 
-    (it "sets a status header line"
+    (it "sets a status header line whose :eval yields the status string"
       (with-temp-buffer
         (copilot-chat-mode)
-        (expect header-line-format :to-be-truthy)))
+        (expect header-line-format :to-be-truthy)
+        ;; Evaluate the actual `(:eval FORM)' element the way redisplay
+        ;; would, so a typo in the referenced function fails the test.
+        (expect (car header-line-format) :to-be :eval)
+        (expect (substring-no-properties (eval (nth 1 header-line-format) t))
+                :to-equal
+                (substring-no-properties (copilot-chat--status-header)))))
 
     (it "sets no header line when copilot-chat-show-status-header is nil"
       (let ((copilot-chat-show-status-header nil))
@@ -115,7 +121,7 @@
                 :tools [(:name "store")]))))
         (expect (substring-no-properties (copilot-chat--status-header))
                 :to-match
-                (format "%d tools\\'"
+                (format "  %d tools\\'"
                         (+ 3 (length (copilot-chat--client-tool-names))))))))
 
   ;;

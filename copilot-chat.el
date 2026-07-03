@@ -240,6 +240,11 @@ be a function called with each progress value (see
 `copilot-chat--collecting-sink'), which lets one-shot requests consume a
 reply without involving the chat buffer.")
 
+(defvar copilot-chat--one-shot-requests nil
+  "Alist of (TOKEN . REQUEST-ID) for in-flight one-shot conversations.
+Lets `copilot-chat-stop' cancel a pending one-shot instead of resetting
+the chat conversation.")
+
 ;;
 ;; Buffer name
 ;;
@@ -433,10 +438,15 @@ buffer."
                 (sink (cdr entry)))
       (if (functionp sink)
           (progn
-            (funcall sink value)
+            ;; Unregister before invoking the sink: if the sink's
+            ;; callback signals (it runs arbitrary user-facing code),
+            ;; the entry must not leak in the alist forever.
             (when (equal (plist-get value :kind) "end")
               (setq copilot-chat--active-buffers
-                    (assoc-delete-all token copilot-chat--active-buffers))))
+                    (assoc-delete-all token copilot-chat--active-buffers))
+              (setq copilot-chat--one-shot-requests
+                    (assoc-delete-all token copilot-chat--one-shot-requests)))
+            (funcall sink value))
         (copilot-chat--handle-buffer-progress token sink value)))))
 
 (defun copilot-chat--handle-buffer-progress (token chat-buf value)
@@ -1427,53 +1437,112 @@ the conversation is throwaway, so there is nothing useful to report."
      'conversation/destroy
      (list :conversationId conversation-id))))
 
+(defun copilot-chat--cancel-one-shots ()
+  "Cancel all in-flight one-shot requests.
+Their callbacks are invoked with a cancellation error so the initiating
+commands can report it.  Return non-nil when anything was cancelled."
+  (when copilot-chat--one-shot-requests
+    (let ((pending copilot-chat--one-shot-requests))
+      (setq copilot-chat--one-shot-requests nil)
+      (dolist (entry pending)
+        (let* ((token (car entry))
+               (request-id (cdr entry))
+               (sink (cdr (assoc token copilot-chat--active-buffers))))
+          (when (and request-id (copilot--connection-alivep))
+            (jsonrpc-notify copilot--connection '$/cancelRequest
+                            (list :id request-id)))
+          (setq copilot-chat--active-buffers
+                (assoc-delete-all token copilot-chat--active-buffers))
+          (when (functionp sink)
+            (funcall sink '(:kind "end" :result (:error "Cancelled")))))))
+    t))
+
 (defun copilot-chat--one-shot (message callback)
   "Send MESSAGE as a stand-alone, throwaway conversation.
 The reply is accumulated internally instead of streaming into the chat
 buffer, so this neither needs the chat panel nor disturbs an ongoing
 conversation there.  CALLBACK is called with the complete reply string
 and an error message string (or nil) once the turn finishes, after which
-the conversation is destroyed."
-  (let ((token (format "copilot-chat-one-shot-%s" (float-time)))
-        (conversation-id nil)
-        (finished nil))
-    (push (cons token
-                (copilot-chat--collecting-sink
-                 (lambda (reply error-msg)
-                   (setq finished t)
-                   ;; When the reply somehow completes before the create
-                   ;; response has delivered the conversation id, the
-                   ;; success handler below destroys the conversation.
-                   (copilot-chat--destroy-one-shot conversation-id)
-                   (funcall callback reply error-msg))))
-          copilot-chat--active-buffers)
-    (copilot--async-request
-     'conversation/create
-     (append
-      (list :workDoneToken token
-            :turns (vector
-                    (list :request message
-                          :response ""
-                          :turnId ""))
-            ;; No editor context: the request carries everything it needs.
-            :capabilities (list :skills (vector)
-                                :allSkills :json-false)
-            :source "panel")
-      (copilot-chat--model-param)
-      (list :workspaceFolders
-            (vconcat
-             (when-let* ((root (copilot--workspace-root)))
-               (list (list :uri (concat "file://" root)
-                           :name (file-name-nondirectory
-                                  (directory-file-name root))))))))
-     :success-fn (lambda (result)
-                   (setq conversation-id (plist-get result :conversationId))
-                   (when finished
-                     (copilot-chat--destroy-one-shot conversation-id)))
-     :error-fn (lambda (err)
-                 (setq copilot-chat--active-buffers
-                       (assoc-delete-all token copilot-chat--active-buffers))
-                 (funcall callback nil (format "%s" err))))))
+the conversation is destroyed.  Cancellable with `copilot-chat-stop'."
+  (let* ((token (format "copilot-chat-one-shot-%s" (float-time)))
+         (conversation-id nil)
+         (finished nil)
+         (called nil)
+         (errored nil)
+         ;; The server can end the turn and then fail the create
+         ;; response, or cancellation can race the reply; make sure the
+         ;; caller only ever hears back once.
+         (callback-once (lambda (reply error-msg)
+                          (unless called
+                            (setq called t)
+                            (funcall callback reply error-msg))))
+         (request-id
+          ;; Issue the request BEFORE registering the sink: starting the
+          ;; server can signal (e.g. binary not installed), and nothing
+          ;; must be left behind in the alist when it does.  Progress
+          ;; can't arrive before we get to register: notifications are
+          ;; only processed when Emacs reads process output.
+          ;;
+          ;; The response handlers below don't touch the calling buffer,
+          ;; but `copilot--async-request' drops the success handler when
+          ;; the buffer current at call time has been killed; issue the
+          ;; call from a buffer that is always live so an aborted commit
+          ;; buffer can't prevent the conversation id from being
+          ;; recorded (and the throwaway conversation from being
+          ;; destroyed).
+          (with-current-buffer (get-buffer-create " *copilot-chat-one-shot*")
+            (copilot--async-request
+             'conversation/create
+             (append
+              (list :workDoneToken token
+                    :turns (vector
+                            (list :request message
+                                  :response ""
+                                  :turnId ""))
+                    ;; No editor context: the request carries everything
+                    ;; it needs.
+                    :capabilities (list :skills (vector)
+                                        :allSkills :json-false)
+                    :source "panel")
+              (copilot-chat--model-param)
+              (list :workspaceFolders
+                    (vconcat
+                     (when-let* ((root (copilot--workspace-root)))
+                       (list (list :uri (concat "file://" root)
+                                   :name (file-name-nondirectory
+                                          (directory-file-name root))))))))
+             :success-fn (lambda (result)
+                           (setq conversation-id
+                                 (plist-get result :conversationId))
+                           (when finished
+                             (copilot-chat--destroy-one-shot conversation-id)))
+             :error-fn (lambda (err)
+                         ;; The flag covers an error delivered before the
+                         ;; registration below has even happened, in
+                         ;; which case the alist cleanups are no-ops.
+                         (setq errored t)
+                         (setq copilot-chat--active-buffers
+                               (assoc-delete-all
+                                token copilot-chat--active-buffers))
+                         (setq copilot-chat--one-shot-requests
+                               (assoc-delete-all
+                                token copilot-chat--one-shot-requests))
+                         (funcall callback-once nil
+                                  (or (copilot-chat--error-text err)
+                                      (format "%s" err))))))))
+    (unless errored
+      (push (cons token
+                  (copilot-chat--collecting-sink
+                   (lambda (reply error-msg)
+                     (setq finished t)
+                     ;; When the reply somehow completes before the
+                     ;; create response has delivered the conversation
+                     ;; id, the success handler above destroys the
+                     ;; conversation.
+                     (copilot-chat--destroy-one-shot conversation-id)
+                     (funcall callback-once reply error-msg))))
+            copilot-chat--active-buffers)
+      (push (cons token request-id) copilot-chat--one-shot-requests))))
 
 ;;
 ;; UI helpers
@@ -1662,23 +1731,25 @@ The context points at the current file with the region's range."
 
 (defun copilot-chat--staged-diff ()
   "Return the staged diff of the repository around `default-directory'.
-The diff is taken from the repository root, so all staged changes are
-included regardless of the buffer's own directory.  Signal a
-`user-error' when there is no repository, when git fails, or when
-nothing is staged."
-  (let ((root (locate-dominating-file default-directory ".git")))
-    (unless root
-      (user-error "Copilot Chat: Not inside a git repository"))
-    (let* ((default-directory root)
-           (diff (with-temp-buffer
-                   (let ((status (call-process "git" nil t nil
-                                               "diff" "--cached" "--no-color")))
-                     (unless (eql status 0)
-                       (user-error "Copilot Chat: git diff failed (%s)" status)))
-                   (buffer-string))))
-      (when (string-empty-p (string-trim diff))
-        (user-error "Copilot Chat: No staged changes"))
-      diff)))
+Run git in `default-directory' and let it resolve the repository
+itself: hunting for the root manually (e.g. `locate-dominating-file')
+picks the wrong index for linked worktrees, whose COMMIT_EDITMSG lives
+under the main checkout's .git directory.  Use `process-file' so remote
+\(TRAMP) buffers diff the remote repository rather than silently running
+git locally.  Signal a `user-error' when there is no repository, when
+git fails, or when nothing is staged."
+  (let* ((exit nil)
+         (diff (with-temp-buffer
+                 (setq exit (process-file "git" nil t nil
+                                          "diff" "--cached" "--no-color"))
+                 (buffer-string))))
+    (unless (eql exit 0)
+      (user-error
+       "Copilot Chat: git diff failed (%s); not inside a git repository?"
+       exit))
+    (when (string-empty-p (string-trim diff))
+      (user-error "Copilot Chat: No staged changes"))
+    diff))
 
 (defun copilot-chat--commit-message-request ()
   "Return the chat message asking for a commit message for the staged diff."
@@ -1689,7 +1760,8 @@ nothing is staged."
 The model is asked not to fence the commit message, but strip a fence
 wrapping the whole reply defensively when it adds one anyway."
   (let ((text (string-trim reply)))
-    (if (string-match "\\````[^\n]*\n\\(\\(?:.\\|\n\\)*?\\)\n?```\\'" text)
+    ;; Fences are three or more backticks (models occasionally use four).
+    (if (string-match "\\``\\{3,\\}[^\n]*\n\\(\\(?:.\\|\n\\)*?\\)\n?`\\{3,\\}\\'" text)
         (string-trim (match-string 1 text))
       text)))
 
@@ -1719,6 +1791,12 @@ chat panel and does not disturb an ongoing chat conversation."
            (message "Copilot Chat: Got an empty commit message"))
           ((not (buffer-live-p buf))
            (message "Copilot Chat: Commit message buffer is gone"))
+          ((buffer-local-value 'buffer-read-only buf)
+           ;; Don't signal inside the jsonrpc process filter; salvage
+           ;; the reply instead.
+           (kill-new reply)
+           (message
+            "Copilot Chat: Buffer is read-only; commit message copied to kill ring"))
           (t
            (with-current-buffer buf
              (save-excursion
@@ -2037,20 +2115,24 @@ command."
 ;;;###autoload
 (defun copilot-chat-stop ()
   "Cancel the in-flight request and stop streaming.
-If not currently streaming, reset the conversation instead."
+When nothing is streaming in the chat buffer, cancel any pending
+one-shot request (e.g. `copilot-chat-insert-commit-message') instead;
+only when there is nothing to cancel at all, reset the conversation."
   (interactive)
   (let ((chat-buf (get-buffer copilot-chat--buffer-name)))
-    (if (and chat-buf
-             (buffer-local-value 'copilot-chat--streaming-p chat-buf))
-        (with-current-buffer chat-buf
-          (when (and copilot-chat--request-id (copilot--connection-alivep))
-            (jsonrpc-notify copilot--connection
-                            '$/cancelRequest
-                            (list :id copilot-chat--request-id)))
-          (copilot-chat--end-streaming)
-          (copilot-chat--insert-error "Cancelled")
-          (copilot-chat--remove-active-tokens chat-buf))
-      (copilot-chat-reset))))
+    (cond
+     ((and chat-buf
+           (buffer-local-value 'copilot-chat--streaming-p chat-buf))
+      (with-current-buffer chat-buf
+        (when (and copilot-chat--request-id (copilot--connection-alivep))
+          (jsonrpc-notify copilot--connection
+                          '$/cancelRequest
+                          (list :id copilot-chat--request-id)))
+        (copilot-chat--end-streaming)
+        (copilot-chat--insert-error "Cancelled")
+        (copilot-chat--remove-active-tokens chat-buf)))
+     ((copilot-chat--cancel-one-shots))
+     (t (copilot-chat-reset)))))
 
 ;;;###autoload
 (defun copilot-chat-reset ()

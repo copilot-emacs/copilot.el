@@ -67,7 +67,10 @@ optional description string)."
                          copilot-uninstall-server
                          copilot-diagnose
                          copilot-menu-open-log))
-        (expect commands :to-contain command))))
+        (expect commands :to-contain command))
+      ;; Exactly these, so a future suffix shape the walker doesn't
+      ;; understand cannot silently drop commands from the check.
+      (expect (length commands) :to-equal 20)))
 
   (describe "copilot-menu-toggle-agent-mode"
     (it "flips copilot-chat-use-agent-mode"

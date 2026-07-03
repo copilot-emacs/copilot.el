@@ -2235,31 +2235,23 @@
   ;;
 
   (describe "copilot-chat--staged-diff"
+    ;; Real git in temp directories: the earlier spy-based specs stubbed
+    ;; out exactly the root resolution this function must get right.
     (it "errors when not inside a git repository"
-      (spy-on 'locate-dominating-file :and-return-value nil)
-      (expect (copilot-chat--staged-diff) :to-throw 'user-error))
+      (let ((default-directory (make-temp-file "copilot-no-repo" t)))
+        (expect (copilot-chat--staged-diff) :to-throw 'user-error)))
 
     (it "errors when there are no staged changes"
-      (spy-on 'locate-dominating-file :and-return-value "/tmp/repo/")
-      (spy-on 'call-process :and-return-value 0)
-      (expect (copilot-chat--staged-diff) :to-throw 'user-error))
+      (let ((default-directory (make-temp-file "copilot-repo" t)))
+        (process-file "git" nil nil nil "init" "-q")
+        (expect (copilot-chat--staged-diff) :to-throw 'user-error)))
 
-    (it "errors when git fails"
-      (spy-on 'locate-dominating-file :and-return-value "/tmp/repo/")
-      (spy-on 'call-process :and-return-value 128)
-      (expect (copilot-chat--staged-diff) :to-throw 'user-error))
-
-    (it "returns the staged diff, collected from the repository root"
-      (spy-on 'locate-dominating-file :and-return-value "/tmp/repo/")
-      (let ((git-dir nil))
-        (spy-on 'call-process :and-call-fake
-                (lambda (&rest _args)
-                  (setq git-dir default-directory)
-                  (insert "diff --git a/f b/f\n+new line\n")
-                  0))
-        (expect (copilot-chat--staged-diff)
-                :to-equal "diff --git a/f b/f\n+new line\n")
-        (expect git-dir :to-equal "/tmp/repo/"))))
+    (it "returns the staged diff with git resolving the repository"
+      (let ((default-directory (make-temp-file "copilot-repo" t)))
+        (process-file "git" nil nil nil "init" "-q")
+        (write-region "hello\n" nil (expand-file-name "f.txt") nil 'quiet)
+        (process-file "git" nil nil nil "add" "f.txt")
+        (expect (copilot-chat--staged-diff) :to-match "\\+hello"))))
 
   (describe "copilot-chat--commit-message-request"
     (it "prepends the prompt to the staged diff"
@@ -2283,7 +2275,11 @@
 
     (it "keeps a fence that does not wrap the whole reply"
       (expect (copilot-chat--strip-code-fences "feat: x\n\n```\ncode\n```")
-              :to-equal "feat: x\n\n```\ncode\n```")))
+              :to-equal "feat: x\n\n```\ncode\n```"))
+
+    (it "strips four-backtick fences"
+      (expect (copilot-chat--strip-code-fences "````\nfeat: x\n````")
+              :to-equal "feat: x")))
 
   (describe "copilot-chat--handle-progress with a function sink"
     (it "passes progress values to the sink and unregisters it on end"
@@ -2295,7 +2291,17 @@
         (copilot-chat--handle-progress
          (list :token "tok" :value '(:kind "end")))
         (expect (length seen) :to-equal 2)
-        (expect copilot-chat--active-buffers :not :to-be-truthy))))
+        (expect copilot-chat--active-buffers :not :to-be-truthy)))
+
+    (it "unregisters the sink even when its callback signals"
+      (let ((copilot-chat--active-buffers
+             (list (cons "tok" (lambda (_value) (error "boom")))))
+            (copilot-chat--one-shot-requests '(("tok" . 1))))
+        (expect (copilot-chat--handle-progress
+                 (list :token "tok" :value '(:kind "end")))
+                :to-throw 'error)
+        (expect copilot-chat--active-buffers :not :to-be-truthy)
+        (expect copilot-chat--one-shot-requests :not :to-be-truthy))))
 
   (describe "copilot-chat--one-shot"
     (it "collects the streamed reply and destroys the conversation"
@@ -2343,7 +2349,35 @@
          "hello"
          (lambda (reply error-msg) (push (list reply error-msg) results)))
         (expect results :to-equal '((nil "boom")))
-        (expect copilot-chat--active-buffers :not :to-be-truthy))))
+        (expect copilot-chat--active-buffers :not :to-be-truthy)))
+
+    (it "registers nothing when the request cannot be issued"
+      (let ((copilot-chat--active-buffers nil)
+            (copilot-chat--one-shot-requests nil))
+        (spy-on 'copilot--connection-alivep :and-return-value nil)
+        (spy-on 'copilot--start-server :and-throw-error 'user-error)
+        (expect (copilot-chat--one-shot "hi" #'ignore) :to-throw 'user-error)
+        (expect copilot-chat--active-buffers :not :to-be-truthy)
+        (expect copilot-chat--one-shot-requests :not :to-be-truthy))))
+
+  (describe "copilot-chat-stop with a pending one-shot"
+    (it "cancels the one-shot instead of resetting the conversation"
+      (let* ((results '())
+             (copilot-chat--one-shot-requests '(("tok" . 42)))
+             (copilot-chat--active-buffers
+              (list (cons "tok"
+                          (copilot-chat--collecting-sink
+                           (lambda (reply err)
+                             (push (list reply err) results)))))))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc-notify)
+        (spy-on 'copilot-chat-reset)
+        (copilot-chat-stop)
+        (expect 'copilot-chat-reset :not :to-have-been-called)
+        (expect 'jsonrpc-notify :to-have-been-called)
+        (expect copilot-chat--active-buffers :not :to-be-truthy)
+        (expect copilot-chat--one-shot-requests :not :to-be-truthy)
+        (expect results :to-equal '(("" "Cancelled"))))))
 
   (describe "copilot-chat-insert-commit-message"
     (it "errors before sending when the diff cannot be collected"
@@ -2387,6 +2421,20 @@
         (with-temp-buffer
           (copilot-chat-insert-commit-message)
           (funcall reply-fn nil "boom")
-          (expect (buffer-string) :to-equal ""))))))
+          (expect (buffer-string) :to-equal ""))))
+
+    (it "copies the reply to the kill ring when the buffer is read-only"
+      (let ((reply-fn nil))
+        (spy-on 'copilot-chat--staged-diff :and-return-value "diff")
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'message)
+        (with-temp-buffer
+          (copilot-chat-insert-commit-message)
+          (setq buffer-read-only t)
+          (funcall reply-fn "feat: x" nil)
+          (expect (buffer-string) :to-equal ""))
+        (expect (current-kill 0) :to-equal "feat: x")))))
 
 ;;; copilot-chat-test.el ends here

@@ -11,7 +11,7 @@
   - `copilot-chat-doc`
   - `copilot-chat-optimize`
   - `copilot-chat-write-tests`
-- Add `copilot-chat-insert-commit-message` to generate a commit message from the staged changes and insert it at point (handy in a Magit or `git-commit` buffer), with the instruction sent to Copilot customizable via `copilot-chat-commit-message-prompt`.
+- Add `copilot-chat-insert-commit-message` to generate a commit message from the staged changes and insert it at point (handy in a Magit or `git-commit` buffer), with the instruction sent to Copilot customizable via `copilot-chat-commit-message-prompt` and a pending generation cancellable with `copilot-chat-stop`.
 
 ### Bug Fixes
 

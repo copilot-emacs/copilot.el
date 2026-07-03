@@ -238,6 +238,8 @@ Key bindings in the `*copilot-chat*` buffer:
 
 Attach extra context for the next message with `copilot-chat-add-file-reference` (`C-c C-f`) or `copilot-chat-add-region-reference`; `copilot-chat-clear-references` drops anything pending.
 
+The chat buffer's header line shows at a glance whether Agent or Ask mode is active, which model answers, and in agent mode how many tools are available. Set `copilot-chat-show-status-header` to `nil` to hide it.
+
 Customization:
 - **`copilot-chat-model`** — model to use for chat (default `nil`, meaning a default chat model is resolved from the server)
 - **`copilot-chat-use-agent-mode`** — let Copilot run tools (shell commands, file edits, reads, etc.) during a chat (default `nil`)

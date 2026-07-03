@@ -94,7 +94,7 @@
      "Transient menu for the most common Copilot commands."
      [["Completions"
        ("t" copilot-mode
-        :description (lambda () (copilot-menu--copilot-mode-description))
+        :description copilot-menu--copilot-mode-description
         :transient t)
        ("c" "Complete at point" copilot-complete)
        ("p" "Panel completions" copilot-panel-complete)]
@@ -105,10 +105,10 @@
        ("f" "Attach file as context" copilot-chat-add-file-reference)
        ("k" "Clear pending context" copilot-chat-clear-references)
        ("m" copilot-chat-select-model
-        :description (lambda () (copilot-menu--chat-model-description)))]
+        :description copilot-menu--chat-model-description)]
       ["Agent"
        ("a" copilot-menu-toggle-agent-mode
-        :description (lambda () (copilot-menu--agent-mode-description))
+        :description copilot-menu--agent-mode-description
         :transient t)
        ("T" "List MCP tools" copilot-chat-list-mcp-tools)]]
      [["Account"
@@ -136,10 +136,17 @@ transient releases are not installable.")
 (if (require 'transient nil t)
     (eval copilot-menu--definition t)
   (defun copilot-menu ()
-    "Placeholder for the Copilot menu when `transient' is missing."
+    "Placeholder for the Copilot menu when `transient' is missing.
+Retries loading transient, so installing it mid-session is picked up
+without re-loading copilot-menu.el."
     (interactive)
-    (user-error
-     "Copilot: `copilot-menu' requires the `transient' package (bundled with Emacs 28.1 and newer)")))
+    (if (require 'transient nil t)
+        (progn
+          (eval copilot-menu--definition t)
+          ;; By now the transient prefix has replaced this placeholder.
+          (call-interactively 'copilot-menu))
+      (user-error
+       "Copilot: `copilot-menu' requires the `transient' package (bundled with Emacs 28.1 and newer)"))))
 
 (provide 'copilot-menu)
 ;;; copilot-menu.el ends here

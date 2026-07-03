@@ -227,6 +227,16 @@ M-x copilot-chat
 M-x copilot-chat-send-region
 ```
 
+There are also one-shot task commands that send the active region (or the function at point when no region is active) with a canned prompt, so you don't have to type anything; the answer streams into the chat buffer as usual:
+
+- `copilot-chat-review` — review the code for bugs, risks, and improvements
+- `copilot-chat-fix` — fix bugs or problems in the code
+- `copilot-chat-doc` — document the code (docstrings and comments)
+- `copilot-chat-optimize` — optimize the code for performance and readability
+- `copilot-chat-write-tests` — write unit tests for the code
+
+`copilot-chat-task` prompts for the task with completion and dispatches to the same machinery. The prompts live in `copilot-chat-task-prompts` and can be customized (or extended with your own tasks).
+
 Key bindings in the `*copilot-chat*` buffer:
 - **C-c RET** or **C-c C-c** — send a follow-up message
 - **C-c C-k** — cancel streaming, or reset if idle
@@ -445,6 +455,12 @@ For example:
 | `copilot-chat` | Open Copilot Chat and send a message |
 | `copilot-chat-send` | Send a follow-up message in the current chat |
 | `copilot-chat-send-region` | Send the selected region as context with an optional prompt |
+| `copilot-chat-task` | Pick a one-shot task and run it on the region or defun at point |
+| `copilot-chat-review` | Review the region or defun at point |
+| `copilot-chat-fix` | Fix the region or defun at point |
+| `copilot-chat-doc` | Document the region or defun at point |
+| `copilot-chat-optimize` | Optimize the region or defun at point |
+| `copilot-chat-write-tests` | Write tests for the region or defun at point |
 | `copilot-chat-stop` | Cancel streaming, or reset the conversation if idle |
 | `copilot-chat-reset` | Destroy the current conversation and clear the chat buffer |
 | **Next Edit Suggestions** | |

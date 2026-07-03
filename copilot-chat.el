@@ -1731,9 +1731,14 @@ When called interactively, prompt for the message."
 (defun copilot-chat--task-bounds ()
   "Return the bounds of the code a task command should act on.
 Use the active region when there is one, otherwise the defun at point.
-Signal a `user-error' when neither is available."
+The defun fallback only applies in `prog-mode' buffers: outside of them
+\(markdown, text, ...) `bounds-of-thing-at-point' happily returns a
+whole prose section or a parenthesized fragment, which is never what a
+code task should be sent.  Signal a `user-error' when nothing suitable
+is available."
   (or (and (use-region-p) (cons (region-beginning) (region-end)))
-      (bounds-of-thing-at-point 'defun)
+      (and (derived-mode-p 'prog-mode)
+           (bounds-of-thing-at-point 'defun))
       (user-error "Copilot Chat: No active region or function at point")))
 
 (defun copilot-chat--task-prompt (task)
@@ -1749,9 +1754,17 @@ TASK is a key of `copilot-chat-task-prompts', whose prompt is sent
 along with the code.  Interactively, pick the task with completion.
 The answer streams into the regular chat buffer."
   (interactive
-   (list (intern (completing-read "Copilot Chat task: "
-                                  (mapcar #'car copilot-chat-task-prompts)
-                                  nil t))))
+   (let ((choice (completing-read
+                  "Copilot Chat task: "
+                  ;; Offer only symbol keys: a string key sneaked into
+                  ;; the alist could be offered but never looked up.
+                  (seq-filter #'symbolp (mapcar #'car copilot-chat-task-prompts))
+                  nil t)))
+     ;; With no default, an empty minibuffer input returns "" even
+     ;; though REQUIRE-MATCH is t.
+     (when (string-empty-p choice)
+       (user-error "Copilot Chat: No task selected"))
+     (list (intern choice))))
   (let ((bounds (copilot-chat--task-bounds)))
     (copilot-chat-send-region (car bounds) (cdr bounds)
                               (copilot-chat--task-prompt task))))

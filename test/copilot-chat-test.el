@@ -1868,7 +1868,23 @@
 
     (it "errors with neither a region nor a defun at point"
       (with-temp-buffer
-        (expect (copilot-chat--task-bounds) :to-throw 'user-error))))
+        (expect (copilot-chat--task-bounds) :to-throw 'user-error)))
+
+    (it "does not treat prose as a defun outside prog-mode"
+      ;; In text-ish modes `bounds-of-thing-at-point' returns sections or
+      ;; parenthesized fragments; the fallback must not fire there.
+      (with-temp-buffer
+        (text-mode)
+        (insert "Steps:\n(1) do this\n(2) do that\n")
+        (goto-char (+ (point-min) 8))
+        (expect (copilot-chat--task-bounds) :to-throw 'user-error)))
+
+    (it "still finds the defun in prog-mode buffers"
+      (with-temp-buffer
+        (emacs-lisp-mode)
+        (insert "(defun foo ()\n  42)\n")
+        (goto-char (+ (point-min) 3))
+        (expect (copilot-chat--task-bounds) :not :to-be nil))))
 
   (describe "copilot-chat--task-prompt"
     (it "looks up the task's prompt in copilot-chat-task-prompts"
@@ -1915,7 +1931,24 @@
         (spy-on 'copilot-chat-send-region)
         (call-interactively #'copilot-chat-task)
         (expect (nth 2 (spy-calls-args-for 'copilot-chat-send-region 0))
-                :to-equal (alist-get 'tests copilot-chat-task-prompts)))))
+                :to-equal (alist-get 'tests copilot-chat-task-prompts))))
+
+    (it "rejects empty interactive input instead of interning it"
+      (spy-on 'completing-read :and-return-value "")
+      (expect (call-interactively #'copilot-chat-task) :to-throw 'user-error))
+
+    (it "offers only symbol keys for completion"
+      (let ((copilot-chat-task-prompts '((review . "Do review:")
+                                         ("rogue" . "String key:"))))
+        (spy-on 'completing-read :and-return-value "review")
+        (spy-on 'copilot-chat-send-region)
+        (with-temp-buffer
+          (emacs-lisp-mode)
+          (insert "(defun foo () 1)")
+          (goto-char (+ (point-min) 3))
+          (call-interactively #'copilot-chat-task))
+        (expect (cadr (spy-calls-args-for 'completing-read 0))
+                :to-equal '(review)))))
 
   (describe "named task commands"
     (it "dispatches each command to its task"

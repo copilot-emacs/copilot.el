@@ -2674,7 +2674,32 @@
       (expect (copilot-chat--handle-coding-agent-message (list :title "Bare"))
               :to-equal '(:success t))
       (expect 'message :to-have-been-called-with
-              "Copilot: %s%s" "Bare" "")))
+              "Copilot: %s%s" "Bare" ""))
+
+    (it "falls back to placeholders when the title is missing"
+      (spy-on 'message)
+      (expect (copilot-chat--handle-coding-agent-message nil)
+              :to-equal '(:success t))
+      (with-current-buffer "*copilot-coding-agent*"
+        (expect (buffer-string) :to-match "(untitled)"))
+      (expect 'message :to-have-been-called-with
+              "Copilot: %s%s" "coding agent update" ""))
+
+    (it "does not treat percent signs in the title as format directives"
+      (spy-on 'message)
+      (expect (copilot-chat--handle-coding-agent-message
+               (list :title "Fix 100%s of tests %d"))
+              :to-equal '(:success t))
+      (expect 'message :to-have-been-called-with
+              "Copilot: %s%s" "Fix 100%s of tests %d" ""))
+
+    (it "preserves point for a user reading the log"
+      (spy-on 'message)
+      (copilot-chat--handle-coding-agent-message (list :title "One"))
+      (with-current-buffer "*copilot-coding-agent*"
+        (goto-char (point-min))
+        (copilot-chat--handle-coding-agent-message (list :title "Two"))
+        (expect (point) :to-equal (point-min)))))
 
   (describe "copilot-chat-list-mcp-tools"
     (after-each

@@ -3671,6 +3671,16 @@
         (copilot-chat-apply-preset "ask-off")
         (expect copilot-chat--model-resolved :to-be t)))
 
+    (it "rejects a non-list :auto-approve-tools without mutating anything"
+      (let ((copilot-chat-presets '(("bad" . (:model "m"
+                                              :auto-approve-tools "oops"))))
+            (copilot-chat-model "before")
+            (copilot-chat-auto-approve-tools '("keep")))
+        (expect (copilot-chat-apply-preset "bad") :to-throw 'user-error)
+        ;; Validation happens before any setq, so nothing is half-applied.
+        (expect copilot-chat-model :to-equal "before")
+        (expect copilot-chat-auto-approve-tools :to-equal '("keep"))))
+
     (it "reports the applied preset and what changed"
       (let ((copilot-chat-model nil)
             (copilot-chat-use-agent-mode nil))

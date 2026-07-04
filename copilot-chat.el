@@ -101,9 +101,10 @@ optional:
 A key omitted from a preset leaves the corresponding variable
 untouched, so a preset can change just a single setting.
 
-Because the model and agent mode are read when a conversation is
-created, applying a preset takes effect on the next new conversation;
-an existing conversation keeps its model until it is reset.
+A preset's model takes effect on your next message, including the
+current conversation, since the model is sent with every turn.  Agent
+mode takes effect on the next new conversation, since it is fixed when
+a conversation is created.
 
 Example:
 
@@ -2967,9 +2968,11 @@ left untouched.
 Called interactively, NAME is read with completion from
 `copilot-chat-presets'.
 
-The model and agent mode take effect on the next new conversation; an
-existing conversation keeps its model until it is reset.  See
-`copilot-chat-presets' for the recognized keys and an example."
+The model takes effect on your next message, including the current
+conversation (the model is sent with every turn).  Agent mode takes
+effect on the next new conversation, since it is fixed when a
+conversation is created.  See `copilot-chat-presets' for the recognized
+keys and an example."
   (interactive
    (list (progn
            (unless copilot-chat-presets
@@ -2983,6 +2986,10 @@ existing conversation keeps its model until it is reset.  See
     (unless entry
       (user-error "Copilot Chat: Unknown preset %S" name))
     (let ((preset (cdr entry)))
+      (when (and (plist-member preset :auto-approve-tools)
+                 (not (listp (plist-get preset :auto-approve-tools))))
+        (user-error
+         "Copilot Chat: Preset %S has a non-list `:auto-approve-tools'" name))
       (when (plist-member preset :model)
         (setq copilot-chat-model (plist-get preset :model)
               ;; Forget any cached default so clearing the model later

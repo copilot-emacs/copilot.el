@@ -2285,6 +2285,239 @@ it with `copilot-chat-stop'."
        (copilot-chat--rewrite-reply buf beg fin code reply error-msg)))))
 
 ;;
+;; Native code review
+;;
+
+(defconst copilot-chat--review-max-file-bytes 1000000
+  "Largest file, in bytes, included in a native code review request.")
+
+(defun copilot-chat--repo-root ()
+  "Return the root directory of the enclosing git repository.
+Run git in `default-directory' (via `process-file', so remote buffers
+resolve the remote repository) and put any remote prefix back onto the
+path git reports.  Signal a `user-error' outside a repository."
+  (let* ((exit nil)
+         (out (with-temp-buffer
+                (setq exit (process-file "git" nil t nil
+                                         "rev-parse" "--show-toplevel"))
+                (buffer-string))))
+    (unless (eql exit 0)
+      (user-error "Copilot Chat: Not inside a git repository"))
+    (concat (file-remote-p default-directory)
+            (file-name-as-directory (string-trim out)))))
+
+(defun copilot-chat--changed-files ()
+  "Return the repository-relative paths of the files modified since HEAD.
+List the files `git diff HEAD' touches, staged or not.  Deleted files
+are excluded (a review needs the file's new content), and renames are
+reported as a delete plus an add for the same reason.  Signal a
+`user-error' when git fails or when nothing has changed."
+  (let* ((exit nil)
+         (out (with-temp-buffer
+                (setq exit (process-file "git" nil t nil
+                                         "diff" "--name-only" "--no-renames"
+                                         "--diff-filter=d" "-z" "HEAD"))
+                (buffer-string))))
+    (unless (eql exit 0)
+      (user-error
+       "Copilot Chat: git diff failed (%s); not inside a git repository?"
+       exit))
+    (let ((files (seq-remove #'string-empty-p (split-string out "\0"))))
+      (unless files
+        (user-error "Copilot Chat: No uncommitted changes to review"))
+      files)))
+
+(defun copilot-chat--review-file-text (path)
+  "Return the contents of PATH decoded as UTF-8, or nil.
+Return nil when the file is unreadable, larger than
+`copilot-chat--review-max-file-bytes', or binary (contains NUL bytes),
+none of which belong in a review request."
+  (when (and (file-readable-p path)
+             (when-let* ((size (file-attribute-size (file-attributes path))))
+               (<= size copilot-chat--review-max-file-bytes)))
+    (let ((coding-system-for-read 'utf-8))
+      (with-temp-buffer
+        (insert-file-contents path)
+        (goto-char (point-min))
+        (unless (search-forward "\0" nil t)
+          (buffer-string))))))
+
+(defun copilot-chat--review-base-content (path)
+  "Return PATH's content at HEAD, or an empty string.
+PATH is relative to the repository root.  A file that does not exist at
+HEAD (newly added) yields the empty string, which the review request
+uses to mean the whole file is new."
+  (let ((coding-system-for-read 'utf-8))
+    (with-temp-buffer
+      (if (eql 0 (process-file "git" nil t nil "show" (concat "HEAD:" path)))
+          (buffer-string)
+        ""))))
+
+(defun copilot-chat--uncommitted-changes (root)
+  "Return the uncommitted diff under ROOT as review request entries.
+Each element is a plist with the :uri, :path, :baseContent, and
+:headContent fields the `copilot/codeReview/reviewChanges' method
+expects.  Binary and oversized files are skipped."
+  (delq nil
+        (mapcar
+         (lambda (path)
+           (let ((file (expand-file-name path root)))
+             (when-let* ((head (copilot-chat--review-file-text file)))
+               (list :uri (copilot--path-to-uri file)
+                     :path path
+                     :baseContent (copilot-chat--review-base-content path)
+                     :headContent head))))
+         (copilot-chat--changed-files))))
+
+(defun copilot-chat--review-workspace-folders (root)
+  "Return the workspace-folders vector for a review of ROOT."
+  (vector (list :uri (copilot--path-to-uri (directory-file-name root))
+                :name (file-name-nondirectory (directory-file-name root)))))
+
+(defun copilot-chat--review-comment-location (comment root)
+  "Return a \"path:line\" label for review COMMENT.
+The comment's file URI is shortened relative to ROOT when it lies
+inside it.  The server reports zero-based lines; the label shows the
+one-based line the user knows."
+  (let* ((path (copilot--uri-to-path (or (plist-get comment :uri) "")))
+         (start (plist-get (plist-get comment :range) :start))
+         (line (1+ (or (plist-get start :line) 0))))
+    (format "%s:%d"
+            (if (and root (string-prefix-p root path))
+                (file-relative-name path root)
+              path)
+            line)))
+
+(defun copilot-chat--format-review-comment (comment root)
+  "Return review COMMENT rendered as markdown for the chat buffer.
+ROOT is the directory file paths are shortened against."
+  (let ((text (or (plist-get comment :message) ""))
+        (kind (plist-get comment :kind))
+        (suggestion (plist-get comment :suggestion)))
+    (concat (format "**%s**" (copilot-chat--review-comment-location comment root))
+            (when (and (stringp kind) (not (string-empty-p kind)))
+              (format " [%s]" kind))
+            "\n" text "\n"
+            (when (and (stringp suggestion) (not (string-empty-p suggestion)))
+              (format "\nSuggested change:\n\n```\n%s\n```\n" suggestion)))))
+
+(defun copilot-chat--insert-review-results (comments root)
+  "Render the review COMMENTS in the chat buffer.
+COMMENTS is the (possibly empty) list of structured comments a
+`copilot/codeReview' request returned; ROOT is the directory their file
+paths are shortened against."
+  (when-let* ((buf (get-buffer copilot-chat--buffer-name)))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (goto-char (point-max))
+        (insert
+         (if comments
+             (mapconcat (lambda (comment)
+                          (copilot-chat--format-review-comment comment root))
+                        comments "\n")
+           "No review comments; the changes look good.\n")
+         "\n"))
+      (copilot-chat--scroll-to-bottom))))
+
+(defun copilot-chat--request-review (method params request root)
+  "Send review METHOD with PARAMS and render its comments when they arrive.
+REQUEST is the transcript line describing what is being reviewed, shown
+in the chat buffer while the review runs; ROOT is the directory used to
+shorten file paths in the rendered comments.  The review runs outside
+the chat conversation, so it neither consumes a chat turn nor disturbs
+one in flight."
+  (let ((chat-buf (get-buffer-create copilot-chat--buffer-name)))
+    (with-current-buffer chat-buf
+      (unless (derived-mode-p 'copilot-chat-mode)
+        (copilot-chat-mode))
+      (copilot-chat--insert-prompt request)
+      (copilot-chat--scroll-to-bottom))
+    (display-buffer chat-buf)
+    (message "Copilot Chat: Requesting code review (this can take a while)...")
+    ;; Issue the request from the chat buffer: the response callback is
+    ;; dropped when the buffer current at request time has been killed,
+    ;; and a review can run long enough for the invoking buffer to be
+    ;; gone by then.
+    (with-current-buffer chat-buf
+      (copilot--async-request
+       method params
+       :success-fn (lambda (result)
+                     (copilot-chat--insert-review-results
+                      (append (plist-get result :comments) nil) root)
+                     (message "Copilot Chat: Code review finished"))
+       :error-fn (lambda (err)
+                   (let ((msg (or (copilot-chat--error-text err)
+                                  (format "%s" err))))
+                     (copilot-chat--insert-error msg)
+                     (message "Copilot Chat: Code review failed: %s" msg)))))))
+
+;;;###autoload
+(defun copilot-chat-review-changes ()
+  "Run Copilot's native code review over the uncommitted diff.
+Collect the working tree's staged and unstaged edits against HEAD and
+send them to the language server's `copilot/codeReview/reviewChanges'
+method, the reviewer behind GitHub's Copilot Code Review.  The comments
+it returns (file, line, message, and a suggested change when there is
+one) are rendered in the chat buffer.
+
+Signal a `user-error' when there is nothing to review; when the account
+has no access to Copilot Code Review, the server's error is shown in
+the chat buffer instead."
+  (interactive)
+  (let* ((root (copilot-chat--repo-root))
+         (changes (copilot-chat--uncommitted-changes root)))
+    (unless changes
+      (user-error
+       "Copilot Chat: Only binary or oversized files changed; nothing to review"))
+    (copilot-chat--request-review
+     'copilot/codeReview/reviewChanges
+     (list :changes (vconcat changes)
+           :workspaceFolders (copilot-chat--review-workspace-folders root))
+     (format "Review the uncommitted changes (%d file%s)"
+             (length changes) (if (= (length changes) 1) "" "s"))
+     root)))
+
+;;;###autoload
+(defun copilot-chat-review-region (start end)
+  "Review the region between START and END with Copilot's native code review.
+Unlike `copilot-chat-review', which asks the chat model for prose
+feedback, this sends the selection (widened to whole lines) to the
+language server's dedicated `copilot/codeReview/reviewSnippets' method
+and renders the structured comments it returns (file, line, message,
+and suggested change) in the chat buffer."
+  (interactive
+   (if (use-region-p)
+       (list (region-beginning) (region-end))
+     (user-error "Copilot Chat: No active region")))
+  (unless buffer-file-name
+    (user-error "Copilot Chat: Buffer is not visiting a file"))
+  (let* ((snip-beg (save-excursion
+                     (goto-char start) (line-beginning-position)))
+         ;; A region ending at the start of a line does not include that
+         ;; line, so back the end up onto the last selected line.
+         (snip-end (save-excursion
+                     (goto-char end)
+                     (when (and (> end start) (bolp)) (forward-line -1))
+                     (line-end-position)))
+         (start-line (line-number-at-pos snip-beg))
+         (end-line (line-number-at-pos snip-end))
+         (path (copilot--get-relative-path))
+         (root (or (copilot--workspace-root)
+                   (file-name-directory buffer-file-name))))
+    (copilot-chat--request-review
+     'copilot/codeReview/reviewSnippets
+     (list :snippets (vector
+                      (list :uri (copilot--path-to-uri buffer-file-name)
+                            :path path
+                            :content (buffer-substring-no-properties
+                                      snip-beg snip-end)
+                            :startLine start-line
+                            :endLine end-line))
+           :workspaceFolders (copilot-chat--review-workspace-folders root))
+     (format "Review %s, lines %d-%d" path start-line end-line)
+     root)))
+
+;;
 ;; Major mode
 ;;
 

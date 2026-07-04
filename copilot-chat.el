@@ -979,8 +979,14 @@ at the prompt remembers the tool for the rest of the conversation."
         ('edit
          ;; Stash the edited input now; the server reads only the result
          ;; here and sends the input in a separate invocation request.
-         (copilot-chat--read-tool-edit msg)
-         (copilot-chat--accept-tool msg))
+         ;; A cancelled edit (C-c C-k or C-g) raises `quit', which the
+         ;; jsonrpc dispatcher does not turn into a reply, so the server
+         ;; would wait forever; treat it as a plain decline instead.
+         (condition-case nil
+             (progn
+               (copilot-chat--read-tool-edit msg)
+               (copilot-chat--accept-tool msg))
+           (quit (list :result "dismiss"))))
         (decision
          (when (eq decision 'always)
            (cl-pushnew (copilot-chat--tool-base-name name)

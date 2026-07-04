@@ -1871,7 +1871,40 @@
     (it "clears pending edits when the conversation is destroyed"
       (let ((copilot-chat--tool-edits '(("cls_1" . (:command "x")))))
         (copilot-chat--destroy)
-        (expect copilot-chat--tool-edits :to-be nil))))
+        (expect copilot-chat--tool-edits :to-be nil)))
+
+    (it "declines cleanly when the edit is cancelled"
+      (let ((copilot-chat--tool-edits nil))
+        (spy-on 'copilot-chat--ask-tool :and-return-value 'edit)
+        ;; The user aborts the edit (C-c C-k / C-g both raise quit).
+        (spy-on 'copilot-chat--read-tool-field
+                :and-call-fake (lambda (&rest _) (signal 'quit nil)))
+        ;; A quit must not escape the handler (that would leave the
+        ;; server's confirmation request unanswered); it dismisses.
+        (expect (copilot-chat--handle-tool-confirmation
+                 (list :name "run_in_terminal"
+                       :toolCallId "cls_1"
+                       :input (list :command "rm -rf /")))
+                :to-equal '(:result "dismiss"))
+        (expect copilot-chat--tool-edits :to-be nil)))
+
+    (it "edits a fetch_web_page URL list back into a vector"
+      (let ((copilot-chat--tool-edits nil))
+        (spy-on 'copilot-chat--ask-tool :and-return-value 'edit)
+        (spy-on 'read-string :and-return-value "https://a.test https://b.test")
+        (spy-on 'copilot-chat--execute-fetch-web-page
+                :and-return-value (copilot-chat--tool-result "success" "ok"))
+        (copilot-chat--handle-tool-confirmation
+         (list :name "fetch_web_page"
+               :toolCallId "cls_u"
+               :input (list :urls ["https://old.test"])))
+        (copilot-chat--handle-tool-invocation
+         (list :name "fetch_web_page"
+               :toolCallId "cls_u"
+               :input (list :urls ["https://old.test"])))
+        (expect 'copilot-chat--execute-fetch-web-page
+                :to-have-been-called-with
+                (list :urls ["https://a.test" "https://b.test"])))))
 
   ;;
   ;; Tool execution

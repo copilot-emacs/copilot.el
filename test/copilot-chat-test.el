@@ -554,7 +554,50 @@
                 (expect copilot-chat--active-buffers :not :to-be-truthy)
                 (with-current-buffer buf
                   (expect copilot-chat--streaming-p :not :to-be-truthy))))
-          (kill-buffer buf)))))
+          (kill-buffer buf))))
+
+    (it "clears the start time when a turn is cancelled"
+      (let ((buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (spy-on 'copilot--connection-alivep :and-return-value nil)
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p t
+                      copilot-chat--turn-start-time (- (float-time) 60)))
+              (copilot-chat-stop)
+              (with-current-buffer buf
+                (expect copilot-chat--turn-start-time :to-be nil)))
+          (kill-buffer buf))))
+
+    (describe "copilot-chat--notify backend cascade"
+      (it "falls through to osascript when D-Bus fails"
+        (spy-on 'copilot-chat--notify-dbus :and-return-value nil)
+        (spy-on 'copilot-chat--notify-osascript :and-return-value t)
+        (spy-on 'message)
+        (copilot-chat--notify "T" "B")
+        (expect 'copilot-chat--notify-osascript :to-have-been-called)
+        (expect 'message :not :to-have-been-called))
+
+      (it "falls through to message when no desktop backend works"
+        (spy-on 'copilot-chat--notify-dbus :and-return-value nil)
+        (spy-on 'copilot-chat--notify-osascript :and-return-value nil)
+        (spy-on 'message)
+        (copilot-chat--notify "T" "B")
+        (expect 'message :to-have-been-called-with "%s: %s" "T" "B")))
+
+    (describe "copilot-chat--applescript-quote"
+      (it "escapes quotes and backslashes"
+        (expect (copilot-chat--applescript-quote "a\"b\\c")
+                :to-equal "\"a\\\"b\\\\c\""))
+
+      (it "escapes a newline as \\n rather than leaving a raw linefeed"
+        (expect (copilot-chat--applescript-quote "line1\nline2")
+                :to-equal "\"line1\\nline2\"")
+        ;; No raw control character survives in the literal.
+        (expect (string-match-p "\n"
+                                (copilot-chat--applescript-quote "a\nb"))
+                :to-be nil))))
 
   (describe "copilot-chat--error-text"
     (it "returns a bare string error unchanged"

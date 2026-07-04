@@ -523,9 +523,10 @@ confirmation, and the tool-support warning apply to both."
 
 (defun copilot-chat--effective-mode-name ()
   "Return a human-readable name for the effective chat mode."
-  (if copilot-chat--mode
-      (plist-get copilot-chat--mode :name)
-    (plist-get (copilot-chat--effective-mode) :kind)))
+  (let ((name (and copilot-chat--mode (plist-get copilot-chat--mode :name))))
+    (if (and (stringp name) (not (string-empty-p name)))
+        name
+      (plist-get (copilot-chat--effective-mode) :kind))))
 
 (defun copilot-chat--mode-create-params ()
   "Return `conversation/create' params selecting the effective chat mode.

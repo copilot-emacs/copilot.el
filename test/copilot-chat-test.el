@@ -2695,6 +2695,32 @@
                       :to-equal "custom-xyz"))
           (kill-buffer buf))))
 
+    (it "sends a custom Ask-kind mode without tool confirmation"
+      (let ((captured-params nil)
+            (copilot-chat--mode
+             (list :id "custom-ask" :name "Docs" :kind "Ask"
+                   :isBuiltIn :json-false))
+            (copilot-chat-use-agent-mode nil)
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf (copilot-chat-mode))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--create "hello" #'ignore)
+              ;; A custom Ask-kind mode ships its id but is not agent-kind,
+              ;; so no tool confirmation is requested.
+              (expect (plist-get captured-params :chatMode) :to-equal "Ask")
+              (expect (plist-get captured-params :customChatModeId)
+                      :to-equal "custom-ask")
+              (expect (plist-member captured-params :needToolCallConfirmation)
+                      :not :to-be-truthy))
+          (kill-buffer buf))))
+
     (it "registers tools for InlineAgent"
       (let ((copilot-chat--mode
              (list :id "inline-agent" :name "InlineAgent"

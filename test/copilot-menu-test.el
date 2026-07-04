@@ -79,7 +79,14 @@ optional description string)."
         (copilot-menu-toggle-agent-mode)
         (expect copilot-chat-use-agent-mode :to-be-truthy)
         (copilot-menu-toggle-agent-mode)
-        (expect copilot-chat-use-agent-mode :to-be nil))))
+        (expect copilot-chat-use-agent-mode :to-be nil)))
+
+    (it "clears an explicit mode selection so the toggle takes effect"
+      (let ((copilot-chat--mode '(:name "InlineAgent" :kind "InlineAgent"))
+            (copilot-chat-use-agent-mode nil))
+        (copilot-menu-toggle-agent-mode)
+        (expect copilot-chat--mode :to-be nil)
+        (expect copilot-chat-use-agent-mode :to-be-truthy))))
 
   (describe "copilot-menu-open-log"
     (it "signals a user error when there is no log buffer"

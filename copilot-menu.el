@@ -48,6 +48,7 @@
 ;; package but only loaded once the menu is opened (see `copilot-menu').
 (defvar copilot-chat-model)
 (defvar copilot-chat-use-agent-mode)
+(defvar copilot-chat--mode)
 
 ;;
 ;; Dynamic descriptions
@@ -64,6 +65,14 @@
 (defun copilot-menu--chat-model-description ()
   "Describe the chat model selection with the current model."
   (format "Select chat model (%s)" (or copilot-chat-model "default")))
+
+(defun copilot-menu--chat-mode-description ()
+  "Describe the chat mode selection with the current mode."
+  (format "Select chat mode (%s)"
+          (cond ((and (boundp 'copilot-chat--mode) copilot-chat--mode)
+                 (plist-get copilot-chat--mode :name))
+                (copilot-chat-use-agent-mode "Agent")
+                (t "Ask"))))
 
 ;;
 ;; Extra suffix commands
@@ -110,6 +119,8 @@
        ("a" copilot-menu-toggle-agent-mode
         :description copilot-menu--agent-mode-description
         :transient t)
+       ("M" copilot-chat-select-mode
+        :description copilot-menu--chat-mode-description)
        ("T" "List MCP tools" copilot-chat-list-mcp-tools)]]
      [["Account"
        ("i" "Login" copilot-login)

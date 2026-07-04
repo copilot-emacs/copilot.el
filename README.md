@@ -250,7 +250,9 @@ Key bindings in the `*copilot-chat*` buffer:
 
 Attach extra context for the next message with `copilot-chat-add-file-reference` (`C-c C-f`) or `copilot-chat-add-region-reference`; `copilot-chat-clear-references` drops anything pending.
 
-The chat buffer's header line shows at a glance whether Agent or Ask mode is active, which model answers, and in agent mode how many tools are available. Set `copilot-chat-show-status-header` to `nil` to hide it; the setting is read when the chat buffer is created, so it takes effect for new chat buffers.
+The chat buffer's header line shows at a glance which mode is active (Agent, InlineAgent, Ask, or a selected custom mode), which model answers, and for an agent-kind mode how many tools are available. Set `copilot-chat-show-status-header` to `nil` to hide it; the setting is read when the chat buffer is created, so it takes effect for new chat buffers.
+
+Beyond the `copilot-chat-use-agent-mode` toggle (which flips between plain Agent and Ask), `M-x copilot-chat-select-mode` lets you pick any mode the server reports: the built-in `Ask`, `Agent`, and `InlineAgent`, plus any custom project modes. `InlineAgent` is an agent-kind mode with a restricted tool set aimed at inline editing, so tool-call confirmation, tool registration, and the tool count in the header apply to it just as they do to `Agent`. The choice takes effect on the next new conversation, since the mode is fixed when a conversation is created; until you pick one, `copilot-chat-use-agent-mode` still decides between Agent and Ask.
 
 When a turn finishes and you have looked away from the chat, copilot.el raises a desktop notification so you don't have to keep watching it stream. It fires only if the turn took at least `copilot-chat-notify-after-seconds` (10 by default, `nil` disables it) and the chat buffer is not the one in your selected window. The backend prefers D-Bus, falls back to `osascript` on macOS, and to a plain `message` elsewhere; override it via `copilot-chat-notify-function`.
 
@@ -497,6 +499,7 @@ releases are not installable) the rest of copilot.el works as usual and
 | `copilot-list-code-references` | Show suggestions that matched public code |
 | `copilot-select-completion-model` | Choose which model to use for completions |
 | `copilot-chat-select-model` | Choose which model to use for chat |
+| `copilot-chat-select-mode` | Choose the chat mode (Ask, Agent, InlineAgent, ...) |
 | **Completion** | |
 | `copilot-mode` | Toggle automatic completions in the current buffer |
 | `copilot-complete` | Trigger a completion at point |

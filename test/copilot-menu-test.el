@@ -57,6 +57,7 @@ optional description string)."
                          copilot-chat-clear-references
                          copilot-chat-select-model
                          copilot-menu-toggle-agent-mode
+                         copilot-chat-select-mode
                          copilot-chat-list-mcp-tools
                          copilot-login
                          copilot-logout
@@ -70,7 +71,7 @@ optional description string)."
         (expect commands :to-contain command))
       ;; Exactly these, so a future suffix shape the walker doesn't
       ;; understand cannot silently drop commands from the check.
-      (expect (length commands) :to-equal 20)))
+      (expect (length commands) :to-equal 21)))
 
   (describe "copilot-menu-toggle-agent-mode"
     (it "flips copilot-chat-use-agent-mode"

@@ -2,6 +2,8 @@
 
 ## main (unreleased)
 
+## 0.8.0 (2026-07-04)
+
 ### New Features
 
 - Add `copilot-chat-select-mode` to choose the chat mode reported by the server (`Ask`, `Agent`, `InlineAgent`, and any custom project modes) instead of only the agent on/off toggle. `InlineAgent` is an agent-kind mode with a restricted tool set aimed at inline editing; the tool-call confirmation, tool registration, and status header apply to it as they do to `Agent`. The selection takes effect on the next new conversation, and without one the existing `copilot-chat-use-agent-mode` toggle still decides between Agent and Ask.

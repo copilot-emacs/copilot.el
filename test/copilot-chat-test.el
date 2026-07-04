@@ -1773,6 +1773,107 @@
         (expect (plist-get result :status) :to-equal "error"))))
 
   ;;
+  ;; Editable tool input
+  ;;
+
+  (describe "copilot-chat--tool-editable-field"
+    (it "names the editable field for each editable client tool"
+      (expect (copilot-chat--tool-editable-field "run_in_terminal")
+              :to-equal :command)
+      (expect (copilot-chat--tool-editable-field "create_file")
+              :to-equal :content)
+      (expect (copilot-chat--tool-editable-field "fetch_web_page")
+              :to-equal :urls))
+
+    (it "offers nothing for a client tool with no useful editable input"
+      (expect (copilot-chat--tool-editable-field "get_errors") :to-be nil))
+
+    (it "offers nothing for server and MCP tools"
+      ;; A namespaced server tool is run by the server, never by us.
+      (expect (copilot-chat--tool-editable-field "copilot.read_file") :to-be nil)
+      (expect (copilot-chat--tool-editable-field "copilot.create_file") :to-be nil)
+      (expect (copilot-chat--tool-editable-field "some_mcp_tool") :to-be nil)))
+
+  (describe "the edit choice at the confirmation prompt"
+    (it "is offered for an editable client tool"
+      (let (choices)
+        (spy-on 'read-multiple-choice :and-call-fake
+                (lambda (_prompt cs) (setq choices cs) '(?y "yes" "")))
+        (copilot-chat--ask-tool (list :name "run_in_terminal"
+                                      :input (list :command "ls")))
+        (expect (assq ?e choices) :to-be-truthy)))
+
+    (it "is not offered for a client tool without an editable field"
+      (let (choices)
+        (spy-on 'read-multiple-choice :and-call-fake
+                (lambda (_prompt cs) (setq choices cs) '(?y "yes" "")))
+        (copilot-chat--ask-tool (list :name "get_errors"
+                                      :input (list :filePaths ["foo.el"])))
+        (expect (assq ?e choices) :to-be nil)))
+
+    (it "is not offered for a server tool"
+      (let (choices)
+        (spy-on 'read-multiple-choice :and-call-fake
+                (lambda (_prompt cs) (setq choices cs) '(?y "yes" "")))
+        (copilot-chat--ask-tool (list :name "copilot.read_file"
+                                      :input (list :filePath "/tmp/x.el")))
+        (expect (assq ?e choices) :to-be nil))))
+
+  (describe "editing a tool's input before it runs"
+    (it "stashes the edited input and runs the tool with it"
+      (let ((copilot-chat--tool-edits nil))
+        (spy-on 'copilot-chat--ask-tool :and-return-value 'edit)
+        (spy-on 'copilot-chat--read-tool-field :and-return-value "echo safe")
+        (spy-on 'copilot-chat--execute-run-in-terminal
+                :and-return-value (copilot-chat--tool-result "success" "ok"))
+        ;; Confirming with `edit' accepts the call and stashes the new input.
+        (expect (copilot-chat--handle-tool-confirmation
+                 (list :name "run_in_terminal"
+                       :toolCallId "cls_1"
+                       :input (list :command "rm -rf /")))
+                :to-equal '(:result "accept"))
+        (expect copilot-chat--tool-edits :not :to-be nil)
+        ;; The later invocation runs with the edited command, not the original.
+        (copilot-chat--handle-tool-invocation
+         (list :name "run_in_terminal"
+               :toolCallId "cls_1"
+               :input (list :command "rm -rf /")))
+        (expect 'copilot-chat--execute-run-in-terminal
+                :to-have-been-called-with (list :command "echo safe"))))
+
+    (it "clears the stash once the edited input has been consumed"
+      (let ((copilot-chat--tool-edits nil))
+        (spy-on 'copilot-chat--ask-tool :and-return-value 'edit)
+        (spy-on 'copilot-chat--read-tool-field :and-return-value "echo safe")
+        (spy-on 'copilot-chat--execute-run-in-terminal
+                :and-return-value (copilot-chat--tool-result "success" "ok"))
+        (copilot-chat--handle-tool-confirmation
+         (list :name "run_in_terminal"
+               :toolCallId "cls_1"
+               :input (list :command "danger")))
+        (copilot-chat--handle-tool-invocation
+         (list :name "run_in_terminal"
+               :toolCallId "cls_1"
+               :input (list :command "danger")))
+        (expect copilot-chat--tool-edits :to-be nil)))
+
+    (it "leaves an unedited invocation on the server's input"
+      (let ((copilot-chat--tool-edits nil))
+        (spy-on 'copilot-chat--execute-run-in-terminal
+                :and-return-value (copilot-chat--tool-result "success" "ok"))
+        (copilot-chat--handle-tool-invocation
+         (list :name "run_in_terminal"
+               :toolCallId "cls_9"
+               :input (list :command "ls")))
+        (expect 'copilot-chat--execute-run-in-terminal
+                :to-have-been-called-with (list :command "ls"))))
+
+    (it "clears pending edits when the conversation is destroyed"
+      (let ((copilot-chat--tool-edits '(("cls_1" . (:command "x")))))
+        (copilot-chat--destroy)
+        (expect copilot-chat--tool-edits :to-be nil))))
+
+  ;;
   ;; Tool execution
   ;;
 

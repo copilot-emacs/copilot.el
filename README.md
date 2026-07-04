@@ -269,7 +269,7 @@ Customization:
 - **`copilot-chat-history-directory`** — where saved transcripts live, one file per workspace (default `~/.emacs.d/copilot-chat-history/`)
 - **`copilot-chat-presets`** — named bundles of chat settings you can switch between with `copilot-chat-apply-preset` (default `nil`)
 
-If you often flip between a couple of setups (say a quick ask-mode model and a tool-capable agent-mode one), collect them as presets and switch with `M-x copilot-chat-apply-preset`. A preset is a plist that may set `:model`, `:agent-mode`, and `:auto-approve-tools`; any key you leave out is untouched. Because the model and agent mode are read when a conversation is created, applying a preset takes effect on the next new conversation (an existing one keeps its model until it is reset).
+If you often flip between a couple of setups (say a quick ask-mode model and a tool-capable agent-mode one), collect them as presets and switch with `M-x copilot-chat-apply-preset`. A preset is a plist that may set `:model`, `:agent-mode`, and `:auto-approve-tools`; any key you leave out is untouched. A preset's model takes effect on your next message (the model is sent with every turn, so even the current conversation switches), while agent mode takes effect on the next new conversation, since it is fixed when a conversation is created.
 
 ```elisp
 (setopt copilot-chat-presets

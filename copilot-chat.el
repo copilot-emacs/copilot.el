@@ -87,6 +87,39 @@ match."
   :group 'copilot-chat
   :package-version '(copilot . "0.6"))
 
+(defcustom copilot-chat-presets nil
+  "Named bundles of Copilot Chat settings you can switch between.
+Each entry maps a preset name (a string) to a plist of settings that
+`copilot-chat-apply-preset' applies in one step.  Recognized keys, all
+optional:
+
+  `:model'              a chat model id string (sets `copilot-chat-model')
+  `:agent-mode'         a boolean (sets `copilot-chat-use-agent-mode')
+  `:auto-approve-tools' a list of tool-name strings
+                        (sets `copilot-chat-auto-approve-tools')
+
+A key omitted from a preset leaves the corresponding variable
+untouched, so a preset can change just a single setting.
+
+Because the model and agent mode are read when a conversation is
+created, applying a preset takes effect on the next new conversation;
+an existing conversation keeps its model until it is reset.
+
+Example:
+
+  \\='((\"fast\"  . (:model \"gpt-4o\" :agent-mode nil))
+    (\"agent\" . (:model \"gpt-5-codex\" :agent-mode t
+               :auto-approve-tools (\"get_errors\" \"copilot.read_file\"))))"
+  :type '(alist :key-type (string :tag "Preset name")
+                :value-type
+                (plist :options
+                       ((:model (string :tag "Model ID"))
+                        (:agent-mode (boolean :tag "Agent mode"))
+                        (:auto-approve-tools
+                         (repeat (string :tag "Tool name"))))))
+  :group 'copilot-chat
+  :package-version '(copilot . "0.8"))
+
 (defcustom copilot-chat-preview-tool-edits t
   "When non-nil, preview file changes before confirming an edit tool.
 For the tools that create or edit files (`create_file',
@@ -2921,6 +2954,60 @@ well; the saved history file on disk, if any, is left untouched (see
           ;; re-resolves from the server.
           copilot-chat--model-resolved nil)
     (message "Copilot Chat: Model set to %s" model-id)))
+
+;;;###autoload
+(defun copilot-chat-apply-preset (name)
+  "Apply the Copilot Chat preset named NAME from `copilot-chat-presets'.
+A preset is a plist of settings; each present key sets its variable
+\(`:model' sets `copilot-chat-model', `:agent-mode' sets
+`copilot-chat-use-agent-mode', `:auto-approve-tools' sets
+`copilot-chat-auto-approve-tools'), and any key the preset omits is
+left untouched.
+
+Called interactively, NAME is read with completion from
+`copilot-chat-presets'.
+
+The model and agent mode take effect on the next new conversation; an
+existing conversation keeps its model until it is reset.  See
+`copilot-chat-presets' for the recognized keys and an example."
+  (interactive
+   (list (progn
+           (unless copilot-chat-presets
+             (user-error "Copilot Chat: `copilot-chat-presets' is empty"))
+           (completing-read "Copilot Chat preset: "
+                            (mapcar #'car copilot-chat-presets) nil t))))
+  (unless copilot-chat-presets
+    (user-error "Copilot Chat: `copilot-chat-presets' is empty"))
+  (let ((entry (assoc name copilot-chat-presets))
+        (changes nil))
+    (unless entry
+      (user-error "Copilot Chat: Unknown preset %S" name))
+    (let ((preset (cdr entry)))
+      (when (plist-member preset :model)
+        (setq copilot-chat-model (plist-get preset :model)
+              ;; Forget any cached default so clearing the model later
+              ;; re-resolves from the server, mirroring
+              ;; `copilot-chat-select-model'.
+              copilot-chat--model-resolved nil)
+        (push (format "model %s" (or copilot-chat-model "default")) changes))
+      (when (plist-member preset :agent-mode)
+        (setq copilot-chat-use-agent-mode (plist-get preset :agent-mode))
+        (push (format "agent mode %s"
+                      (if copilot-chat-use-agent-mode "on" "off"))
+              changes))
+      (when (plist-member preset :auto-approve-tools)
+        (setq copilot-chat-auto-approve-tools
+              (plist-get preset :auto-approve-tools))
+        (push (format "auto-approved tools: %s"
+                      (if copilot-chat-auto-approve-tools
+                          (string-join copilot-chat-auto-approve-tools ", ")
+                        "none"))
+              changes)))
+    (message "Copilot Chat: Applied preset %S%s"
+             name
+             (if changes
+                 (format " (%s)" (string-join (nreverse changes) ", "))
+               ""))))
 
 (provide 'copilot-chat)
 ;;; copilot-chat.el ends here

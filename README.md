@@ -267,6 +267,16 @@ Customization:
 - **`copilot-chat-auto-approve-tools`** — tool names that skip the confirmation prompt (default `'("get_errors")`)
 - **`copilot-chat-save-history`** — save the chat transcript to disk after each turn, for `copilot-chat-restore` (default `nil`)
 - **`copilot-chat-history-directory`** — where saved transcripts live, one file per workspace (default `~/.emacs.d/copilot-chat-history/`)
+- **`copilot-chat-presets`** — named bundles of chat settings you can switch between with `copilot-chat-apply-preset` (default `nil`)
+
+If you often flip between a couple of setups (say a quick ask-mode model and a tool-capable agent-mode one), collect them as presets and switch with `M-x copilot-chat-apply-preset`. A preset is a plist that may set `:model`, `:agent-mode`, and `:auto-approve-tools`; any key you leave out is untouched. Because the model and agent mode are read when a conversation is created, applying a preset takes effect on the next new conversation (an existing one keeps its model until it is reset).
+
+```elisp
+(setopt copilot-chat-presets
+        '(("fast"  . (:model "gpt-4o" :agent-mode nil))
+          ("agent" . (:model "gpt-5-codex" :agent-mode t
+                      :auto-approve-tools ("get_errors" "copilot.read_file")))))
+```
 
 At each tool confirmation prompt you can answer `yes`, `no`, or `always`; `always` approves that tool for the rest of the conversation so it stops asking.
 
@@ -514,6 +524,7 @@ releases are not installable) the rest of copilot.el works as usual and
 | `copilot-chat-restore` | Restore the saved chat for the current workspace |
 | `copilot-chat-clear-history` | Delete the saved chat history for the current workspace |
 | `copilot-chat-insert-commit-message` | Generate a commit message for the staged changes and insert it at point |
+| `copilot-chat-apply-preset` | Switch to a named bundle of chat settings from `copilot-chat-presets` |
 | **Next Edit Suggestions** | |
 | `copilot-nes-mode` | Toggle NES in the current buffer |
 | `copilot-nes-accept` | Accept (or jump to) the current NES suggestion |

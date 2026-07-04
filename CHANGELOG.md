@@ -21,6 +21,7 @@
 - Handle the server's `copilot/codingAgentMessage` request, so updates from GitHub's cloud coding agent (e.g. the pull request it opens to continue delegated work) are echoed and recorded in the `*copilot-coding-agent*` buffer instead of being dropped.
 - Add `copilot-menu`, a transient (magit-style) menu that gathers the most common Copilot commands (completions, chat, agent mode, account and usage info, and server management) and shows the current state of `copilot-mode`, agent mode, and the selected chat model. Requires the `transient` package (bundled with Emacs 28.1 and newer) but only when the menu itself is used.
 - Add an `edit` choice at the agent-mode tool-confirmation prompt for the tools copilot.el runs itself, letting you tweak the input before it runs: the shell command of `run_in_terminal`, the content of `create_file` (in a temporary buffer), or the URLs of `fetch_web_page`. Server-executed and MCP tools keep the plain yes/no/always prompt, since the server never reads a modified input back.
+- Raise a desktop notification when a chat turn finishes, if it ran at least `copilot-chat-notify-after-seconds` (10 by default; nil disables) and the chat buffer is not the one you are looking at. The backend prefers D-Bus, falls back to `osascript` on macOS and to `message` elsewhere, and is overridable via `copilot-chat-notify-function`.
 
 ### Bug Fixes
 

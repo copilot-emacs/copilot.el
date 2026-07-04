@@ -464,6 +464,98 @@
                   (expect copilot-chat--follow-up :to-be nil))))
           (kill-buffer buf)))))
 
+  ;;
+  ;; Turn-end desktop notification
+  ;;
+
+  (describe "turn-end notification"
+    ;; Drive the streamed "end" progress with a turn start time set far
+    ;; enough in the past, and spy on both the notifier and the focus
+    ;; check so nothing depends on the real window layout or wall clock.
+    (defun copilot-chat-test--drive-end (buf &optional start-offset)
+      "Send an \"end\" progress for BUF, its turn having started START-OFFSET seconds ago."
+      (with-current-buffer buf
+        (copilot-chat-mode)
+        (setq copilot-chat--streaming-p t)
+        (setq copilot-chat--turn-start-time
+              (- (float-time) (or start-offset 60))))
+      (let ((copilot-chat--active-buffers (list (cons "test-token" buf))))
+        (copilot-chat--handle-progress
+         (list :token "test-token" :value (list :kind "end")))))
+
+    (it "notifies when the turn ran long enough and the chat is not focused"
+      (let ((buf (get-buffer-create "*copilot-chat-test-notify*"))
+            (copilot-chat-notify-after-seconds 10))
+        (unwind-protect
+            (progn
+              (spy-on 'copilot-chat--turn-buffer-focused-p
+                      :and-return-value nil)
+              (spy-on 'copilot-chat--notify)
+              (copilot-chat-test--drive-end buf 60)
+              (expect 'copilot-chat--notify :to-have-been-called))
+          (kill-buffer buf))))
+
+    (it "does not notify when the chat buffer is focused"
+      (let ((buf (get-buffer-create "*copilot-chat-test-notify-focused*"))
+            (copilot-chat-notify-after-seconds 10))
+        (unwind-protect
+            (progn
+              (spy-on 'copilot-chat--turn-buffer-focused-p
+                      :and-return-value t)
+              (spy-on 'copilot-chat--notify)
+              (copilot-chat-test--drive-end buf 60)
+              (expect 'copilot-chat--notify :not :to-have-been-called))
+          (kill-buffer buf))))
+
+    (it "does not notify when the turn was shorter than the threshold"
+      (let ((buf (get-buffer-create "*copilot-chat-test-notify-fast*"))
+            (copilot-chat-notify-after-seconds 10))
+        (unwind-protect
+            (progn
+              (spy-on 'copilot-chat--turn-buffer-focused-p
+                      :and-return-value nil)
+              (spy-on 'copilot-chat--notify)
+              (copilot-chat-test--drive-end buf 2)
+              (expect 'copilot-chat--notify :not :to-have-been-called))
+          (kill-buffer buf))))
+
+    (it "does not notify when notifications are disabled"
+      (let ((buf (get-buffer-create "*copilot-chat-test-notify-off*"))
+            (copilot-chat-notify-after-seconds nil))
+        (unwind-protect
+            (progn
+              (spy-on 'copilot-chat--turn-buffer-focused-p
+                      :and-return-value nil)
+              (spy-on 'copilot-chat--notify)
+              (copilot-chat-test--drive-end buf 60)
+              (expect 'copilot-chat--notify :not :to-have-been-called))
+          (kill-buffer buf))))
+
+    (it "swallows a failing backend without breaking the turn end"
+      (let ((buf (get-buffer-create "*copilot-chat-test-notify-throw*"))
+            (copilot-chat-notify-after-seconds 10))
+        (unwind-protect
+            (progn
+              (spy-on 'copilot-chat--turn-buffer-focused-p
+                      :and-return-value nil)
+              (spy-on 'copilot-chat--notify
+                      :and-throw-error 'error)
+              ;; The end handling must still complete: no error escapes,
+              ;; streaming stops and the token is cleaned up.
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (with-current-buffer buf
+                  (copilot-chat-mode)
+                  (setq copilot-chat--streaming-p t)
+                  (setq copilot-chat--turn-start-time
+                        (- (float-time) 60)))
+                (copilot-chat--handle-progress
+                 (list :token "test-token" :value (list :kind "end")))
+                (expect copilot-chat--active-buffers :not :to-be-truthy)
+                (with-current-buffer buf
+                  (expect copilot-chat--streaming-p :not :to-be-truthy))))
+          (kill-buffer buf)))))
+
   (describe "copilot-chat--error-text"
     (it "returns a bare string error unchanged"
       (expect (copilot-chat--error-text "boom") :to-equal "boom"))

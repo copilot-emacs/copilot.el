@@ -240,6 +240,27 @@ transcript is saved."
   :group 'copilot-chat
   :package-version '(copilot . "0.8"))
 
+(defcustom copilot-chat-notify-after-seconds 10
+  "Notify when a chat turn takes at least this many seconds.
+When a streamed response finishes and the chat buffer is not the one
+you are looking at, a desktop notification is raised, but only if the
+turn ran at least this long.  Set to nil to disable notifications
+entirely."
+  :type '(choice (const :tag "Disabled" nil)
+                 (number :tag "Seconds"))
+  :group 'copilot-chat
+  :package-version '(copilot . "0.8"))
+
+(defcustom copilot-chat-notify-function #'copilot-chat--notify
+  "Function used to raise a desktop notification for a finished turn.
+It is called with two string arguments, a short TITLE and a BODY, and
+its return value is ignored.  Replace it to plug in a different
+notification backend; the default `copilot-chat--notify' picks a
+platform-appropriate one and degrades to `message'."
+  :type 'function
+  :group 'copilot-chat
+  :package-version '(copilot . "0.8"))
+
 (defface copilot-chat-error-face
   '((t :inherit error))
   "Face for error messages in the chat buffer."
@@ -318,6 +339,11 @@ Paired with the accumulated reply and appended to
 
 (defvar-local copilot-chat--reply-chunks nil
   "Reply chunks streamed for the current turn, most recent first.")
+
+(defvar-local copilot-chat--turn-start-time nil
+  "`float-time' when the current streamed turn began, or nil.
+Set at the progress `begin' notification and read at `end' to decide
+whether the turn ran long enough to warrant a desktop notification.")
 
 (defvar-local copilot-chat--restored-turns nil
   "Turns restored by `copilot-chat-restore', pending replay.
@@ -559,6 +585,59 @@ buffer."
             (funcall sink value))
         (copilot-chat--handle-buffer-progress token sink value)))))
 
+(defun copilot-chat--notify (title body)
+  "Raise a desktop notification with TITLE and BODY.
+Prefer D-Bus notifications, fall back to `osascript' on macOS, and
+finally to `message'.  TITLE and BODY are always passed as data, never
+as a format string, so their contents cannot be interpreted as
+directives."
+  (cond
+   ((and (require 'notifications nil t)
+         (fboundp 'notifications-notify))
+    (notifications-notify :title title :body body))
+   ((eq system-type 'darwin)
+    (call-process "osascript" nil nil nil
+                  "-e"
+                  (format "display notification %s with title %s"
+                          (copilot-chat--applescript-quote body)
+                          (copilot-chat--applescript-quote title))))
+   (t
+    (message "%s: %s" title body))))
+
+(defun copilot-chat--applescript-quote (string)
+  "Return STRING as a quoted AppleScript string literal.
+Backslashes and double quotes are escaped so STRING is treated purely
+as data by `osascript'."
+  (concat "\""
+          (replace-regexp-in-string
+           "[\\\"]" "\\\\\\&" string)
+          "\""))
+
+(defun copilot-chat--turn-buffer-focused-p (chat-buf)
+  "Return non-nil when CHAT-BUF is the buffer of the selected window.
+Only then is the user already watching the chat, so a notification
+would be redundant."
+  (let ((win (get-buffer-window chat-buf t)))
+    (and win (eq win (selected-window)))))
+
+(defun copilot-chat--maybe-notify-turn-end (chat-buf)
+  "Notify that a turn in CHAT-BUF finished, if it is worth surfacing.
+The notification fires only when `copilot-chat-notify-after-seconds' is
+set, the turn ran at least that long, and CHAT-BUF is not the buffer the
+user is currently looking at.  A failing backend is logged and swallowed
+so it never disrupts the end of a turn."
+  (when (and (numberp copilot-chat-notify-after-seconds)
+             copilot-chat--turn-start-time
+             (not (copilot-chat--turn-buffer-focused-p chat-buf)))
+    (let ((elapsed (- (float-time) copilot-chat--turn-start-time)))
+      (when (>= elapsed copilot-chat-notify-after-seconds)
+        (condition-case err
+            (funcall copilot-chat-notify-function
+                     "Copilot Chat"
+                     (format "Response ready (%ds)" (round elapsed)))
+          (error
+           (copilot--log 'warning "Chat notification failed: %S" err)))))))
+
 (defun copilot-chat--handle-buffer-progress (token chat-buf value)
   "Stream the progress VALUE of turn TOKEN into CHAT-BUF."
   (when (buffer-live-p chat-buf)
@@ -567,6 +646,7 @@ buffer."
         (cond
          ((equal kind "begin")
           (setq copilot-chat--streaming-p t)
+          (setq copilot-chat--turn-start-time (float-time))
           (force-mode-line-update))
          ((equal kind "report")
           (when-let* ((reply (copilot-chat--extract-reply value)))
@@ -617,6 +697,8 @@ buffer."
               (setq copilot-chat--current-request nil
                     copilot-chat--reply-chunks nil)))
           (copilot-chat--scroll-to-bottom)
+          (copilot-chat--maybe-notify-turn-end chat-buf)
+          (setq copilot-chat--turn-start-time nil)
           (setq copilot-chat--active-buffers
                 (assoc-delete-all token copilot-chat--active-buffers))))))))
 

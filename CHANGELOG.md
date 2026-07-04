@@ -11,6 +11,7 @@
   - `copilot-chat-doc`
   - `copilot-chat-optimize`
   - `copilot-chat-write-tests`
+- Add `copilot-chat-rewrite` to rewrite the active region according to a free-form instruction, with the proposed change previewed as a diff and applied only after confirmation. The instruction preamble is customizable via `copilot-chat-rewrite-prompt`, re-indentation of the result can be disabled with `copilot-chat-rewrite-indent`, and a pending rewrite is cancellable with `copilot-chat-stop`.
 - Add `copilot-chat-insert-commit-message` to generate a commit message from the staged changes and insert it at point (handy in a Magit or `git-commit` buffer), with the instruction sent to Copilot customizable via `copilot-chat-commit-message-prompt` and a pending generation cancellable with `copilot-chat-stop`.
 - Optionally persist chat sessions across Emacs restarts: with `copilot-chat-save-history` enabled (off by default) the transcript is saved after each turn to a per-workspace file under `copilot-chat-history-directory`, `copilot-chat-restore` brings the saved conversation back with its full context, and `copilot-chat-clear-history` deletes the saved file.
 - Handle the server's `copilot/codingAgentMessage` request, so updates from GitHub's cloud coding agent (e.g. the pull request it opens to continue delegated work) are echoed and recorded in the `*copilot-coding-agent*` buffer instead of being dropped.

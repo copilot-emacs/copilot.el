@@ -297,6 +297,23 @@ In agent mode, Copilot can search the project: copilot.el answers the server's f
 
 Set `copilot-chat-enable-semantic-search` to `t` to also let the server build a semantic index of the workspace, for whole-codebase ("@workspace"-style) questions. Indexing computes embeddings server-side, so it uses CPU and network; it is off by default and takes effect when the server next starts.
 
+#### Custom instructions
+
+The language server reads repository instruction files on its own and applies them to chat and agent requests; copilot.el sends the workspace folders, so this works out of the box. The recognized files (same as in VS Code):
+
+- `.github/copilot-instructions.md` — project-wide instructions, always applied
+- `AGENTS.md` — applied always, including nested `AGENTS.md` files in subdirectories
+- `CLAUDE.md` / `CLAUDE.local.md` — also honored, if you share a repo with Claude users
+- `.github/instructions/*.instructions.md` — scoped instructions with `applyTo` glob front matter
+- `.github/git-commit-instructions.md` — used when generating commit messages, including by `copilot-chat-insert-commit-message`
+
+Instruction files are enabled by default. To turn them off, set the corresponding server option through `copilot-lsp-settings`:
+
+```elisp
+(setopt copilot-lsp-settings
+        '(:github (:copilot (:chat (:codeGeneration (:useInstructionFiles :json-false))))))
+```
+
 For a more feature-rich chat experience, take a look at [copilot-chat.el](https://github.com/chep/copilot-chat.el).
 
 > [!WARNING]

@@ -2893,6 +2893,287 @@
         (expect copilot-chat--one-shot-requests :not :to-be-truthy)
         (expect results :to-equal '(("" "Cancelled"))))))
 
+  ;;
+  ;; Native code review
+  ;;
+
+  (describe "copilot-chat--changed-files"
+    ;; Real git in temp directories, like the copilot-chat--staged-diff
+    ;; specs: the point is exactly the git plumbing.
+    (it "errors when not inside a git repository"
+      (let ((default-directory (make-temp-file "copilot-no-repo" t)))
+        (expect (copilot-chat--changed-files) :to-throw 'user-error)))
+
+    (it "errors when there are no uncommitted changes"
+      (let ((default-directory (make-temp-file "copilot-repo" t)))
+        (process-file "git" nil nil nil "init" "-q")
+        (write-region "hello\n" nil (expand-file-name "f.txt") nil 'quiet)
+        (process-file "git" nil nil nil "add" "f.txt")
+        (process-file "git" nil nil nil
+                      "-c" "user.email=t@t" "-c" "user.name=t"
+                      "commit" "-q" "-m" "init")
+        (expect (copilot-chat--changed-files) :to-throw 'user-error)))
+
+    (it "lists staged and unstaged changes but not deletions"
+      (let ((default-directory (make-temp-file "copilot-repo" t)))
+        (process-file "git" nil nil nil "init" "-q")
+        (dolist (f '("modified.txt" "staged.txt" "deleted.txt"))
+          (write-region "hello\n" nil (expand-file-name f) nil 'quiet))
+        (process-file "git" nil nil nil "add" ".")
+        (process-file "git" nil nil nil
+                      "-c" "user.email=t@t" "-c" "user.name=t"
+                      "commit" "-q" "-m" "init")
+        (write-region "changed\n" nil (expand-file-name "modified.txt") nil 'quiet)
+        (write-region "restaged\n" nil (expand-file-name "staged.txt") nil 'quiet)
+        (process-file "git" nil nil nil "add" "staged.txt")
+        (delete-file (expand-file-name "deleted.txt"))
+        (expect (sort (copilot-chat--changed-files) #'string<)
+                :to-equal '("modified.txt" "staged.txt"))))
+
+    (it "does not report untracked files"
+      (let ((default-directory (make-temp-file "copilot-repo" t)))
+        (process-file "git" nil nil nil "init" "-q")
+        (write-region "hello\n" nil (expand-file-name "f.txt") nil 'quiet)
+        (process-file "git" nil nil nil "add" "f.txt")
+        (process-file "git" nil nil nil
+                      "-c" "user.email=t@t" "-c" "user.name=t"
+                      "commit" "-q" "-m" "init")
+        (write-region "changed\n" nil (expand-file-name "f.txt") nil 'quiet)
+        (write-region "loose\n" nil (expand-file-name "untracked.txt") nil 'quiet)
+        (expect (copilot-chat--changed-files) :to-equal '("f.txt")))))
+
+  (describe "copilot-chat--uncommitted-changes"
+    (it "pairs each change with its base and head content"
+      (let ((default-directory (make-temp-file "copilot-repo" t)))
+        (process-file "git" nil nil nil "init" "-q")
+        (write-region "old\n" nil (expand-file-name "f.txt") nil 'quiet)
+        (process-file "git" nil nil nil "add" "f.txt")
+        (process-file "git" nil nil nil
+                      "-c" "user.email=t@t" "-c" "user.name=t"
+                      "commit" "-q" "-m" "init")
+        (write-region "new\n" nil (expand-file-name "f.txt") nil 'quiet)
+        (write-region "added\n" nil (expand-file-name "g.txt") nil 'quiet)
+        (process-file "git" nil nil nil "add" "g.txt")
+        (let* ((root (copilot-chat--repo-root))
+               (changes (copilot-chat--uncommitted-changes root))
+               (f (seq-find (lambda (c) (equal (plist-get c :path) "f.txt"))
+                            changes))
+               (g (seq-find (lambda (c) (equal (plist-get c :path) "g.txt"))
+                            changes)))
+          (expect (length changes) :to-equal 2)
+          (expect (plist-get f :baseContent) :to-equal "old\n")
+          (expect (plist-get f :headContent) :to-equal "new\n")
+          (expect (plist-get f :uri) :to-match "\\`file://.*/f\\.txt\\'")
+          ;; A newly added file has no base version.
+          (expect (plist-get g :baseContent) :to-equal "")
+          (expect (plist-get g :headContent) :to-equal "added\n"))))
+
+    (it "skips binary files"
+      (let ((default-directory (make-temp-file "copilot-repo" t)))
+        (process-file "git" nil nil nil "init" "-q")
+        (write-region "text\n" nil (expand-file-name "f.txt") nil 'quiet)
+        (process-file "git" nil nil nil "add" "f.txt")
+        (process-file "git" nil nil nil
+                      "-c" "user.email=t@t" "-c" "user.name=t"
+                      "commit" "-q" "-m" "init")
+        (write-region "more text\n" nil (expand-file-name "f.txt") nil 'quiet)
+        (let ((coding-system-for-write 'binary))
+          (write-region (unibyte-string 0 1 2 3) nil
+                        (expand-file-name "blob.bin") nil 'quiet))
+        (process-file "git" nil nil nil "add" "blob.bin")
+        (let* ((root (copilot-chat--repo-root))
+               (changes (copilot-chat--uncommitted-changes root)))
+          (expect (mapcar (lambda (c) (plist-get c :path)) changes)
+                  :to-equal '("f.txt"))))))
+
+  (describe "copilot-chat-review-changes"
+    (before-each
+      (spy-on 'copilot--connection-alivep :and-return-value t)
+      (spy-on 'display-buffer)
+      (spy-on 'message)
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name)))
+
+    (after-each
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name)))
+
+    (it "sends the changes to copilot/codeReview/reviewChanges"
+      (let ((captured-method nil)
+            (captured-params nil))
+        (spy-on 'copilot-chat--repo-root :and-return-value "/repo/")
+        (spy-on 'copilot-chat--uncommitted-changes :and-return-value
+                '((:uri "file:///repo/a.el" :path "a.el"
+                   :baseContent "old" :headContent "new")))
+        (spy-on 'jsonrpc--async-request-1
+                :and-call-fake
+                (lambda (_conn method params &rest _args)
+                  (setq captured-method method
+                        captured-params params)
+                  (cons nil nil)))
+        (copilot-chat-review-changes)
+        (expect captured-method :to-equal 'copilot/codeReview/reviewChanges)
+        (let ((changes (plist-get captured-params :changes)))
+          (expect (length changes) :to-equal 1)
+          (expect (aref changes 0)
+                  :to-equal '(:uri "file:///repo/a.el" :path "a.el"
+                              :baseContent "old" :headContent "new")))
+        (expect (plist-get captured-params :workspaceFolders)
+                :to-equal (vector '(:uri "file:///repo" :name "repo")))))
+
+    (it "renders the returned comments in the chat buffer"
+      (let ((captured-args nil))
+        (spy-on 'copilot-chat--repo-root :and-return-value "/repo/")
+        (spy-on 'copilot-chat--uncommitted-changes :and-return-value
+                '((:uri "file:///repo/a.el" :path "a.el"
+                   :baseContent "old" :headContent "new")))
+        (spy-on 'jsonrpc--async-request-1
+                :and-call-fake
+                (lambda (_conn _method _params &rest args)
+                  (setq captured-args args)
+                  (cons nil nil)))
+        (copilot-chat-review-changes)
+        (funcall (plist-get captured-args :success-fn)
+                 '(:comments
+                   [(:uri "file:///repo/a.el"
+                     :range (:start (:line 4 :character 0)
+                             :end (:line 4 :character 10))
+                     :message "Something is off here"
+                     :kind "bug"
+                     :severity "medium"
+                     :suggestion "a fixed line")]))
+        (with-current-buffer copilot-chat--buffer-name
+          ;; Zero-based server line 4 is user-visible line 5.
+          (expect (buffer-string) :to-match "a\\.el:5")
+          (expect (buffer-string) :to-match "\\[bug\\]")
+          (expect (buffer-string) :to-match "Something is off here")
+          (expect (buffer-string) :to-match "Suggested change:")
+          (expect (buffer-string) :to-match "a fixed line"))))
+
+    (it "reports a clean review when no comments come back"
+      (let ((captured-args nil))
+        (spy-on 'copilot-chat--repo-root :and-return-value "/repo/")
+        (spy-on 'copilot-chat--uncommitted-changes :and-return-value
+                '((:uri "file:///repo/a.el" :path "a.el"
+                   :baseContent "old" :headContent "new")))
+        (spy-on 'jsonrpc--async-request-1
+                :and-call-fake
+                (lambda (_conn _method _params &rest args)
+                  (setq captured-args args)
+                  (cons nil nil)))
+        (copilot-chat-review-changes)
+        (funcall (plist-get captured-args :success-fn) '(:comments []))
+        (with-current-buffer copilot-chat--buffer-name
+          (expect (buffer-string) :to-match "No review comments"))))
+
+    (it "shows the server's error when the review is unavailable"
+      (let ((captured-args nil))
+        (spy-on 'copilot-chat--repo-root :and-return-value "/repo/")
+        (spy-on 'copilot-chat--uncommitted-changes :and-return-value
+                '((:uri "file:///repo/a.el" :path "a.el"
+                   :baseContent "old" :headContent "new")))
+        (spy-on 'jsonrpc--async-request-1
+                :and-call-fake
+                (lambda (_conn _method _params &rest args)
+                  (setq captured-args args)
+                  (cons nil nil)))
+        (copilot-chat-review-changes)
+        (funcall (plist-get captured-args :error-fn)
+                 '(:code -32603
+                   :message "GitHub Copilot Code Review is not enabled."))
+        (with-current-buffer copilot-chat--buffer-name
+          (expect (buffer-string)
+                  :to-match "GitHub Copilot Code Review is not enabled\\.")))))
+
+  (describe "copilot-chat-review-region"
+    (before-each
+      (spy-on 'copilot--connection-alivep :and-return-value t)
+      (spy-on 'display-buffer)
+      (spy-on 'message)
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name)))
+
+    (after-each
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name)))
+
+    (it "errors when the buffer visits no file"
+      (with-temp-buffer
+        (insert "code\n")
+        (expect (copilot-chat-review-region (point-min) (point-max))
+                :to-throw 'user-error)))
+
+    (it "sends the selection as a whole-line snippet with one-based lines"
+      (let ((captured-method nil)
+            (captured-params nil))
+        (spy-on 'copilot--workspace-root :and-return-value "/repo/")
+        (spy-on 'jsonrpc--async-request-1
+                :and-call-fake
+                (lambda (_conn method params &rest _args)
+                  (setq captured-method method
+                        captured-params params)
+                  (cons nil nil)))
+        (with-temp-buffer
+          (insert "line one\nline two\nline three\n")
+          (setq buffer-file-name "/repo/src/f.el")
+          ;; Region from the middle of line 1 to the middle of line 2.
+          (copilot-chat-review-region (+ (point-min) 5) 14)
+          (set-buffer-modified-p nil))
+        (expect captured-method :to-equal 'copilot/codeReview/reviewSnippets)
+        (let ((snippet (aref (plist-get captured-params :snippets) 0)))
+          (expect (plist-get snippet :uri) :to-equal "file:///repo/src/f.el")
+          (expect (plist-get snippet :path) :to-equal "src/f.el")
+          (expect (plist-get snippet :content) :to-equal "line one\nline two")
+          (expect (plist-get snippet :startLine) :to-equal 1)
+          (expect (plist-get snippet :endLine) :to-equal 2))))
+
+    (it "does not include the line a region ends at the start of"
+      (let ((captured-params nil))
+        (spy-on 'copilot--workspace-root :and-return-value "/repo/")
+        (spy-on 'jsonrpc--async-request-1
+                :and-call-fake
+                (lambda (_conn _method params &rest _args)
+                  (setq captured-params params)
+                  (cons nil nil)))
+        (with-temp-buffer
+          (insert "line one\nline two\nline three\n")
+          (setq buffer-file-name "/repo/f.el")
+          ;; Region covering lines 1-2 whose end sits at the start of
+          ;; line 3, as a line-wise selection typically does.
+          (copilot-chat-review-region (point-min) 19)
+          (set-buffer-modified-p nil))
+        (let ((snippet (aref (plist-get captured-params :snippets) 0)))
+          (expect (plist-get snippet :content) :to-equal "line one\nline two")
+          (expect (plist-get snippet :endLine) :to-equal 2)))))
+
+  (describe "copilot-chat--format-review-comment"
+    (it "renders location, kind, message, and suggestion"
+      (let ((rendered (copilot-chat--format-review-comment
+                       '(:uri "file:///repo/src/a.el"
+                         :range (:start (:line 0 :character 2)
+                                 :end (:line 1 :character 4))
+                         :message "Watch out"
+                         :kind "consistency"
+                         :suggestion "(safer)")
+                       "/repo/")))
+        (expect rendered :to-match "\\*\\*src/a\\.el:1\\*\\* \\[consistency\\]")
+        (expect rendered :to-match "Watch out")
+        (expect rendered :to-match "Suggested change:")
+        (expect rendered :to-match "(safer)")))
+
+    (it "omits the suggestion block when there is none"
+      (let ((rendered (copilot-chat--format-review-comment
+                       '(:uri "file:///elsewhere/b.el"
+                         :range (:start (:line 9 :character 0)
+                                 :end (:line 9 :character 5))
+                         :message "Hmm"
+                         :kind "bug"
+                         :suggestion nil)
+                       "/repo/")))
+        ;; A file outside the root keeps its full path.
+        (expect rendered :to-match "/elsewhere/b\\.el:10")
+        (expect rendered :not :to-match "Suggested change:"))))
+
   (describe "copilot-chat-insert-commit-message"
     (it "errors before sending when the diff cannot be collected"
       (spy-on 'copilot-chat--staged-diff :and-throw-error 'user-error)

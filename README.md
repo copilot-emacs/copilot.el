@@ -237,6 +237,8 @@ There are also one-shot task commands that send the active region (or the functi
 
 `copilot-chat-task` prompts for the task with completion and dispatches to the same machinery. The prompts live in `copilot-chat-task-prompts` and can be customized (or extended with your own tasks).
 
+Beyond the prose feedback of `copilot-chat-review`, there is also native Copilot Code Review, the same reviewer behind GitHub's code review. `copilot-chat-review-changes` sends the repository's uncommitted changes (staged and unstaged, like a pre-commit review) to the dedicated review service, and `copilot-chat-review-region` does the same for the selected code. Instead of a streamed chat answer, these return structured review comments, rendered in the chat buffer with file, line, an explanation, and a suggested change when there is one. The review runs outside the chat conversation, so it never disturbs one in progress. Note that Copilot Code Review is a separate entitlement; when a subscription doesn't include it, the server's error ("GitHub Copilot Code Review is not enabled.") is shown in the chat buffer.
+
 Key bindings in the `*copilot-chat*` buffer:
 - **C-c RET** or **C-c C-c** — send a follow-up message
 - **C-c C-k** — cancel streaming, or reset if idle
@@ -505,6 +507,8 @@ releases are not installable) the rest of copilot.el works as usual and
 | `copilot-chat-optimize` | Optimize the region or defun at point |
 | `copilot-chat-write-tests` | Write tests for the region or defun at point |
 | `copilot-chat-rewrite` | Rewrite the region per an instruction, with a diff preview and confirmation |
+| `copilot-chat-review-changes` | Review the uncommitted changes with native Copilot Code Review |
+| `copilot-chat-review-region` | Review the selected code with native Copilot Code Review |
 | `copilot-chat-stop` | Cancel streaming, or reset the conversation if idle |
 | `copilot-chat-reset` | Destroy the current conversation and clear the chat buffer |
 | `copilot-chat-restore` | Restore the saved chat for the current workspace |
@@ -550,6 +554,8 @@ A few commonly tweaked variables:
 | `conversation/create` | Supported | Start a new chat conversation |
 | `conversation/turn` | Supported | Send a follow-up chat message |
 | `conversation/destroy` | Supported | End a chat conversation |
+| `copilot/codeReview/reviewChanges` | Supported | Native code review of the uncommitted changes |
+| `copilot/codeReview/reviewSnippets` | Supported | Native code review of a selection |
 | `textDocument/copilotInlineEdit` | Supported | Next Edit Suggestions (NES) |
 
 ### Client-to-Server Notifications

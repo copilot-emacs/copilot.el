@@ -2949,6 +2949,208 @@
           (setq buffer-read-only t)
           (funcall reply-fn "feat: x" nil)
           (expect (buffer-string) :to-equal ""))
-        (expect (current-kill 0) :to-equal "feat: x")))))
+        (expect (current-kill 0) :to-equal "feat: x"))))
+
+  (describe "copilot-chat--rewrite-request"
+    (it "composes the prompt, instruction, language tag, and code"
+      (let ((copilot-chat-rewrite-prompt "PROMPT"))
+        (expect (copilot-chat--rewrite-request
+                 "make it iterative" "python" "def f(): pass")
+                :to-equal
+                "PROMPT\n\nInstruction: make it iterative\n\n```python\ndef f(): pass\n```"))))
+
+  (describe "copilot-chat-rewrite"
+    (it "errors without an active region"
+      (spy-on 'copilot-chat--one-shot)
+      (with-temp-buffer
+        (insert "code")
+        (expect (call-interactively #'copilot-chat-rewrite)
+                :to-throw 'user-error))
+      (expect 'copilot-chat--one-shot :not :to-have-been-called))
+
+    (it "errors on a blank instruction"
+      (spy-on 'copilot-chat--one-shot)
+      (with-temp-buffer
+        (insert "code")
+        (expect (copilot-chat-rewrite (point-min) (point-max) "  ")
+                :to-throw 'user-error))
+      (expect 'copilot-chat--one-shot :not :to-have-been-called))
+
+    (it "sends the prompt, instruction, language, and region code"
+      (spy-on 'copilot-chat--one-shot)
+      (spy-on 'copilot--get-language-id :and-return-value "python")
+      (spy-on 'message)
+      (let ((copilot-chat-rewrite-prompt "PROMPT"))
+        (with-temp-buffer
+          (insert "def f(): pass")
+          (copilot-chat-rewrite (point-min) (point-max) "make it iterative")))
+      (expect (car (spy-calls-args-for 'copilot-chat--one-shot 0))
+              :to-equal
+              "PROMPT\n\nInstruction: make it iterative\n\n```python\ndef f(): pass\n```"))
+
+    (it "strips code fences before previewing and applying"
+      (let ((reply-fn nil)
+            (copilot-chat-rewrite-indent nil))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "python")
+        (spy-on 'copilot-chat--rewrite-confirm :and-return-value t)
+        (spy-on 'message)
+        (with-temp-buffer
+          (insert "OLD")
+          (copilot-chat-rewrite (point-min) (point-max) "rewrite")
+          (funcall reply-fn "```python\nNEW\n```" nil)
+          (expect (buffer-string) :to-equal "NEW"))
+        (expect (cadr (spy-calls-args-for 'copilot-chat--rewrite-confirm 0))
+                :to-equal "NEW")))
+
+    (it "reports a server error without touching the buffer"
+      (let ((reply-fn nil))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "text")
+        (spy-on 'copilot-chat--rewrite-confirm)
+        (spy-on 'message)
+        (with-temp-buffer
+          (insert "OLD")
+          (copilot-chat-rewrite (point-min) (point-max) "rewrite")
+          (funcall reply-fn nil "boom")
+          (expect (buffer-string) :to-equal "OLD"))
+        (expect 'copilot-chat--rewrite-confirm :not :to-have-been-called)))
+
+    (it "reports an empty reply without touching the buffer"
+      (let ((reply-fn nil))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "text")
+        (spy-on 'copilot-chat--rewrite-confirm)
+        (spy-on 'message)
+        (with-temp-buffer
+          (insert "OLD")
+          (copilot-chat-rewrite (point-min) (point-max) "rewrite")
+          (funcall reply-fn "```\n\n```" nil)
+          (expect (buffer-string) :to-equal "OLD"))
+        (expect 'copilot-chat--rewrite-confirm :not :to-have-been-called)))
+
+    (it "does nothing when the buffer is gone by reply time"
+      (let ((reply-fn nil))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "text")
+        (spy-on 'copilot-chat--rewrite-confirm)
+        (spy-on 'message)
+        (let ((buf (generate-new-buffer "rewrite-src")))
+          (with-current-buffer buf
+            (insert "OLD")
+            (copilot-chat-rewrite (point-min) (point-max) "rewrite"))
+          (kill-buffer buf))
+        (funcall reply-fn "NEW" nil)
+        (expect 'copilot-chat--rewrite-confirm :not :to-have-been-called)))
+
+    (it "drops the rewrite when the region changed since the request"
+      (let ((reply-fn nil))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "text")
+        (spy-on 'copilot-chat--rewrite-confirm)
+        (spy-on 'message)
+        (with-temp-buffer
+          (insert "OLD")
+          (copilot-chat-rewrite (point-min) (point-max) "rewrite")
+          ;; The user edits inside the region before the reply arrives.
+          (goto-char 2)
+          (insert "X")
+          (funcall reply-fn "NEW" nil)
+          (expect (buffer-string) :to-equal "OXLD"))
+        (expect 'copilot-chat--rewrite-confirm :not :to-have-been-called)))
+
+    (it "leaves the buffer untouched when the preview is declined"
+      (let ((reply-fn nil))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "text")
+        (spy-on 'y-or-n-p :and-return-value nil)
+        (spy-on 'message)
+        (with-temp-buffer
+          (insert "OLD")
+          (copilot-chat-rewrite (point-min) (point-max) "rewrite")
+          (funcall reply-fn "NEW" nil)
+          (expect (buffer-string) :to-equal "OLD"))
+        (expect 'y-or-n-p :to-have-been-called)
+        (expect (get-buffer copilot-chat--rewrite-preview-buffer-name)
+                :not :to-be-truthy)))
+
+    (it "replaces exactly the region on accept"
+      (let ((reply-fn nil)
+            (copilot-chat-rewrite-indent nil))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "text")
+        (spy-on 'y-or-n-p :and-return-value t)
+        (spy-on 'message)
+        (with-temp-buffer
+          (insert "before\nREGION\nafter\n")
+          (copilot-chat-rewrite 8 14 "rewrite")
+          (funcall reply-fn "NEW" nil)
+          (expect (buffer-string) :to-equal "before\nNEW\nafter\n"))
+        (expect (get-buffer copilot-chat--rewrite-preview-buffer-name)
+                :not :to-be-truthy)))
+
+    (it "follows the region when text before it changes in flight"
+      (let ((reply-fn nil)
+            (copilot-chat-rewrite-indent nil))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "text")
+        (spy-on 'copilot-chat--rewrite-confirm :and-return-value t)
+        (spy-on 'message)
+        (with-temp-buffer
+          (insert "head\nREGION\ntail\n")
+          (copilot-chat-rewrite 6 12 "rewrite")
+          ;; The user edits above the region before the reply arrives.
+          (goto-char (point-min))
+          (insert ";; new line\n")
+          (funcall reply-fn "NEW" nil)
+          (expect (buffer-string) :to-equal ";; new line\nhead\nNEW\ntail\n"))))
+
+    (it "re-indents the inserted text by default"
+      (let ((reply-fn nil)
+            (copilot-chat-rewrite-indent t))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "text")
+        (spy-on 'copilot-chat--rewrite-confirm :and-return-value t)
+        (spy-on 'indent-region)
+        (spy-on 'message)
+        (with-temp-buffer
+          (insert "OLD")
+          (copilot-chat-rewrite (point-min) (point-max) "rewrite")
+          (funcall reply-fn "NEW" nil))
+        (expect 'indent-region :to-have-been-called)))
+
+    (it "skips re-indentation when copilot-chat-rewrite-indent is nil"
+      (let ((reply-fn nil)
+            (copilot-chat-rewrite-indent nil))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "text")
+        (spy-on 'copilot-chat--rewrite-confirm :and-return-value t)
+        (spy-on 'indent-region)
+        (spy-on 'message)
+        (with-temp-buffer
+          (insert "OLD")
+          (copilot-chat-rewrite (point-min) (point-max) "rewrite")
+          (funcall reply-fn "NEW" nil))
+        (expect 'indent-region :not :to-have-been-called)))))
 
 ;;; copilot-chat-test.el ends here

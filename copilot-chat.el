@@ -164,6 +164,26 @@ Used by `copilot-chat-insert-commit-message'."
   :group 'copilot-chat
   :package-version '(copilot . "0.8"))
 
+(defcustom copilot-chat-rewrite-prompt
+  "Rewrite the code below according to the instruction that follows it.
+Return ONLY the rewritten code, without markdown code fences and
+without any commentary or explanations."
+  "Instruction prepended to the code sent by `copilot-chat-rewrite'.
+The rewrite instruction read from the minibuffer and the region's code
+\(in a fenced block tagged with the buffer's language) are appended to
+this prompt."
+  :type 'string
+  :group 'copilot-chat
+  :package-version '(copilot . "0.8"))
+
+(defcustom copilot-chat-rewrite-indent t
+  "When non-nil, re-indent the region rewritten by `copilot-chat-rewrite'.
+`indent-region' runs over the inserted text right after an accepted
+rewrite replaces the region."
+  :type 'boolean
+  :group 'copilot-chat
+  :package-version '(copilot . "0.8"))
+
 (defcustom copilot-chat-save-history nil
   "When non-nil, save the chat transcript to disk after each turn.
 The whole session is written to a per-workspace file under
@@ -2099,6 +2119,127 @@ chat panel and does not disturb an ongoing chat conversation."
                (insert reply)))
            (set-marker pos nil)
            (message "Copilot Chat: Commit message inserted"))))))))
+
+;;
+;; Region rewrite
+;;
+
+(defconst copilot-chat--rewrite-preview-buffer-name
+  "*copilot-chat-rewrite-preview*"
+  "Name of the buffer used to preview a pending region rewrite.")
+
+(defun copilot-chat--rewrite-request (instruction lang code)
+  "Return the chat message asking to rewrite CODE per INSTRUCTION.
+The message starts with `copilot-chat-rewrite-prompt' and carries CODE
+in a fenced block tagged with the language id LANG."
+  (format "%s\n\nInstruction: %s\n\n```%s\n%s\n```"
+          copilot-chat-rewrite-prompt instruction lang code))
+
+(defun copilot-chat--rewrite-confirm (original proposal)
+  "Preview PROPOSAL replacing ORIGINAL and ask whether to apply it.
+Show a diff-style preview (removed region, then proposed replacement)
+in a temporary window and prompt with `y-or-n-p'.  Return the answer;
+the preview buffer is removed afterwards.  The current buffer is
+preserved: tearing down the preview window can leave another buffer
+current (e.g. when the preview reused the sole window), and the caller
+is in the middle of handling an async reply."
+  ;; A fresh buffer per call, so an overlapping confirmation can't erase
+  ;; or kill the preview out from under this prompt.
+  (let ((buf (generate-new-buffer copilot-chat--rewrite-preview-buffer-name))
+        (original-buffer (current-buffer)))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf
+            (insert (copilot-chat--diff-lines
+                     original "-" 'copilot-chat-diff-removed-face)
+                    "\n"
+                    (copilot-chat--diff-lines
+                     proposal "+" 'copilot-chat-diff-added-face))
+            (goto-char (point-min))
+            (setq buffer-read-only t))
+          (display-buffer buf '((display-buffer-pop-up-window
+                                 display-buffer-use-some-window)
+                                (window-height . fit-window-to-buffer)))
+          (y-or-n-p "Copilot Chat: Apply this rewrite? "))
+      (when-let* ((win (get-buffer-window buf)))
+        (quit-window nil win))
+      (kill-buffer buf)
+      (when (buffer-live-p original-buffer)
+        (set-buffer original-buffer)))))
+
+(defun copilot-chat--rewrite-apply (buf start end reply)
+  "Replace the region between markers START and END in BUF with REPLY.
+Re-indent the inserted text afterwards unless
+`copilot-chat-rewrite-indent' is nil."
+  (with-current-buffer buf
+    (save-excursion
+      (goto-char start)
+      (delete-region start end)
+      (insert reply)
+      (when copilot-chat-rewrite-indent
+        (indent-region start (point))))))
+
+(defun copilot-chat--rewrite-reply (buf start end original reply error-msg)
+  "Handle the rewrite REPLY for the region ORIGINAL in BUF.
+START and END are markers delimiting the region; ERROR-MSG is the error
+string from the one-shot request, or nil.  Preview the proposal and
+apply it on confirmation; when BUF is gone, the region's text no longer
+matches ORIGINAL, or the reply is empty or errored, report the reason
+and leave the buffer alone.  The markers are cleared either way."
+  (let ((reply (and reply (copilot-chat--strip-code-fences reply))))
+    (cond
+     (error-msg
+      (message "Copilot Chat: Rewrite failed: %s" error-msg))
+     ((or (null reply) (string-empty-p reply))
+      (message "Copilot Chat: Got an empty rewrite"))
+     ((not (buffer-live-p buf))
+      (message "Copilot Chat: Rewrite buffer is gone"))
+     ((not (string= original
+                    (with-current-buffer buf
+                      (buffer-substring-no-properties start end))))
+      (message "Copilot Chat: Region changed since the request; rewrite dropped"))
+     ((buffer-local-value 'buffer-read-only buf)
+      ;; Don't signal inside the jsonrpc process filter; salvage the
+      ;; reply instead.
+      (kill-new reply)
+      (message "Copilot Chat: Buffer is read-only; rewrite copied to kill ring"))
+     ((not (copilot-chat--rewrite-confirm original reply))
+      (message "Copilot Chat: Rewrite discarded"))
+     (t
+      (copilot-chat--rewrite-apply buf start end reply)
+      (message "Copilot Chat: Region rewritten"))))
+  (set-marker start nil)
+  (set-marker end nil))
+
+;;;###autoload
+(defun copilot-chat-rewrite (start end instruction)
+  "Rewrite the region between START and END according to INSTRUCTION.
+The region's code is sent to Copilot with INSTRUCTION (read from the
+minibuffer when called interactively) and the buffer's language.  The
+reply is previewed as a diff against the region and applied only after
+confirmation; the region is tracked with markers, so edits elsewhere in
+the buffer while the request is in flight don't shift the target, while
+edits to the region itself drop the rewrite.  The request runs outside
+the chat panel and does not disturb an ongoing chat conversation; cancel
+it with `copilot-chat-stop'."
+  (interactive
+   (if (use-region-p)
+       (list (region-beginning) (region-end)
+             (read-string "Rewrite instruction: "))
+     (user-error "Copilot Chat: No active region")))
+  (when (string-empty-p (string-trim instruction))
+    (user-error "Copilot Chat: Empty rewrite instruction"))
+  (let* ((buf (current-buffer))
+         (code (buffer-substring-no-properties start end))
+         (request (copilot-chat--rewrite-request
+                   instruction (copilot--get-language-id) code))
+         (beg (copy-marker start))
+         (fin (copy-marker end)))
+    (message "Copilot Chat: Rewriting region...")
+    (copilot-chat--one-shot
+     request
+     (lambda (reply error-msg)
+       (copilot-chat--rewrite-reply buf beg fin code reply error-msg)))))
 
 ;;
 ;; Major mode

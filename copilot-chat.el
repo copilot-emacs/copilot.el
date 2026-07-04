@@ -3043,8 +3043,10 @@ server."
                 'face 'copilot-chat-status-header-face)))
 
 (declare-function gfm-mode "ext:markdown-mode" ())
-(declare-function org-mode "org" ())
+(declare-function org-set-font-lock-defaults "org" ())
 (declare-function outline-minor-mode "outline" (&optional arg))
+(defvar org-font-lock-keywords)
+(defvar org-inhibit-startup)
 
 (defun copilot-chat--setup-markdown-font-lock ()
   "Set up GFM font-lock for the markdown frontend.
@@ -3067,14 +3069,19 @@ above its nested `** Copilot' reply."
 
 (defun copilot-chat--setup-org-font-lock ()
   "Set up Org font-lock and outline folding for the org frontend.
-When `org' is available, borrow its `font-lock-defaults'; otherwise leave
+When Org is available, install Org's own font-lock keywords in this
+buffer so headings, emphasis, and code render like Org; otherwise leave
 the basic highlighting in place.  Either way enable `outline-minor-mode'
 so the emitted `* You'/`** Copilot' headings fold."
-  (when (require 'org nil t)
-    (setq-local font-lock-defaults
-                (with-temp-buffer
-                  (org-mode)
-                  font-lock-defaults))
+  ;; Org keeps its keywords in the buffer-local `org-font-lock-keywords',
+  ;; which only `org-set-font-lock-defaults' populates; borrowing
+  ;; `font-lock-defaults' from a temp Org buffer would just copy the
+  ;; globally nil symbol and highlight nothing, so set them up here.
+  ;; `org-set-font-lock-defaults' needs `org-element' loaded.
+  (when (and (require 'org nil t) (require 'org-element nil t))
+    (setq-local org-inhibit-startup t)
+    (org-set-font-lock-defaults)
+    (setq-local font-lock-defaults '(org-font-lock-keywords t))
     (font-lock-flush))
   (setq-local outline-regexp "\\*+ ")
   (setq-local outline-level #'copilot-chat--org-outline-level)

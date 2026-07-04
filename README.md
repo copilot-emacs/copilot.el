@@ -280,6 +280,8 @@ If you often flip between a couple of setups (say a quick ask-mode model and a t
 
 At each tool confirmation prompt you can answer `yes`, `no`, or `always`; `always` approves that tool for the rest of the conversation so it stops asking.
 
+For the tools copilot.el runs itself, the prompt also offers `edit`, which lets you change the input before the tool runs: the shell command of `run_in_terminal`, the content of `create_file` (edited in a temporary buffer, confirmed with `C-c C-c` or cancelled with `C-c C-k`), or the URLs of `fetch_web_page`. The tool then runs once with your edited input. Server-executed and MCP tools do not offer `edit`, since the server does not accept a modified input back.
+
 > [!IMPORTANT]
 >
 > Agent mode only works with a model that can call tools. Some chat models (and whatever default the server resolves when `copilot-chat-model` is `nil`) can't, and then Copilot just describes the commands to run instead of running them, so agent mode looks inactive. Pick a tool-capable model with `M-x copilot-chat-select-model`. copilot.el also warns when it starts an agent-mode conversation whose model lacks tool support.

@@ -786,16 +786,25 @@ Return nil for tools that do not write files."
 (defun copilot-chat--ask-tool (msg)
   "Prompt to approve the tool described by MSG.
 Return `allow' (run it once), `always' (run it and skip future prompts
-for this tool this session), or `deny'."
-  (pcase (car (read-multiple-choice
-               (copilot-chat--confirmation-prompt msg)
-               '((?y "yes" "Allow this tool call")
-                 (?n "no" "Decline this tool call")
-                 (?a "always"
-                     "Allow this and future calls to this tool this session"))))
-    (?y 'allow)
-    (?a 'always)
-    (_ 'deny)))
+for this tool this session), `edit' (edit its input, then run it once),
+or `deny'.  The `edit' choice is offered only for tools copilot.el runs
+itself that have a meaningful editable field (see
+`copilot-chat--tool-editable-field')."
+  (let ((choices
+         (append
+          '((?y "yes" "Allow this tool call")
+            (?n "no" "Decline this tool call")
+            (?a "always"
+                "Allow this and future calls to this tool this session"))
+          (when (copilot-chat--tool-editable-field (plist-get msg :name))
+            '((?e "edit"
+                  "Edit this tool's input, then allow it once"))))))
+    (pcase (car (read-multiple-choice
+                 (copilot-chat--confirmation-prompt msg) choices))
+      (?y 'allow)
+      (?a 'always)
+      (?e 'edit)
+      (_ 'deny))))
 
 (defun copilot-chat--confirm-with-preview (msg preview)
   "Show PREVIEW in a temporary window, then prompt to confirm MSG.
@@ -838,6 +847,111 @@ confirmation time."
   (mapcar (lambda (def) (plist-get def :name))
           (copilot-chat--tool-definitions)))
 
+(defconst copilot-chat--tool-editable-fields
+  '(("run_in_terminal" . :command)
+    ("create_file" . :content)
+    ("fetch_web_page" . :urls))
+  "Map from a client tool's name to the input field the user may edit.
+Only the tools copilot.el runs itself appear here, because the server
+never reads a modified input back: editing is possible only for input
+copilot.el consumes when it invokes the tool.  `get_errors' is omitted,
+as its only input is a list of file paths with nothing useful to
+hand-edit.")
+
+(defun copilot-chat--tool-editable-field (name)
+  "Return the editable input field for tool NAME, or nil.
+NAME must be the exact name copilot.el registered (run_in_terminal and
+friends): namespaced server tools, even ones whose base name collides
+with a client tool, are executed by the server and so cannot be edited."
+  (and (member name (copilot-chat--client-tool-names))
+       (cdr (assoc name copilot-chat--tool-editable-fields))))
+
+(defvar copilot-chat--tool-edits nil
+  "Alist of pending user-edited tool inputs, keyed by tool call.
+Populated when the user picks `edit' at a confirmation prompt and
+consumed when the matching `conversation/invokeClientTool' request
+arrives, so the edited input is used in place of the server's.  Kept as
+global state because both the confirmation and the invocation are handled
+in the JSON-RPC dispatcher rather than in the chat buffer.")
+
+(defun copilot-chat--tool-edit-key (msg)
+  "Return the key that ties a stashed edit to its later invocation for MSG.
+Prefer the server's `toolCallId', which is carried on both the
+confirmation and the invocation request; fall back to the tool name,
+which is safe because the server processes tool calls sequentially,
+awaiting each confirmation before invoking."
+  (or (plist-get msg :toolCallId)
+      (copilot-chat--tool-base-name (plist-get msg :name))))
+
+(defun copilot-chat--stash-tool-edit (msg input)
+  "Remember edited INPUT for the tool call described by MSG."
+  (setf (alist-get (copilot-chat--tool-edit-key msg)
+                   copilot-chat--tool-edits nil nil #'equal)
+        input))
+
+(defun copilot-chat--take-tool-edit (msg)
+  "Return and forget any stashed edited input for MSG, or nil when none."
+  (let ((key (copilot-chat--tool-edit-key msg)))
+    (prog1 (alist-get key copilot-chat--tool-edits nil nil #'equal)
+      (setf (alist-get key copilot-chat--tool-edits nil t #'equal) nil))))
+
+(defvar copilot-chat--tool-edit-keymap
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") #'exit-recursive-edit)
+    (define-key map (kbd "C-c C-k") #'abort-recursive-edit)
+    map)
+  "Keymap active while editing a multi-line tool argument in a buffer.
+Keys it does not bind fall through to the global map, so ordinary text
+editing works as usual.")
+
+(defun copilot-chat--edit-in-buffer (initial description)
+  "Let the user edit INITIAL in a temporary buffer and return the new text.
+DESCRIPTION names the value being edited and appears in the header line.
+Editing runs in a recursive edit, keyed by
+`copilot-chat--tool-edit-keymap'; cancelling signals `quit'."
+  (let ((buf (generate-new-buffer "*copilot-chat-tool-edit*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf
+            (insert (or initial ""))
+            (goto-char (point-min))
+            (use-local-map copilot-chat--tool-edit-keymap)
+            (setq header-line-format
+                  (substitute-command-keys
+                   (format "Edit %s, then \\[exit-recursive-edit] to accept \
+or \\[abort-recursive-edit] to cancel"
+                           description))))
+          (pop-to-buffer buf)
+          (recursive-edit)
+          (with-current-buffer buf (buffer-string)))
+      (when-let* ((win (get-buffer-window buf)))
+        (quit-window nil win))
+      (when (buffer-live-p buf) (kill-buffer buf)))))
+
+(defun copilot-chat--read-tool-field (field current)
+  "Read a replacement value for tool input FIELD, defaulting to CURRENT.
+Return the value in the shape the field expects: a string for `:command',
+a string for `:content', and a vector of strings for `:urls'."
+  (pcase field
+    (:command (read-string "Copilot Chat: edit command: " current))
+    (:content (copilot-chat--edit-in-buffer current "file content"))
+    (:urls (vconcat (split-string
+                     (read-string "Copilot Chat: edit URLs (space-separated): "
+                                  (mapconcat #'identity (append current nil) " "))
+                     nil t)))))
+
+(defun copilot-chat--read-tool-edit (msg)
+  "Prompt for a new value for MSG's editable field and stash it.
+Read a replacement for the field named by
+`copilot-chat--tool-editable-field', then remember a copy of the tool
+input with that field replaced, keyed so the later invocation picks it
+up.  A cancelled edit signals `quit' and leaves the stash untouched."
+  (let* ((name (plist-get msg :name))
+         (input (plist-get msg :input))
+         (field (copilot-chat--tool-editable-field name))
+         (new (copilot-chat--read-tool-field field (plist-get input field))))
+    (copilot-chat--stash-tool-edit msg (plist-put (copy-sequence input) field new))))
+
 (defun copilot-chat--log-server-tool (msg)
   "Insert a status line for a server-executed tool approved via MSG.
 The server runs its own built-in and MCP tools internally, so for the
@@ -862,6 +976,11 @@ at the prompt remembers the tool for the rest of the conversation."
         (copilot-chat--accept-tool msg)
       (pcase (copilot-chat--confirm-tool msg)
         ('deny (list :result "dismiss"))
+        ('edit
+         ;; Stash the edited input now; the server reads only the result
+         ;; here and sends the input in a separate invocation request.
+         (copilot-chat--read-tool-edit msg)
+         (copilot-chat--accept-tool msg))
         (decision
          (when (eq decision 'always)
            (cl-pushnew (copilot-chat--tool-base-name name)
@@ -1083,7 +1202,9 @@ both are on), and report when no backend is available at all."
   "Handle `conversation/invokeClientTool' request MSG.
 Dispatch to the appropriate tool and return a LanguageModelToolResult."
   (let ((name (plist-get msg :name))
-        (input (plist-get msg :input)))
+        ;; Prefer an input the user edited at confirmation time, if any.
+        (input (or (copilot-chat--take-tool-edit msg)
+                   (plist-get msg :input))))
     (pcase name
       ("run_in_terminal" (copilot-chat--execute-run-in-terminal input))
       ("create_file" (copilot-chat--execute-create-file input))
@@ -1519,8 +1640,10 @@ turnId.  Turns restored by `copilot-chat-restore' are replayed ahead
 of MESSAGE, so the new conversation picks up the saved context."
   (let ((token (format "copilot-chat-%s" (float-time)))
         (restored nil))
-    ;; A fresh conversation starts with a clean slate of session approvals.
+    ;; A fresh conversation starts with a clean slate of session approvals
+    ;; and no leftover tool-input edits.
     (setq copilot-chat--session-approved-tools nil)
+    (setq copilot-chat--tool-edits nil)
     (copilot-chat--maybe-warn-model-lacks-tools)
     (with-current-buffer (get-buffer copilot-chat--buffer-name)
       (setq copilot-chat--work-done-token token)
@@ -1604,6 +1727,9 @@ of MESSAGE, so the new conversation picks up the saved context."
 
 (defun copilot-chat--destroy ()
   "Destroy the current conversation."
+  ;; Pending tool-input edits belong to the conversation being torn down;
+  ;; never let one leak into the next.
+  (setq copilot-chat--tool-edits nil)
   (let ((chat-buf (get-buffer copilot-chat--buffer-name)))
     (when (and chat-buf (buffer-live-p chat-buf))
       (with-current-buffer chat-buf

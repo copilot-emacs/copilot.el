@@ -169,6 +169,25 @@ for new chat buffers."
   :group 'copilot-chat
   :package-version '(copilot . "0.8"))
 
+(defcustom copilot-chat-frontend 'markdown
+  "Markup used to render the Copilot Chat buffer.
+With the default `markdown' value the buffer is highlighted as
+GitHub-flavored Markdown.  With `org' the exchange scaffolding is written
+as Org headings (a `* You' heading per turn with a nested `** Copilot'
+heading) and the buffer borrows Org highlighting plus outline folding;
+this needs the `org' library to be available.
+
+The streamed assistant response is left exactly as the server sends it in
+both frontends, so its body stays markdown-ish (fenced code blocks and
+all) regardless of this setting.
+
+The frontend is chosen when the chat buffer is created, so changing this
+takes effect for new chat buffers."
+  :type '(choice (const :tag "Markdown" markdown)
+                 (const :tag "Org" org))
+  :group 'copilot-chat
+  :package-version '(copilot . "0.8"))
+
 (defcustom copilot-chat-task-prompts
   '((review . "Review the following code and point out bugs, risks, and possible improvements:")
     (fix . "Fix the bugs or problems in the following code and explain what was wrong:")
@@ -2099,13 +2118,33 @@ the conversation is destroyed.  Cancellable with `copilot-chat-stop'."
       (goto-char (point-max))
       (recenter -1))))
 
+(defun copilot-chat--insert-prompt-markdown (message)
+  "Insert the markdown prompt scaffolding for MESSAGE at point.
+Write the bold `You:' label, the message, and the bold `Copilot:'
+label; the streamed reply is appended after it."
+  (insert (propertize "You:" 'face 'bold) "\n"
+          message "\n\n"
+          (propertize "Copilot:" 'face 'bold) "\n"))
+
+(defun copilot-chat--insert-prompt-org (message)
+  "Insert the Org prompt scaffolding for MESSAGE at point.
+Write a top-level `* You' heading holding the message, then a nested
+`** Copilot' heading; the streamed reply is appended under it, and
+`outline-minor-mode' can fold either heading."
+  (insert "* You\n"
+          message "\n\n"
+          "** Copilot\n"))
+
 (defun copilot-chat--insert-prompt (message)
-  "Insert a user prompt with MESSAGE into the chat buffer."
+  "Insert a user prompt with MESSAGE into the chat buffer.
+The markup follows `copilot-chat-frontend': the markdown frontend writes
+the `You:'/`Copilot:' scaffolding, the org frontend writes `* You' and
+`** Copilot' headings."
   (let ((inhibit-read-only t))
     (goto-char (point-max))
-    (insert (propertize "You:" 'face 'bold) "\n"
-            message "\n\n"
-            (propertize "Copilot:" 'face 'bold) "\n")))
+    (pcase copilot-chat-frontend
+      ('org (copilot-chat--insert-prompt-org message))
+      (_ (copilot-chat--insert-prompt-markdown message)))))
 
 ;;
 ;; Code blocks
@@ -3004,19 +3043,52 @@ server."
                 'face 'copilot-chat-status-header-face)))
 
 (declare-function gfm-mode "ext:markdown-mode" ())
+(declare-function org-mode "org" ())
+(declare-function outline-minor-mode "outline" (&optional arg))
 
-(defun copilot-chat--setup-mode ()
-  "Set up font-lock, mode-line, header-line, and visual-line settings.
-Used by `copilot-chat-mode'.  When `markdown-mode' is available, enable
-GFM font-lock for full markdown rendering; otherwise use basic
-highlighting."
+(defun copilot-chat--setup-markdown-font-lock ()
+  "Set up GFM font-lock for the markdown frontend.
+When `markdown-mode' is available, borrow its GFM `font-lock-defaults'
+and enable native code-block fontification; otherwise leave the basic
+highlighting in place."
   (when (require 'markdown-mode nil t)
     (setq-local markdown-fontify-code-blocks-natively t)
     (setq-local font-lock-defaults
                 (with-temp-buffer
                   (gfm-mode)
                   font-lock-defaults))
+    (font-lock-flush)))
+
+(defun copilot-chat--org-outline-level ()
+  "Return the outline level of the Org heading at point.
+The level is the number of leading asterisks, so a `* You' heading folds
+above its nested `** Copilot' reply."
+  (- (match-end 0) (match-beginning 0) 1))
+
+(defun copilot-chat--setup-org-font-lock ()
+  "Set up Org font-lock and outline folding for the org frontend.
+When `org' is available, borrow its `font-lock-defaults'; otherwise leave
+the basic highlighting in place.  Either way enable `outline-minor-mode'
+so the emitted `* You'/`** Copilot' headings fold."
+  (when (require 'org nil t)
+    (setq-local font-lock-defaults
+                (with-temp-buffer
+                  (org-mode)
+                  font-lock-defaults))
     (font-lock-flush))
+  (setq-local outline-regexp "\\*+ ")
+  (setq-local outline-level #'copilot-chat--org-outline-level)
+  (outline-minor-mode 1))
+
+(defun copilot-chat--setup-mode ()
+  "Set up font-lock, mode-line, header-line, and visual-line settings.
+Used by `copilot-chat-mode'.  Font-lock follows `copilot-chat-frontend':
+the markdown frontend borrows GFM highlighting, the org frontend borrows
+Org highlighting and enables outline folding.  In both cases the buffer
+stays `special-mode'-derived and read-only."
+  (pcase copilot-chat-frontend
+    ('org (copilot-chat--setup-org-font-lock))
+    (_ (copilot-chat--setup-markdown-font-lock)))
   (font-lock-add-keywords nil copilot-chat--font-lock-keywords t)
   (setq mode-name '(:eval (copilot-chat--mode-line)))
   (when copilot-chat-show-status-header
@@ -3026,8 +3098,11 @@ highlighting."
 
 (define-derived-mode copilot-chat-mode special-mode "Copilot-Chat"
   "Major mode for Copilot Chat.
-When `markdown-mode' is installed, the buffer gets full GFM
-rendering; otherwise basic font-lock is used.
+The buffer is rendered according to `copilot-chat-frontend': the
+markdown frontend gets GFM highlighting (via `markdown-mode' when
+installed), the org frontend gets Org highlighting and outline folding.
+In either case basic font-lock is used when the backing library is
+unavailable.
 
 \\{copilot-chat-mode-map}"
   (copilot-chat--setup-mode))

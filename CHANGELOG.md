@@ -23,6 +23,7 @@
 - Add `copilot-menu`, a transient (magit-style) menu that gathers the most common Copilot commands (completions, chat, agent mode, account and usage info, and server management) and shows the current state of `copilot-mode`, agent mode, and the selected chat model. Requires the `transient` package (bundled with Emacs 28.1 and newer) but only when the menu itself is used.
 - Add an `edit` choice at the agent-mode tool-confirmation prompt for the tools copilot.el runs itself, letting you tweak the input before it runs: the shell command of `run_in_terminal`, the content of `create_file` (in a temporary buffer), or the URLs of `fetch_web_page`. Server-executed and MCP tools keep the plain yes/no/always prompt, since the server never reads a modified input back.
 - Raise a desktop notification when a chat turn finishes, if it ran at least `copilot-chat-notify-after-seconds` (10 by default; nil disables) and the chat buffer is not the one you are looking at. The backend prefers D-Bus, falls back to `osascript` on macOS and to `message` elsewhere, and is overridable via `copilot-chat-notify-function`.
+- Add `copilot-chat-frontend`, letting you render the `*copilot-chat*` buffer as Org instead of the default GitHub-flavored Markdown. Set it to `org` to write each exchange as foldable Org headings (`* You` / `** Copilot`) with Org highlighting; this needs the `org` library. The choice applies to new chat buffers, and the streamed assistant body stays markdown-ish (fenced code blocks and all) in either frontend.
 
 ### Bug Fixes
 

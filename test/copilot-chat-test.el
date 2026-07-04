@@ -726,7 +726,53 @@
           (copilot-chat--insert-prompt "What is Emacs?")
           (expect (buffer-string) :to-match "You:")
           (expect (buffer-string) :to-match "What is Emacs?")
-          (expect (buffer-string) :to-match "Copilot:")))))
+          (expect (buffer-string) :to-match "Copilot:"))))
+
+    (it "produces the exact markdown scaffolding by default"
+      (with-temp-buffer
+        (let ((copilot-chat-frontend 'markdown)
+              (inhibit-read-only t))
+          (copilot-chat-mode)
+          (copilot-chat--insert-prompt "What is Emacs?")
+          (expect (substring-no-properties (buffer-string))
+                  :to-equal "You:\nWhat is Emacs?\n\nCopilot:\n"))))
+
+    (it "produces Org headings with the org frontend"
+      (with-temp-buffer
+        (let ((copilot-chat-frontend 'org)
+              (inhibit-read-only t))
+          (copilot-chat-mode)
+          (copilot-chat--insert-prompt "What is Emacs?")
+          (expect (substring-no-properties (buffer-string))
+                  :to-equal "* You\nWhat is Emacs?\n\n** Copilot\n")))))
+
+  ;;
+  ;; Org frontend
+  ;;
+
+  (describe "org frontend"
+    (it "sets up the buffer without error and keeps special-mode intact"
+      (with-temp-buffer
+        (let ((copilot-chat-frontend 'org))
+          (copilot-chat-mode)
+          (expect (derived-mode-p 'special-mode) :to-be-truthy)
+          (expect buffer-read-only :to-be-truthy)
+          (expect (lookup-key copilot-chat-mode-map (kbd "C-c C-c"))
+                  :to-equal #'copilot-chat-send))))
+
+    (it "extracts fenced code blocks from an org-frontend buffer"
+      (with-temp-buffer
+        (let ((copilot-chat-frontend 'org)
+              (inhibit-read-only t))
+          (copilot-chat-mode)
+          (copilot-chat--insert-prompt "show me elisp")
+          (goto-char (point-max))
+          (insert "Here you go:\n```elisp\n(foo)\n```\n")
+          (let ((blocks (copilot-chat--code-blocks)))
+            (expect (length blocks) :to-equal 1)
+            (expect (plist-get (nth 0 blocks) :lang) :to-equal "elisp")
+            (expect (plist-get (nth 0 blocks) :code)
+                    :to-equal "(foo)\n"))))))
 
   ;;
   ;; Mode-line lighter
@@ -1325,6 +1371,27 @@
                         :to-equal copilot-chat--turns)
                 (expect 'jsonrpc--async-request-1
                         :not :to-have-been-called))
+            (kill-buffer copilot-chat--buffer-name))))
+
+      (it "renders the restored transcript with the org frontend"
+        (let ((copilot-chat-history-directory history-dir)
+              (copilot-chat-frontend 'org))
+          (with-temp-file (expand-file-name
+                           (concat (sha1 "/tmp/project/") ".eld") history-dir)
+            (prin1 '(:version 1
+                     :timestamp "2026-07-04T00:00:00+0000"
+                     :workspace "/tmp/project/"
+                     :turns (("first q" . "first a")))
+                   (current-buffer)))
+          (copilot-chat-restore)
+          (unwind-protect
+              (with-current-buffer copilot-chat--buffer-name
+                (expect (substring-no-properties (buffer-string))
+                        :to-match "^\\* You")
+                (expect (substring-no-properties (buffer-string))
+                        :to-match "^\\*\\* Copilot")
+                (expect (buffer-string) :to-match "first q")
+                (expect (buffer-string) :to-match "first a"))
             (kill-buffer copilot-chat--buffer-name))))
 
       (it "errors when there is no saved history"

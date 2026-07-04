@@ -296,6 +296,8 @@ For the tools copilot.el runs itself, the prompt also offers `edit`, which lets 
 >
 > Install [`markdown-mode`](https://github.com/jrblevin/markdown-mode) for rich markdown rendering (headings, code blocks, emphasis, etc.) in the chat buffer. Without it, only basic highlighting is used.
 
+By default the chat buffer is rendered as GitHub-flavored Markdown. Org users can set `copilot-chat-frontend` to `org` to render it as Org instead: each exchange becomes a foldable `* You` heading with a nested `** Copilot` heading, the buffer borrows Org highlighting, and `outline-minor-mode` is enabled so turns fold. This frontend needs the `org` library (bundled with Emacs). The setting is read when the chat buffer is created, so it applies to new chat buffers. Note that only the scaffolding changes: the streamed assistant response is kept exactly as the server sends it, so its body stays markdown-ish (fenced code blocks and all) under either frontend, and the code-block commands keep working.
+
 #### MCP servers
 
 When agent mode is enabled, you can extend Copilot with [Model Context Protocol](https://modelcontextprotocol.io) servers. Set `copilot-mcp-servers` to a map of server name to definition and copilot.el forwards it to the language server, whose tools then become available in the chat. Each invocation still prompts for confirmation unless listed in `copilot-chat-auto-approve-tools`.

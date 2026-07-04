@@ -79,9 +79,13 @@
 ;;
 
 (defun copilot-menu-toggle-agent-mode ()
-  "Toggle `copilot-chat-use-agent-mode' and report the new state."
+  "Toggle `copilot-chat-use-agent-mode' and report the new state.
+Any explicit mode chosen with `copilot-chat-select-mode' is cleared, so
+the toggle actually takes effect (a selected mode otherwise wins over
+the boolean)."
   (interactive)
   (require 'copilot-chat)
+  (setq copilot-chat--mode nil)
   (setq copilot-chat-use-agent-mode (not copilot-chat-use-agent-mode))
   (message "Copilot Chat: agent mode %s"
            (if copilot-chat-use-agent-mode "enabled" "disabled")))

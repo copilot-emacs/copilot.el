@@ -1341,6 +1341,49 @@ Servers are configured via `copilot-mcp-servers'."
     (display-buffer buf)))
 
 ;;
+;; Cloud coding agent messages
+;;
+
+(defconst copilot-chat--coding-agent-buffer-name "*copilot-coding-agent*"
+  "Name of the buffer collecting messages from GitHub's cloud coding agent.")
+
+(defun copilot-chat--handle-coding-agent-message (msg)
+  "Handle a `copilot/codingAgentMessage' request MSG.
+The server sends these when a conversation is delegated to GitHub's
+cloud coding agent, typically once the agent has opened a pull request
+to continue the work in.  Echo the message and record it (with its
+description and PR link) in the coding agent buffer."
+  (let ((title (plist-get msg :title))
+        (description (plist-get msg :description))
+        (pr-link (plist-get msg :prLink)))
+    (with-current-buffer
+        (get-buffer-create copilot-chat--coding-agent-buffer-name)
+      ;; Set the mode only when the buffer is first created, so reading
+      ;; it isn't disturbed as later messages are appended.
+      (unless (derived-mode-p 'special-mode)
+        (special-mode))
+      (let ((inhibit-read-only t))
+        (goto-char (point-max))
+        (insert (propertize (format-time-string "[%Y-%m-%d %H:%M:%S] ")
+                            'face 'shadow)
+                (propertize (or title "(untitled)") 'face 'bold)
+                "\n")
+        (when (and (stringp description) (not (string-empty-p description)))
+          (insert description "\n"))
+        (when (and (stringp pr-link) (not (string-empty-p pr-link)))
+          (insert pr-link "\n"))
+        (insert "\n")))
+    (message "Copilot: %s%s"
+             (or title "coding agent update")
+             (if (and (stringp pr-link) (not (string-empty-p pr-link)))
+                 (format " (%s)" pr-link)
+               ""))
+    (list :success t)))
+
+(copilot-on-request 'copilot/codingAgentMessage
+                    #'copilot-chat--handle-coding-agent-message)
+
+;;
 ;; Context doc generation
 ;;
 

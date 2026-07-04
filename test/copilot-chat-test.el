@@ -2624,6 +2624,58 @@
        (list :servers (vector (list :name "ok" :status "stopped" :error ""))))
       (expect 'copilot--log :not :to-have-been-called)))
 
+  (describe "copilot-chat--handle-coding-agent-message"
+    (after-each
+      (when (get-buffer "*copilot-coding-agent*")
+        (kill-buffer "*copilot-coding-agent*")))
+
+    (it "is registered for copilot/codingAgentMessage requests"
+      (expect (gethash 'copilot/codingAgentMessage copilot--request-handlers)
+              :to-be #'copilot-chat--handle-coding-agent-message))
+
+    (it "appends the message to the coding agent buffer with a timestamp"
+      (spy-on 'message)
+      (copilot-chat--handle-coding-agent-message
+       (list :title "Fix flaky test"
+             :description "The agent is working on it."
+             :prLink "https://github.com/acme/proj/pull/42"
+             :conversationId "c1" :turnId "t1"))
+      (with-current-buffer "*copilot-coding-agent*"
+        (let ((text (buffer-string)))
+          (expect text :to-match "\\[[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}")
+          (expect text :to-match "Fix flaky test")
+          (expect text :to-match "The agent is working on it\\.")
+          (expect text :to-match "https://github.com/acme/proj/pull/42"))))
+
+    (it "echoes the title and PR link"
+      (spy-on 'message)
+      (copilot-chat--handle-coding-agent-message
+       (list :title "Fix flaky test"
+             :prLink "https://github.com/acme/proj/pull/42"))
+      (expect 'message :to-have-been-called-with
+              "Copilot: %s%s" "Fix flaky test"
+              " (https://github.com/acme/proj/pull/42)"))
+
+    (it "accumulates multiple messages"
+      (spy-on 'message)
+      (copilot-chat--handle-coding-agent-message (list :title "First"))
+      (copilot-chat--handle-coding-agent-message (list :title "Second"))
+      (with-current-buffer "*copilot-coding-agent*"
+        (expect (buffer-string) :to-match "First")
+        (expect (buffer-string) :to-match "Second")))
+
+    (it "returns a success acknowledgement"
+      (spy-on 'message)
+      (expect (copilot-chat--handle-coding-agent-message (list :title "T"))
+              :to-equal '(:success t)))
+
+    (it "handles a message with no description or PR link"
+      (spy-on 'message)
+      (expect (copilot-chat--handle-coding-agent-message (list :title "Bare"))
+              :to-equal '(:success t))
+      (expect 'message :to-have-been-called-with
+              "Copilot: %s%s" "Bare" "")))
+
   (describe "copilot-chat-list-mcp-tools"
     (after-each
       (setq copilot-chat--mcp-servers nil)

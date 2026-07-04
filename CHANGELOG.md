@@ -13,6 +13,7 @@
   - `copilot-chat-write-tests`
 - Add `copilot-chat-insert-commit-message` to generate a commit message from the staged changes and insert it at point (handy in a Magit or `git-commit` buffer), with the instruction sent to Copilot customizable via `copilot-chat-commit-message-prompt` and a pending generation cancellable with `copilot-chat-stop`.
 - Optionally persist chat sessions across Emacs restarts: with `copilot-chat-save-history` enabled (off by default) the transcript is saved after each turn to a per-workspace file under `copilot-chat-history-directory`, `copilot-chat-restore` brings the saved conversation back with its full context, and `copilot-chat-clear-history` deletes the saved file.
+- Handle the server's `copilot/codingAgentMessage` request, so updates from GitHub's cloud coding agent (e.g. the pull request it opens to continue delegated work) are echoed and recorded in the `*copilot-coding-agent*` buffer instead of being dropped.
 - Add `copilot-menu`, a transient (magit-style) menu that gathers the most common Copilot commands (completions, chat, agent mode, account and usage info, and server management) and shows the current state of `copilot-mode`, agent mode, and the selected chat model. Requires the `transient` package (bundled with Emacs 28.1 and newer) but only when the menu itself is used.
 
 ### Bug Fixes

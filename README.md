@@ -297,6 +297,10 @@ In agent mode, Copilot can search the project: copilot.el answers the server's f
 
 Set `copilot-chat-enable-semantic-search` to `t` to also let the server build a semantic index of the workspace, for whole-codebase ("@workspace"-style) questions. Indexing computes embeddings server-side, so it uses CPU and network; it is off by default and takes effect when the server next starts.
 
+#### Cloud coding agent
+
+When a conversation gets delegated to GitHub's cloud coding agent (the server-side agent that continues work in a pull request), the server reports its progress to the editor. copilot.el echoes each update and records it, with the PR link, in the `*copilot-coding-agent*` buffer.
+
 #### Custom instructions
 
 The language server reads repository instruction files on its own and applies them to chat and agent requests; copilot.el sends the workspace folders, so this works out of the box. The recognized files (same as in VS Code):
@@ -571,6 +575,7 @@ A few commonly tweaked variables:
 | `window/showMessageRequest` | Supported | Prompts via `completing-read` |
 | `window/showDocument` | Supported | Opens URIs in browser or Emacs |
 | `conversation/context` | Supported | Provides editor context for chat |
+| `copilot/codingAgentMessage` | Supported | Cloud coding agent updates, logged to `*copilot-coding-agent*` |
 
 ### Server-to-Client Notifications
 

@@ -509,7 +509,8 @@ and cleans up active tokens."
         ;; clear the capture state; without this the busy guards would
         ;; wedge the chat closed for good.
         (setq copilot-chat--current-request nil
-              copilot-chat--reply-chunks nil))))
+              copilot-chat--reply-chunks nil
+              copilot-chat--turn-start-time nil))))
   (copilot-chat--insert-error (format "%s" err)))
 
 ;;
@@ -585,40 +586,60 @@ buffer."
             (funcall sink value))
         (copilot-chat--handle-buffer-progress token sink value)))))
 
+(defun copilot-chat--notify-dbus (title body)
+  "Raise a D-Bus desktop notification with TITLE and BODY.
+Return non-nil on success, nil when D-Bus is unavailable or the call
+fails (e.g. a dbus-enabled Emacs with no running session bus), so the
+caller can fall through to another backend."
+  (and (require 'notifications nil t)
+       (fboundp 'notifications-notify)
+       (condition-case nil
+           (progn (notifications-notify :title title :body body) t)
+         (error nil))))
+
+(defun copilot-chat--notify-osascript (title body)
+  "Raise a macOS notification with TITLE and BODY via `osascript'.
+Return non-nil only when osascript is present and exits successfully,
+so the caller can fall through to another backend otherwise."
+  (and (eq system-type 'darwin)
+       (executable-find "osascript")
+       (condition-case nil
+           (eql 0 (call-process
+                   "osascript" nil nil nil
+                   "-e"
+                   (format "display notification %s with title %s"
+                           (copilot-chat--applescript-quote body)
+                           (copilot-chat--applescript-quote title))))
+         (error nil))))
+
 (defun copilot-chat--notify (title body)
   "Raise a desktop notification with TITLE and BODY.
-Prefer D-Bus notifications, fall back to `osascript' on macOS, and
-finally to `message'.  TITLE and BODY are always passed as data, never
-as a format string, so their contents cannot be interpreted as
-directives."
-  (cond
-   ((and (require 'notifications nil t)
-         (fboundp 'notifications-notify))
-    (notifications-notify :title title :body body))
-   ((eq system-type 'darwin)
-    (call-process "osascript" nil nil nil
-                  "-e"
-                  (format "display notification %s with title %s"
-                          (copilot-chat--applescript-quote body)
-                          (copilot-chat--applescript-quote title))))
-   (t
-    (message "%s: %s" title body))))
+Try D-Bus, then `osascript' on macOS, then `message', cascading to the
+next backend whenever one is unavailable or fails at runtime (so a
+dbus-enabled macOS Emacs with no session bus still reaches osascript).
+TITLE and BODY are always passed as data, never as a format string, so
+their contents cannot be interpreted as directives."
+  (or (copilot-chat--notify-dbus title body)
+      (copilot-chat--notify-osascript title body)
+      (progn (message "%s: %s" title body) t)))
 
 (defun copilot-chat--applescript-quote (string)
   "Return STRING as a quoted AppleScript string literal.
-Backslashes and double quotes are escaped so STRING is treated purely
-as data by `osascript'."
-  (concat "\""
-          (replace-regexp-in-string
-           "[\\\"]" "\\\\\\&" string)
-          "\""))
+Backslashes, double quotes, and control characters are escaped so
+STRING is treated purely as data by `osascript' and a newline can't
+break the literal."
+  (let* ((s (replace-regexp-in-string "\\\\" "\\\\\\\\" string t))
+         (s (replace-regexp-in-string "\"" "\\\\\"" s t))
+         (s (replace-regexp-in-string "\n" "\\\\n" s t))
+         (s (replace-regexp-in-string "\r" "\\\\r" s t))
+         (s (replace-regexp-in-string "\t" "\\\\t" s t)))
+    (concat "\"" s "\"")))
 
 (defun copilot-chat--turn-buffer-focused-p (chat-buf)
   "Return non-nil when CHAT-BUF is the buffer of the selected window.
 Only then is the user already watching the chat, so a notification
 would be redundant."
-  (let ((win (get-buffer-window chat-buf t)))
-    (and win (eq win (selected-window)))))
+  (eq chat-buf (window-buffer (selected-window))))
 
 (defun copilot-chat--maybe-notify-turn-end (chat-buf)
   "Notify that a turn in CHAT-BUF finished, if it is worth surfacing.
@@ -3133,7 +3154,8 @@ only when there is nothing to cancel at all, reset the conversation."
         ;; The cancelled turn's end will never arrive; drop its capture
         ;; state so the busy guards don't wedge the chat closed.
         (setq copilot-chat--current-request nil
-              copilot-chat--reply-chunks nil)))
+              copilot-chat--reply-chunks nil
+              copilot-chat--turn-start-time nil)))
      ((copilot-chat--cancel-one-shots))
      (t (copilot-chat-reset)))))
 
@@ -3151,6 +3173,7 @@ well; the saved history file on disk, if any, is left untouched (see
             copilot-chat--restored-turns nil
             copilot-chat--current-request nil
             copilot-chat--reply-chunks nil
+            copilot-chat--turn-start-time nil
             copilot-chat--session-root nil)
       (let ((inhibit-read-only t))
         (erase-buffer)))))

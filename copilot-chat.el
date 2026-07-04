@@ -164,6 +164,28 @@ Used by `copilot-chat-insert-commit-message'."
   :group 'copilot-chat
   :package-version '(copilot . "0.8"))
 
+(defcustom copilot-chat-save-history nil
+  "When non-nil, save the chat transcript to disk after each turn.
+The whole session is written to a per-workspace file under
+`copilot-chat-history-directory' every time a turn completes, and
+`copilot-chat-restore' brings a saved conversation back, context
+included.  Transcripts land on disk in plain text, so this is off
+by default."
+  :type 'boolean
+  :group 'copilot-chat
+  :package-version '(copilot . "0.8"))
+
+(defcustom copilot-chat-history-directory
+  (locate-user-emacs-file "copilot-chat-history")
+  "Directory where saved chat transcripts are stored.
+Each workspace gets one file, named after the SHA-1 of its root
+directory (or \"global\" outside any workspace), with the `.eld'
+extension.  The directory is created on demand when the first
+transcript is saved."
+  :type 'directory
+  :group 'copilot-chat
+  :package-version '(copilot . "0.8"))
+
 (defface copilot-chat-error-face
   '((t :inherit error))
   "Face for error messages in the chat buffer."
@@ -228,6 +250,26 @@ A list of plists like (:type \"file\" :uri URI), sent as the turn's
 
 (defvar-local copilot-chat--request-id nil
   "ID of the in-flight async request, used for cancellation.")
+
+(defvar-local copilot-chat--turns nil
+  "Completed turns of this chat session, oldest first.
+A list of (REQUEST . RESPONSE) string pairs, extended when a turn's
+final progress notification arrives.  Used for saving the session to
+disk and for seeding a restored conversation.")
+
+(defvar-local copilot-chat--current-request nil
+  "Request text of the turn currently being answered, or nil.
+Paired with the accumulated reply and appended to
+`copilot-chat--turns' when the turn ends.")
+
+(defvar-local copilot-chat--reply-chunks nil
+  "Reply chunks streamed for the current turn, most recent first.")
+
+(defvar-local copilot-chat--restored-turns nil
+  "Turns restored by `copilot-chat-restore', pending replay.
+When non-nil, the next `conversation/create' replays them (requests
+and responses) ahead of the new message so the server reconstructs the
+saved context.  Cleared once a conversation is created from them.")
 
 ;;
 ;; Global state
@@ -460,6 +502,8 @@ buffer."
           (force-mode-line-update))
          ((equal kind "report")
           (when-let* ((reply (copilot-chat--extract-reply value)))
+            (when copilot-chat--current-request
+              (push reply copilot-chat--reply-chunks))
             (let ((inhibit-read-only t))
               (goto-char (point-max))
               (insert reply))
@@ -487,6 +531,19 @@ buffer."
                 (insert (propertize
                          (format "Follow-up: %s\n\n" copilot-chat--follow-up)
                          'face 'copilot-chat-follow-up-face)))))
+          ;; Record the completed turn in the session log; one-shot
+          ;; (function-sink) requests never set a current request, so
+          ;; they are never captured here.
+          (when copilot-chat--current-request
+            (setq copilot-chat--turns
+                  (append copilot-chat--turns
+                          (list (cons copilot-chat--current-request
+                                      (apply #'concat
+                                             (nreverse
+                                              copilot-chat--reply-chunks))))))
+            (setq copilot-chat--current-request nil
+                  copilot-chat--reply-chunks nil)
+            (copilot-chat--save-history))
           (copilot-chat--scroll-to-bottom)
           (setq copilot-chat--active-buffers
                 (assoc-delete-all token copilot-chat--active-buffers))))))))
@@ -1339,23 +1396,26 @@ Servers are configured via `copilot-mcp-servers'."
 
 (defun copilot-chat--create (message callback)
   "Create a new conversation with MESSAGE.
-CALLBACK is called with the response containing conversationId and turnId."
-  (let ((token (format "copilot-chat-%s" (float-time))))
+CALLBACK is called with the response containing conversationId and
+turnId.  Turns restored by `copilot-chat-restore' are replayed ahead
+of MESSAGE, so the new conversation picks up the saved context."
+  (let ((token (format "copilot-chat-%s" (float-time)))
+        (restored nil))
     ;; A fresh conversation starts with a clean slate of session approvals.
     (setq copilot-chat--session-approved-tools nil)
     (copilot-chat--maybe-warn-model-lacks-tools)
     (with-current-buffer (get-buffer copilot-chat--buffer-name)
       (setq copilot-chat--work-done-token token)
+      (setq copilot-chat--current-request message
+            copilot-chat--reply-chunks nil)
+      (setq restored copilot-chat--restored-turns)
       (push (cons token (current-buffer)) copilot-chat--active-buffers))
     (let ((req-id
            (copilot--async-request
             'conversation/create
             (append
              (list :workDoneToken token
-                   :turns (vector
-                           (list :request message
-                                 :response ""
-                                 :turnId ""))
+                   :turns (copilot-chat--turns-param restored message)
                    :capabilities (list :skills (vector "current-editor")
                                        :allSkills t)
                    :source "panel")
@@ -1374,7 +1434,11 @@ CALLBACK is called with the response containing conversationId and turnId."
                           (when-let* ((buf (get-buffer
                                             copilot-chat--buffer-name)))
                             (with-current-buffer buf
-                              (copilot-chat--consume-references)))
+                              (copilot-chat--consume-references)
+                              ;; The restored turns are now part of the
+                              ;; server-side conversation; replaying them
+                              ;; again would duplicate the context.
+                              (setq copilot-chat--restored-turns nil)))
                           (when copilot-chat-use-agent-mode
                             (copilot-chat--register-tools))
                           (funcall callback result))
@@ -1389,6 +1453,8 @@ CALLBACK is called with the response containing conversationId and turnId."
         (chat-buf (get-buffer copilot-chat--buffer-name)))
     (with-current-buffer chat-buf
       (setq copilot-chat--work-done-token token)
+      (setq copilot-chat--current-request message
+            copilot-chat--reply-chunks nil)
       (push (cons token chat-buf) copilot-chat--active-buffers)
       (let ((conv-id copilot-chat--conversation-id)
             (doc (copilot-chat--generate-context-doc)))
@@ -1724,6 +1790,137 @@ The context points at the current file with the region's range."
     (with-current-buffer buf
       (copilot-chat--consume-references)))
   (message "Copilot Chat: Cleared pending context"))
+
+;;
+;; Session persistence
+;;
+
+(defun copilot-chat--history-root ()
+  "Return the workspace root the chat session belongs to, or nil.
+The chat buffer visits no file, so `copilot--workspace-root' returns
+nil there; fall back to the root of the live source buffer in that
+case."
+  (or (copilot--workspace-root)
+      (when (buffer-live-p copilot-chat--source-buffer)
+        (with-current-buffer copilot-chat--source-buffer
+          (copilot--workspace-root)))))
+
+(defun copilot-chat--history-file ()
+  "Return the chat history file for the current workspace.
+One file per workspace root, named after the root's SHA-1 (or
+\"global\" outside any workspace), under
+`copilot-chat-history-directory'."
+  (let ((root (copilot-chat--history-root)))
+    (expand-file-name (concat (if root (sha1 root) "global") ".eld")
+                      copilot-chat-history-directory)))
+
+(defun copilot-chat--save-history ()
+  "Save this session's turn log to the workspace history file.
+A no-op unless `copilot-chat-save-history' is enabled and there is
+something to save.  Never signals: chat must keep flowing even when
+the transcript cannot be written, so any error is only logged."
+  (when (and copilot-chat-save-history copilot-chat--turns)
+    (condition-case err
+        (let ((print-length nil)
+              (print-level nil))
+          (make-directory copilot-chat-history-directory t)
+          (write-region
+           (prin1-to-string
+            (list :version 1
+                  :timestamp (format-time-string "%FT%T%z")
+                  :workspace (copilot-chat--history-root)
+                  :turns copilot-chat--turns))
+           nil (copilot-chat--history-file) nil 'silent))
+      (error
+       (copilot--log 'error "Could not save chat history: %S" err)))))
+
+(defun copilot-chat--valid-history-p (data)
+  "Return non-nil when DATA is a well-formed saved chat history."
+  (and (proper-list-p data)
+       (eql (plist-get data :version) 1)
+       (let ((turns (plist-get data :turns)))
+         (and (proper-list-p turns)
+              turns
+              (seq-every-p (lambda (turn)
+                             (and (consp turn)
+                                  (stringp (car turn))
+                                  (stringp (cdr turn))))
+                           turns)))))
+
+(defun copilot-chat--read-history ()
+  "Read the saved chat history for the current workspace.
+Return its plist.  Signal a `user-error' when there is no history
+file, or when the file does not contain a well-formed history."
+  (let ((file (copilot-chat--history-file)))
+    (unless (file-exists-p file)
+      (user-error "Copilot Chat: No saved chat history for this workspace"))
+    (let ((data (condition-case nil
+                    (with-temp-buffer
+                      (insert-file-contents file)
+                      (read (current-buffer)))
+                  (error nil))))
+      (unless (copilot-chat--valid-history-p data)
+        (user-error "Copilot Chat: History file %s is corrupt" file))
+      data)))
+
+(defun copilot-chat--turns-param (restored message)
+  "Return the turn vector for a new conversation asking MESSAGE.
+RESTORED is a list of saved (REQUEST . RESPONSE) pairs replayed, with
+their responses, ahead of MESSAGE so the server reconstructs their
+context; the final turn is the one it answers."
+  (vconcat
+   (mapcar (lambda (turn)
+             (list :request (car turn) :response (cdr turn)))
+           restored)
+   (vector (list :request message :response "" :turnId ""))))
+
+;;;###autoload
+(defun copilot-chat-restore ()
+  "Restore the saved chat transcript for the current workspace.
+Render the saved conversation in the chat buffer without contacting
+the server; the next message starts a new conversation that replays
+the saved turns first, so Copilot answers with the full context.
+Signal a `user-error' when there is no saved history."
+  (interactive)
+  (let* ((data (copilot-chat--read-history))
+         (turns (plist-get data :turns))
+         (chat-buf (get-buffer-create copilot-chat--buffer-name)))
+    (with-current-buffer chat-buf
+      (unless (derived-mode-p 'copilot-chat-mode)
+        (copilot-chat-mode))
+      (when copilot-chat--streaming-p
+        (user-error "Copilot Chat: A response is currently being streamed"))
+      ;; Drop any live conversation: the next message must start a new
+      ;; one seeded with the restored turns.
+      (copilot-chat--destroy)
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (dolist (turn turns)
+          (copilot-chat--insert-prompt (car turn))
+          (goto-char (point-max))
+          (insert (cdr turn) "\n\n")))
+      (setq copilot-chat--turns turns)
+      (setq copilot-chat--restored-turns turns)
+      (setq copilot-chat--current-request nil
+            copilot-chat--reply-chunks nil))
+    (display-buffer chat-buf)
+    (message
+     "Copilot Chat: Restored %d turn%s; the next message continues the conversation"
+     (length turns) (if (= (length turns) 1) "" "s"))))
+
+;;;###autoload
+(defun copilot-chat-clear-history ()
+  "Delete the saved chat history file for the current workspace.
+The conversation in the chat buffer is left alone; this only removes
+the file `copilot-chat-restore' would read."
+  (interactive)
+  (let ((file (copilot-chat--history-file)))
+    (unless (file-exists-p file)
+      (user-error "Copilot Chat: No saved chat history for this workspace"))
+    (when (yes-or-no-p
+           "Delete the saved Copilot Chat history for this workspace? ")
+      (delete-file file)
+      (message "Copilot Chat: Saved chat history deleted"))))
 
 ;;
 ;; Commit message generation
@@ -2136,11 +2333,18 @@ only when there is nothing to cancel at all, reset the conversation."
 
 ;;;###autoload
 (defun copilot-chat-reset ()
-  "Destroy the current conversation and clear the chat buffer."
+  "Destroy the current conversation and clear the chat buffer.
+The session's turn log and any pending restored turns are cleared as
+well; the saved history file on disk, if any, is left untouched (see
+`copilot-chat-clear-history')."
   (interactive)
   (copilot-chat--destroy)
   (when-let* ((buf (get-buffer copilot-chat--buffer-name)))
     (with-current-buffer buf
+      (setq copilot-chat--turns nil
+            copilot-chat--restored-turns nil
+            copilot-chat--current-request nil
+            copilot-chat--reply-chunks nil)
       (let ((inhibit-read-only t))
         (erase-buffer)))))
 

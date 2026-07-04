@@ -874,6 +874,311 @@
           (kill-buffer buf)))))
 
   ;;
+  ;; Session persistence
+  ;;
+
+  (describe "chat session persistence"
+    :var (history-dir)
+    (before-each
+      (setq history-dir (make-temp-file "copilot-chat-history" t)))
+    (after-each
+      (delete-directory history-dir t))
+
+    (describe "turn capture"
+      (it "records a completed turn when the end notification arrives"
+        (let ((buf (get-buffer-create "*copilot-chat-test-capture*")))
+          (unwind-protect
+              (progn
+                (with-current-buffer buf
+                  (copilot-chat-mode)
+                  (setq copilot-chat--current-request "hi there"))
+                (let ((copilot-chat--active-buffers (list (cons "tok" buf))))
+                  (copilot-chat--handle-progress
+                   (list :token "tok"
+                         :value (list :kind "report" :reply "Hello ")))
+                  (copilot-chat--handle-progress
+                   (list :token "tok"
+                         :value (list :kind "report" :reply "world")))
+                  (copilot-chat--handle-progress
+                   (list :token "tok" :value (list :kind "end"))))
+                (with-current-buffer buf
+                  (expect copilot-chat--turns
+                          :to-equal '(("hi there" . "Hello world")))
+                  (expect copilot-chat--current-request :to-be nil)
+                  (expect copilot-chat--reply-chunks :to-be nil)))
+            (kill-buffer buf))))
+
+      (it "appends turns in chronological order"
+        (let ((buf (get-buffer-create "*copilot-chat-test-capture-order*")))
+          (unwind-protect
+              (progn
+                (with-current-buffer buf
+                  (copilot-chat-mode)
+                  (setq copilot-chat--turns '(("first q" . "first a"))
+                        copilot-chat--current-request "second q"))
+                (let ((copilot-chat--active-buffers (list (cons "tok" buf))))
+                  (copilot-chat--handle-progress
+                   (list :token "tok"
+                         :value (list :kind "report" :reply "second a")))
+                  (copilot-chat--handle-progress
+                   (list :token "tok" :value (list :kind "end"))))
+                (with-current-buffer buf
+                  (expect copilot-chat--turns
+                          :to-equal '(("first q" . "first a")
+                                      ("second q" . "second a")))))
+            (kill-buffer buf))))
+
+      (it "records nothing when no request is pending"
+        (let ((buf (get-buffer-create "*copilot-chat-test-no-capture*")))
+          (unwind-protect
+              (progn
+                (with-current-buffer buf
+                  (copilot-chat-mode))
+                (let ((copilot-chat--active-buffers (list (cons "tok" buf))))
+                  (copilot-chat--handle-progress
+                   (list :token "tok"
+                         :value (list :kind "report" :reply "stray")))
+                  (copilot-chat--handle-progress
+                   (list :token "tok" :value (list :kind "end"))))
+                (with-current-buffer buf
+                  (expect copilot-chat--turns :to-be nil)))
+            (kill-buffer buf)))))
+
+    (describe "saving"
+      (it "is disabled by default and writes no file"
+        (expect (default-value 'copilot-chat-save-history) :to-be nil)
+        (let ((buf (get-buffer-create "*copilot-chat-test-no-save*")))
+          (unwind-protect
+              (let ((copilot-chat-history-directory history-dir))
+                (spy-on 'copilot--workspace-root
+                        :and-return-value "/tmp/project/")
+                (with-current-buffer buf
+                  (copilot-chat-mode)
+                  (setq copilot-chat--current-request "q"))
+                (let ((copilot-chat--active-buffers (list (cons "tok" buf))))
+                  (copilot-chat--handle-progress
+                   (list :token "tok" :value (list :kind "report" :reply "a")))
+                  (copilot-chat--handle-progress
+                   (list :token "tok" :value (list :kind "end"))))
+                (expect (directory-files history-dir nil "\\.eld\\'")
+                        :to-be nil))
+            (kill-buffer buf))))
+
+      (it "saves the session after a completed turn and round-trips"
+        (let ((buf (get-buffer-create "*copilot-chat-test-save*")))
+          (unwind-protect
+              (let ((copilot-chat-save-history t)
+                    (copilot-chat-history-directory history-dir))
+                (spy-on 'copilot--workspace-root
+                        :and-return-value "/tmp/project/")
+                (with-current-buffer buf
+                  (copilot-chat-mode)
+                  (setq copilot-chat--current-request "what is Emacs?"))
+                (let ((copilot-chat--active-buffers (list (cons "tok" buf))))
+                  (copilot-chat--handle-progress
+                   (list :token "tok"
+                         :value (list :kind "report" :reply "An editor.")))
+                  (copilot-chat--handle-progress
+                   (list :token "tok" :value (list :kind "end"))))
+                (let* ((file (expand-file-name
+                              (concat (sha1 "/tmp/project/") ".eld")
+                              history-dir))
+                       (data (with-temp-buffer
+                               (insert-file-contents file)
+                               (read (current-buffer)))))
+                  (expect (plist-get data :version) :to-equal 1)
+                  (expect (plist-get data :workspace)
+                          :to-equal "/tmp/project/")
+                  (expect (plist-get data :turns)
+                          :to-equal '(("what is Emacs?" . "An editor.")))))
+            (kill-buffer buf))))
+
+      (it "names the file \"global\" outside any workspace"
+        (spy-on 'copilot--workspace-root :and-return-value nil)
+        (let ((copilot-chat-history-directory history-dir))
+          (with-temp-buffer
+            (expect (file-name-nondirectory (copilot-chat--history-file))
+                    :to-equal "global.eld"))))
+
+      (it "logs a save failure instead of signalling"
+        (spy-on 'copilot--workspace-root :and-return-value "/tmp/project/")
+        (spy-on 'write-region :and-throw-error 'error)
+        (spy-on 'copilot--log)
+        (let ((copilot-chat-save-history t)
+              (copilot-chat-history-directory history-dir))
+          (with-temp-buffer
+            (setq-local copilot-chat--turns '(("q" . "a")))
+            (copilot-chat--save-history)))
+        (expect 'copilot--log :to-have-been-called)))
+
+    (describe "copilot-chat-restore"
+      (before-each
+        (spy-on 'copilot--workspace-root :and-return-value "/tmp/project/")
+        (spy-on 'display-buffer)
+        (spy-on 'copilot--connection-alivep :and-return-value nil)
+        (spy-on 'jsonrpc--async-request-1)
+        (spy-on 'message)
+        (when (get-buffer copilot-chat--buffer-name)
+          (kill-buffer copilot-chat--buffer-name)))
+
+      (it "renders the transcript and stashes the turns without a server"
+        (let ((copilot-chat-history-directory history-dir))
+          (with-temp-file (expand-file-name
+                           (concat (sha1 "/tmp/project/") ".eld") history-dir)
+            (prin1 '(:version 1
+                     :timestamp "2026-07-04T00:00:00+0000"
+                     :workspace "/tmp/project/"
+                     :turns (("first q" . "first a")
+                             ("second q" . "second a")))
+                   (current-buffer)))
+          (copilot-chat-restore)
+          (unwind-protect
+              (with-current-buffer copilot-chat--buffer-name
+                (expect (buffer-string) :to-match "You:")
+                (expect (buffer-string) :to-match "first q")
+                (expect (buffer-string) :to-match "first a")
+                (expect (buffer-string) :to-match "Copilot:")
+                (expect (buffer-string) :to-match "second a")
+                (expect copilot-chat--turns
+                        :to-equal '(("first q" . "first a")
+                                    ("second q" . "second a")))
+                (expect copilot-chat--restored-turns
+                        :to-equal copilot-chat--turns)
+                (expect 'jsonrpc--async-request-1
+                        :not :to-have-been-called))
+            (kill-buffer copilot-chat--buffer-name))))
+
+      (it "errors when there is no saved history"
+        (let ((copilot-chat-history-directory history-dir))
+          (expect (copilot-chat-restore) :to-throw 'user-error)))
+
+      (it "rejects a garbage history file with a user-error"
+        (let ((copilot-chat-history-directory history-dir))
+          (with-temp-file (expand-file-name
+                           (concat (sha1 "/tmp/project/") ".eld") history-dir)
+            (insert "((((not even elisp"))
+          (expect (copilot-chat-restore) :to-throw 'user-error)))
+
+      (it "rejects a well-formed file with the wrong shape"
+        (let ((copilot-chat-history-directory history-dir))
+          (with-temp-file (expand-file-name
+                           (concat (sha1 "/tmp/project/") ".eld") history-dir)
+            (prin1 '(:version 99 :turns "nope") (current-buffer)))
+          (expect (copilot-chat-restore) :to-throw 'user-error))))
+
+    (describe "creating a conversation from restored turns"
+      (it "replays the restored turns ahead of the new message"
+        (let ((captured-params nil)
+              (captured-args nil)
+              (buf (get-buffer-create copilot-chat--buffer-name)))
+          (unwind-protect
+              (progn
+                (with-current-buffer buf
+                  (copilot-chat-mode)
+                  (setq copilot-chat--restored-turns
+                        '(("old q" . "old a") ("older q" . "older a"))))
+                (spy-on 'copilot--connection-alivep :and-return-value t)
+                (spy-on 'jsonrpc--async-request-1
+                        :and-call-fake
+                        (lambda (_conn _method params &rest args)
+                          (setq captured-params params
+                                captured-args args)
+                          (cons nil nil)))
+                (copilot-chat--create "new q" #'ignore)
+                (let ((turns (plist-get captured-params :turns)))
+                  (expect (length turns) :to-equal 3)
+                  (expect (aref turns 0)
+                          :to-equal '(:request "old q" :response "old a"))
+                  (expect (aref turns 1)
+                          :to-equal '(:request "older q" :response "older a"))
+                  (expect (aref turns 2)
+                          :to-equal '(:request "new q" :response "" :turnId "")))
+                ;; A successful create clears the pending restored turns.
+                (funcall (plist-get captured-args :success-fn)
+                         '(:conversationId "c1" :turnId "t1"))
+                (expect (buffer-local-value 'copilot-chat--restored-turns buf)
+                        :to-be nil))
+            (kill-buffer buf))))
+
+      (it "sends only the new turn when nothing was restored"
+        (let ((captured-params nil)
+              (buf (get-buffer-create copilot-chat--buffer-name)))
+          (unwind-protect
+              (progn
+                (with-current-buffer buf
+                  (copilot-chat-mode))
+                (spy-on 'copilot--connection-alivep :and-return-value t)
+                (spy-on 'jsonrpc--async-request-1
+                        :and-call-fake
+                        (lambda (_conn _method params &rest _args)
+                          (setq captured-params params)
+                          (cons nil nil)))
+                (copilot-chat--create "hello" #'ignore)
+                (let ((turns (plist-get captured-params :turns)))
+                  (expect (length turns) :to-equal 1)
+                  (expect (aref turns 0)
+                          :to-equal '(:request "hello"
+                                      :response "" :turnId ""))))
+            (kill-buffer buf)))))
+
+    (describe "housekeeping"
+      (it "copilot-chat-reset clears the persistence state"
+        (let ((buf (get-buffer-create copilot-chat--buffer-name)))
+          (unwind-protect
+              (progn
+                (with-current-buffer buf
+                  (copilot-chat-mode)
+                  (setq copilot-chat--turns '(("q" . "a"))
+                        copilot-chat--restored-turns '(("q" . "a"))
+                        copilot-chat--current-request "pending"
+                        copilot-chat--reply-chunks '("x")))
+                (spy-on 'copilot--connection-alivep :and-return-value nil)
+                (copilot-chat-reset)
+                (with-current-buffer buf
+                  (expect copilot-chat--turns :to-be nil)
+                  (expect copilot-chat--restored-turns :to-be nil)
+                  (expect copilot-chat--current-request :to-be nil)
+                  (expect copilot-chat--reply-chunks :to-be nil)))
+            (kill-buffer buf))))
+
+      (it "copilot-chat-reset does not delete the history file"
+        (spy-on 'copilot--connection-alivep :and-return-value nil)
+        (let* ((copilot-chat-history-directory history-dir)
+               (file (expand-file-name "global.eld" history-dir)))
+          (with-temp-file file
+            (prin1 '(:version 1 :turns (("q" . "a"))) (current-buffer)))
+          (copilot-chat-reset)
+          (expect (file-exists-p file) :to-be-truthy)))
+
+      (it "copilot-chat-clear-history deletes the file after confirmation"
+        (spy-on 'copilot--workspace-root :and-return-value "/tmp/project/")
+        (spy-on 'yes-or-no-p :and-return-value t)
+        (spy-on 'message)
+        (let* ((copilot-chat-history-directory history-dir)
+               (file (expand-file-name (concat (sha1 "/tmp/project/") ".eld")
+                                       history-dir)))
+          (with-temp-file file
+            (prin1 '(:version 1 :turns (("q" . "a"))) (current-buffer)))
+          (copilot-chat-clear-history)
+          (expect (file-exists-p file) :not :to-be-truthy)))
+
+      (it "copilot-chat-clear-history keeps the file when declined"
+        (spy-on 'copilot--workspace-root :and-return-value "/tmp/project/")
+        (spy-on 'yes-or-no-p :and-return-value nil)
+        (let* ((copilot-chat-history-directory history-dir)
+               (file (expand-file-name (concat (sha1 "/tmp/project/") ".eld")
+                                       history-dir)))
+          (with-temp-file file
+            (prin1 '(:version 1 :turns (("q" . "a"))) (current-buffer)))
+          (copilot-chat-clear-history)
+          (expect (file-exists-p file) :to-be-truthy)))
+
+      (it "copilot-chat-clear-history errors when there is no file"
+        (spy-on 'copilot--workspace-root :and-return-value "/tmp/project/")
+        (let ((copilot-chat-history-directory history-dir))
+          (expect (copilot-chat-clear-history) :to-throw 'user-error)))))
+
+  ;;
   ;; Default model resolution
   ;;
 

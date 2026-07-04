@@ -271,6 +271,15 @@ When non-nil, the next `conversation/create' replays them (requests
 and responses) ahead of the new message so the server reconstructs the
 saved context.  Cleared once a conversation is created from them.")
 
+(defvar-local copilot-chat--session-root nil
+  "History root this chat session is pinned to, once resolved.
+Either a workspace root string or the symbol `global'.  Resolved at
+most once per session (at restore time or on the first save) and
+reused for every later save, so that saving and restoring can never
+silently target two different history files: the save runs in the chat
+buffer while a restore may be invoked from a project buffer, and the
+two would otherwise each resolve their own root.")
+
 ;;
 ;; Global state
 ;;
@@ -415,7 +424,12 @@ and cleans up active tokens."
     (when (buffer-live-p buf)
       (with-current-buffer buf
         (copilot-chat--end-streaming)
-        (copilot-chat--remove-active-tokens buf))))
+        (copilot-chat--remove-active-tokens buf)
+        ;; A failed turn never reaches the end-progress that would
+        ;; clear the capture state; without this the busy guards would
+        ;; wedge the chat closed for good.
+        (setq copilot-chat--current-request nil
+              copilot-chat--reply-chunks nil))))
   (copilot-chat--insert-error (format "%s" err)))
 
 ;;
@@ -530,20 +544,24 @@ buffer."
                          (not (string-empty-p copilot-chat--follow-up)))
                 (insert (propertize
                          (format "Follow-up: %s\n\n" copilot-chat--follow-up)
-                         'face 'copilot-chat-follow-up-face)))))
-          ;; Record the completed turn in the session log; one-shot
-          ;; (function-sink) requests never set a current request, so
-          ;; they are never captured here.
-          (when copilot-chat--current-request
-            (setq copilot-chat--turns
-                  (append copilot-chat--turns
-                          (list (cons copilot-chat--current-request
-                                      (apply #'concat
-                                             (nreverse
-                                              copilot-chat--reply-chunks))))))
-            (setq copilot-chat--current-request nil
-                  copilot-chat--reply-chunks nil)
-            (copilot-chat--save-history))
+                         'face 'copilot-chat-follow-up-face))))
+            ;; Record the completed turn in the session log; one-shot
+            ;; (function-sink) requests never set a current request, so
+            ;; they are never captured here.  An errored or empty turn
+            ;; is dropped rather than recorded: replaying a question
+            ;; with a blank answer to the server (and re-rendering it on
+            ;; restore) helps nobody.
+            (when copilot-chat--current-request
+              (let ((reply (apply #'concat
+                                  (nreverse copilot-chat--reply-chunks))))
+                (unless (or error-msg (string-empty-p reply))
+                  (setq copilot-chat--turns
+                        (append copilot-chat--turns
+                                (list (cons copilot-chat--current-request
+                                            reply))))
+                  (copilot-chat--save-history)))
+              (setq copilot-chat--current-request nil
+                    copilot-chat--reply-chunks nil)))
           (copilot-chat--scroll-to-bottom)
           (setq copilot-chat--active-buffers
                 (assoc-delete-all token copilot-chat--active-buffers))))))))
@@ -1437,8 +1455,14 @@ of MESSAGE, so the new conversation picks up the saved context."
                               (copilot-chat--consume-references)
                               ;; The restored turns are now part of the
                               ;; server-side conversation; replaying them
-                              ;; again would duplicate the context.
-                              (setq copilot-chat--restored-turns nil)))
+                              ;; again would duplicate the context.  Only
+                              ;; clear the exact set this create sent: a
+                              ;; restore run in the meantime must not
+                              ;; have its freshly stashed turns dropped
+                              ;; by a stale response.
+                              (when (eq copilot-chat--restored-turns
+                                        restored)
+                                (setq copilot-chat--restored-turns nil))))
                           (when copilot-chat-use-agent-mode
                             (copilot-chat--register-tools))
                           (funcall callback result))
@@ -1805,32 +1829,47 @@ case."
         (with-current-buffer copilot-chat--source-buffer
           (copilot--workspace-root)))))
 
-(defun copilot-chat--history-file ()
-  "Return the chat history file for the current workspace.
+(defun copilot-chat--ensure-session-root ()
+  "Return the history root this session is pinned to, resolving once.
+Return a workspace root string, or nil for the global history.  The
+first call resolves via `copilot-chat--history-root' and pins the
+result in `copilot-chat--session-root'; later calls (and saves after a
+restore, which pins the root itself) reuse it."
+  (unless copilot-chat--session-root
+    (setq copilot-chat--session-root
+          (or (copilot-chat--history-root) 'global)))
+  (unless (eq copilot-chat--session-root 'global)
+    copilot-chat--session-root))
+
+(defun copilot-chat--history-file (root)
+  "Return the chat history file for the workspace ROOT.
 One file per workspace root, named after the root's SHA-1 (or
-\"global\" outside any workspace), under
-`copilot-chat-history-directory'."
-  (let ((root (copilot-chat--history-root)))
-    (expand-file-name (concat (if root (sha1 root) "global") ".eld")
-                      copilot-chat-history-directory)))
+\"global\" when ROOT is nil), under `copilot-chat-history-directory'."
+  (expand-file-name (concat (if root (sha1 root) "global") ".eld")
+                    copilot-chat-history-directory))
 
 (defun copilot-chat--save-history ()
   "Save this session's turn log to the workspace history file.
 A no-op unless `copilot-chat-save-history' is enabled and there is
-something to save.  Never signals: chat must keep flowing even when
-the transcript cannot be written, so any error is only logged."
+something to save.  The transcript is private data, so the directory
+and file are created unreadable to other users.  Never signals: chat
+must keep flowing even when the transcript cannot be written, so any
+error is only logged."
   (when (and copilot-chat-save-history copilot-chat--turns)
     (condition-case err
         (let ((print-length nil)
-              (print-level nil))
-          (make-directory copilot-chat-history-directory t)
-          (write-region
-           (prin1-to-string
-            (list :version 1
-                  :timestamp (format-time-string "%FT%T%z")
-                  :workspace (copilot-chat--history-root)
-                  :turns copilot-chat--turns))
-           nil (copilot-chat--history-file) nil 'silent))
+              (print-level nil)
+              (root (copilot-chat--ensure-session-root)))
+          (with-file-modes #o700
+            (make-directory copilot-chat-history-directory t))
+          (with-file-modes #o600
+            (write-region
+             (prin1-to-string
+              (list :version 1
+                    :timestamp (format-time-string "%FT%T%z")
+                    :workspace root
+                    :turns copilot-chat--turns))
+             nil (copilot-chat--history-file root) nil 'silent)))
       (error
        (copilot--log 'error "Could not save chat history: %S" err)))))
 
@@ -1847,11 +1886,15 @@ the transcript cannot be written, so any error is only logged."
                                   (stringp (cdr turn))))
                            turns)))))
 
-(defun copilot-chat--read-history ()
-  "Read the saved chat history for the current workspace.
-Return its plist.  Signal a `user-error' when there is no history
-file, or when the file does not contain a well-formed history."
-  (let ((file (copilot-chat--history-file)))
+(defun copilot-chat--read-history (root)
+  "Read the saved chat history for the workspace ROOT.
+Return its plist, with every turn's text stripped of text properties:
+`read' happily reconstructs propertized strings, and a tampered (or
+merely synced) history file must not be able to inject `keymap',
+`display', or `read-only' properties into the chat buffer.  Signal a
+`user-error' when there is no history file, or when the file does not
+contain a well-formed history."
+  (let ((file (copilot-chat--history-file root)))
     (unless (file-exists-p file)
       (user-error "Copilot Chat: No saved chat history for this workspace"))
     (let ((data (condition-case nil
@@ -1861,7 +1904,11 @@ file, or when the file does not contain a well-formed history."
                   (error nil))))
       (unless (copilot-chat--valid-history-p data)
         (user-error "Copilot Chat: History file %s is corrupt" file))
-      data)))
+      (plist-put data :turns
+                 (mapcar (lambda (turn)
+                           (cons (substring-no-properties (car turn))
+                                 (substring-no-properties (cdr turn))))
+                         (plist-get data :turns))))))
 
 (defun copilot-chat--turns-param (restored message)
   "Return the turn vector for a new conversation asking MESSAGE.
@@ -1882,13 +1929,17 @@ the server; the next message starts a new conversation that replays
 the saved turns first, so Copilot answers with the full context.
 Signal a `user-error' when there is no saved history."
   (interactive)
-  (let* ((data (copilot-chat--read-history))
+  ;; Resolve the root in the invoking buffer, where the user's notion
+  ;; of "this workspace" lives, and pin it on the chat session below so
+  ;; later saves target the very same file.
+  (let* ((root (copilot-chat--history-root))
+         (data (copilot-chat--read-history root))
          (turns (plist-get data :turns))
          (chat-buf (get-buffer-create copilot-chat--buffer-name)))
     (with-current-buffer chat-buf
       (unless (derived-mode-p 'copilot-chat-mode)
         (copilot-chat-mode))
-      (when copilot-chat--streaming-p
+      (when (or copilot-chat--streaming-p copilot-chat--current-request)
         (user-error "Copilot Chat: A response is currently being streamed"))
       ;; Drop any live conversation: the next message must start a new
       ;; one seeded with the restored turns.
@@ -1901,6 +1952,7 @@ Signal a `user-error' when there is no saved history."
           (insert (cdr turn) "\n\n")))
       (setq copilot-chat--turns turns)
       (setq copilot-chat--restored-turns turns)
+      (setq copilot-chat--session-root (or root 'global))
       (setq copilot-chat--current-request nil
             copilot-chat--reply-chunks nil))
     (display-buffer chat-buf)
@@ -1914,7 +1966,7 @@ Signal a `user-error' when there is no saved history."
 The conversation in the chat buffer is left alone; this only removes
 the file `copilot-chat-restore' would read."
   (interactive)
-  (let ((file (copilot-chat--history-file)))
+  (let ((file (copilot-chat--history-file (copilot-chat--history-root))))
     (unless (file-exists-p file)
       (user-error "Copilot Chat: No saved chat history for this workspace"))
     (when (yes-or-no-p
@@ -2121,6 +2173,12 @@ Otherwise, create a new conversation."
     (with-current-buffer chat-buf
       (unless (derived-mode-p 'copilot-chat-mode)
         (copilot-chat-mode))
+      ;; Refuse to start a turn while one is in flight: with a single
+      ;; set of per-buffer capture slots, an interleaved turn would
+      ;; pair the previous request with the next response in the
+      ;; session log (and lose the new turn's answer entirely).
+      (when (or copilot-chat--streaming-p copilot-chat--current-request)
+        (user-error "Copilot Chat: A response is currently being streamed"))
       (setq copilot-chat--source-buffer source-buf))
     (display-buffer chat-buf)
     (with-current-buffer chat-buf
@@ -2327,7 +2385,11 @@ only when there is nothing to cancel at all, reset the conversation."
                           (list :id copilot-chat--request-id)))
         (copilot-chat--end-streaming)
         (copilot-chat--insert-error "Cancelled")
-        (copilot-chat--remove-active-tokens chat-buf)))
+        (copilot-chat--remove-active-tokens chat-buf)
+        ;; The cancelled turn's end will never arrive; drop its capture
+        ;; state so the busy guards don't wedge the chat closed.
+        (setq copilot-chat--current-request nil
+              copilot-chat--reply-chunks nil)))
      ((copilot-chat--cancel-one-shots))
      (t (copilot-chat-reset)))))
 
@@ -2344,7 +2406,8 @@ well; the saved history file on disk, if any, is left untouched (see
       (setq copilot-chat--turns nil
             copilot-chat--restored-turns nil
             copilot-chat--current-request nil
-            copilot-chat--reply-chunks nil)
+            copilot-chat--reply-chunks nil
+            copilot-chat--session-root nil)
       (let ((inhibit-read-only t))
         (erase-buffer)))))
 

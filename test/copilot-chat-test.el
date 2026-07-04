@@ -772,7 +772,31 @@
             (expect (length blocks) :to-equal 1)
             (expect (plist-get (nth 0 blocks) :lang) :to-equal "elisp")
             (expect (plist-get (nth 0 blocks) :code)
-                    :to-equal "(foo)\n"))))))
+                    :to-equal "(foo)\n")))))
+
+    (it "actually fontifies Org markup, not just sets up without error"
+      (assume (require 'org nil t) "org is not available")
+      (with-temp-buffer
+        (let ((copilot-chat-frontend 'org)
+              (inhibit-read-only t))
+          (copilot-chat-mode)
+          (copilot-chat--insert-prompt "hi")
+          (goto-char (point-max))
+          (insert "some *bold* text\n")
+          (font-lock-ensure)
+          ;; The whole point of the org frontend: emphasis and headings
+          ;; must carry Org faces, not render as plain text with literal
+          ;; markers.
+          (goto-char (point-min))
+          (search-forward "bold")
+          (expect (memq 'bold
+                        (let ((f (get-text-property (match-beginning 0) 'face)))
+                          (if (listp f) f (list f))))
+                  :to-be-truthy)
+          (goto-char (point-min))
+          (search-forward "You")
+          (expect (get-text-property (match-beginning 0) 'face)
+                  :not :to-be nil)))))
 
   ;;
   ;; Mode-line lighter

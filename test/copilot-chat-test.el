@@ -2957,7 +2957,15 @@
         (expect (copilot-chat--rewrite-request
                  "make it iterative" "python" "def f(): pass")
                 :to-equal
-                "PROMPT\n\nInstruction: make it iterative\n\n```python\ndef f(): pass\n```"))))
+                "PROMPT\n\nInstruction: make it iterative\n\n```python\ndef f(): pass\n```")))
+
+    (it "outgrows backtick runs inside the code"
+      (let ((copilot-chat-rewrite-prompt "PROMPT"))
+        (expect (copilot-chat--rewrite-request
+                 "tidy" "markdown" "text\n```elisp\n(code)\n```\nmore")
+                :to-equal
+                (concat "PROMPT\n\nInstruction: tidy\n\n"
+                        "````markdown\ntext\n```elisp\n(code)\n```\nmore\n````")))))
 
   (describe "copilot-chat-rewrite"
     (it "errors without an active region"
@@ -2975,6 +2983,104 @@
         (expect (copilot-chat-rewrite (point-min) (point-max) "  ")
                 :to-throw 'user-error))
       (expect 'copilot-chat--one-shot :not :to-have-been-called))
+
+    (it "errors on an empty region"
+      (spy-on 'copilot-chat--one-shot)
+      (with-temp-buffer
+        (insert "code")
+        (expect (copilot-chat-rewrite (point-min) (point-min) "rewrite")
+                :to-throw 'user-error))
+      (expect 'copilot-chat--one-shot :not :to-have-been-called))
+
+    (it "drops the rewrite when the region changes during confirmation"
+      (let ((reply-fn nil)
+            (target nil))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "text")
+        ;; Simulate auto-revert firing while y-or-n-p blocks: the
+        ;; confirm hook mutates the buffer, then answers yes.
+        (spy-on 'copilot-chat--rewrite-confirm
+                :and-call-fake
+                (lambda (&rest _)
+                  (with-current-buffer target
+                    (let ((inhibit-read-only t))
+                      (erase-buffer)
+                      (insert "REVERTED")))
+                  t))
+        (spy-on 'message)
+        (with-temp-buffer
+          (setq target (current-buffer))
+          (insert "OLD")
+          (copilot-chat-rewrite (point-min) (point-max) "rewrite")
+          (funcall reply-fn "NEW" nil)
+          (expect (buffer-string) :to-equal "REVERTED"))))
+
+    (it "applies even when the buffer is narrowed away from the region"
+      (let ((reply-fn nil)
+            (copilot-chat-rewrite-indent nil))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "text")
+        (spy-on 'copilot-chat--rewrite-confirm :and-return-value t)
+        (spy-on 'message)
+        (with-temp-buffer
+          (insert "OLD\nrest")
+          (copilot-chat-rewrite (point-min) (+ (point-min) 3) "rewrite")
+          (narrow-to-region (- (point-max) 4) (point-max))
+          (funcall reply-fn "NEW" nil)
+          (widen)
+          (expect (buffer-string) :to-equal "NEW\nrest"))))
+
+    (it "salvages to the kill ring when the region has read-only text"
+      (let ((reply-fn nil)
+            (copilot-chat-rewrite-indent nil))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "text")
+        (spy-on 'copilot-chat--rewrite-confirm :and-return-value t)
+        (spy-on 'message)
+        (with-temp-buffer
+          (insert "OLD")
+          (let ((inhibit-read-only t))
+            (put-text-property (point-min) (point-max) 'read-only t))
+          (copilot-chat-rewrite (point-min) (point-max) "rewrite")
+          (funcall reply-fn "NEW" nil)
+          (let ((inhibit-read-only t))
+            (expect (buffer-string) :to-equal "OLD")))
+        (expect (current-kill 0) :to-equal "NEW")))
+
+    (it "clears the markers when the confirmation exits nonlocally"
+      (let ((reply-fn nil)
+            (markers '()))
+        (spy-on 'copilot-chat--one-shot
+                :and-call-fake
+                (lambda (_message callback) (setq reply-fn callback)))
+        (spy-on 'copilot--get-language-id :and-return-value "text")
+        ;; Stands in for C-g at the y-or-n-p prompt: any nonlocal exit
+        ;; must still hit the unwind that clears the markers.
+        (spy-on 'copilot-chat--rewrite-confirm
+                :and-call-fake (lambda (&rest _) (error "Simulated abort")))
+        (spy-on 'copy-marker
+                :and-call-fake
+                (lambda (pos &optional type)
+                  (let ((m (make-marker)))
+                    (set-marker m pos)
+                    (set-marker-insertion-type m type)
+                    (push m markers)
+                    m)))
+        (spy-on 'message)
+        (with-temp-buffer
+          (insert "OLD")
+          (copilot-chat-rewrite (point-min) (point-max) "rewrite")
+          (expect (funcall reply-fn "NEW" nil) :to-throw 'error)
+          ;; The unwind must have cleared both markers despite the abort.
+          (expect (length markers) :to-equal 2)
+          (expect (seq-filter #'marker-position markers) :to-be nil)
+          (expect (buffer-string) :to-equal "OLD"))))
 
     (it "sends the prompt, instruction, language, and region code"
       (spy-on 'copilot-chat--one-shot)

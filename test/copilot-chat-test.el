@@ -3628,6 +3628,71 @@
           (insert "OLD")
           (copilot-chat-rewrite (point-min) (point-max) "rewrite")
           (funcall reply-fn "NEW" nil))
-        (expect 'indent-region :not :to-have-been-called)))))
+        (expect 'indent-region :not :to-have-been-called))))
+
+  (describe "copilot-chat-apply-preset"
+    (before-each
+      (setq copilot-chat-presets
+            '(("fast" . (:model "gpt-4o" :agent-mode nil))
+              ("agent" . (:model "gpt-5-codex" :agent-mode t
+                          :auto-approve-tools ("get_errors"
+                                               "copilot.read_file")))
+              ("ask-off" . (:agent-mode nil))))
+      (spy-on 'message))
+
+    (it "applies only the keys the preset carries"
+      (let ((copilot-chat-model "old-model")
+            (copilot-chat-use-agent-mode t)
+            (copilot-chat-auto-approve-tools '("keep")))
+        (copilot-chat-apply-preset "ask-off")
+        (expect copilot-chat-use-agent-mode :to-be nil)
+        (expect copilot-chat-model :to-equal "old-model")
+        (expect copilot-chat-auto-approve-tools :to-equal '("keep"))))
+
+    (it "sets every key the preset carries"
+      (let ((copilot-chat-model nil)
+            (copilot-chat-use-agent-mode nil)
+            (copilot-chat-auto-approve-tools nil))
+        (copilot-chat-apply-preset "agent")
+        (expect copilot-chat-model :to-equal "gpt-5-codex")
+        (expect copilot-chat-use-agent-mode :to-be t)
+        (expect copilot-chat-auto-approve-tools
+                :to-equal '("get_errors" "copilot.read_file"))))
+
+    (it "resets the resolved-model cache when it sets the model"
+      (let ((copilot-chat-model nil)
+            (copilot-chat--model-resolved t))
+        (copilot-chat-apply-preset "fast")
+        (expect copilot-chat--model-resolved :to-be nil)))
+
+    (it "leaves the resolved-model cache alone when the model is absent"
+      (let ((copilot-chat-model "kept")
+            (copilot-chat--model-resolved t))
+        (copilot-chat-apply-preset "ask-off")
+        (expect copilot-chat--model-resolved :to-be t)))
+
+    (it "reports the applied preset and what changed"
+      (let ((copilot-chat-model nil)
+            (copilot-chat-use-agent-mode nil))
+        (copilot-chat-apply-preset "fast")
+        (expect 'message :to-have-been-called-with
+                "Copilot Chat: Applied preset %S%s"
+                "fast" " (model gpt-4o, agent mode off)")))
+
+    (it "errors on an unknown preset"
+      (expect (copilot-chat-apply-preset "nope") :to-throw 'user-error))
+
+    (it "errors when no presets are configured"
+      (let ((copilot-chat-presets nil))
+        (expect (copilot-chat-apply-preset "fast") :to-throw 'user-error)))
+
+    (it "reads the preset name with completion when called interactively"
+      (let ((copilot-chat-model nil)
+            (copilot-chat-use-agent-mode t))
+        (spy-on 'completing-read :and-return-value "fast")
+        (call-interactively 'copilot-chat-apply-preset)
+        (expect 'completing-read :to-have-been-called)
+        (expect copilot-chat-model :to-equal "gpt-4o")
+        (expect copilot-chat-use-agent-mode :to-be nil)))))
 
 ;;; copilot-chat-test.el ends here

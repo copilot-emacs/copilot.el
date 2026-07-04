@@ -4,6 +4,7 @@
 
 ### New Features
 
+- Add `copilot-chat-select-mode` to choose the chat mode reported by the server (`Ask`, `Agent`, `InlineAgent`, and any custom project modes) instead of only the agent on/off toggle. `InlineAgent` is an agent-kind mode with a restricted tool set aimed at inline editing; the tool-call confirmation, tool registration, and status header apply to it as they do to `Agent`. The selection takes effect on the next new conversation, and without one the existing `copilot-chat-use-agent-mode` toggle still decides between Agent and Ask.
 - Add `copilot-chat-presets`, named bundles of chat settings (model, agent mode, auto-approved tools) that `copilot-chat-apply-preset` switches between in one step. A preset only touches the settings it lists; its model takes effect on your next message and its agent mode on the next new conversation.
 - Show a status header line in the chat buffer with the chat mode (Agent or Ask), the active model, and in agent mode the number of available tools; disable it with `copilot-chat-show-status-header`. ([#509](https://github.com/copilot-emacs/copilot.el/discussions/509))
 - Add one-shot chat task commands that send the active region (or the defun at point) with a canned prompt, with the answer streaming into the regular chat buffer. The prompts are customizable via `copilot-chat-task-prompts`, and `copilot-chat-task` picks a task with completion:

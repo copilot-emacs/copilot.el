@@ -452,13 +452,133 @@ positively reports that the model cannot call tools."
          (supports (plist-get (plist-get model :capabilities) :supports)))
     (not (eq (plist-get supports :tool_calls) :json-false))))
 
+;;
+;; Chat mode selection
+;;
+
+(defvar copilot-chat--mode nil
+  "The chat mode selected with `copilot-chat-select-mode', or nil.
+Holds the mode plist reported by the server (with `:id', `:name',
+`:kind', and `:isBuiltIn').  When nil, the mode falls back to
+`copilot-chat-use-agent-mode' (Agent when non-nil, otherwise Ask).")
+
+(defvar copilot-chat--modes nil
+  "Cached chat modes from `conversation/modes'.
+The set is static per session, so it is fetched once.")
+
+(defun copilot-chat--builtin-modes ()
+  "Return the built-in chat modes as a fallback list of plists.
+Used when the server reports no modes so a selection is still possible."
+  (list (list :id "ask" :name "Ask" :kind "Ask" :isBuiltIn t)
+        (list :id "agent" :name "Agent" :kind "Agent" :isBuiltIn t)
+        (list :id "inline-agent" :name "InlineAgent" :kind "InlineAgent"
+              :isBuiltIn t)))
+
+(defun copilot-chat--available-modes ()
+  "Return the chat modes the server reports, or nil when unavailable.
+Query `conversation/modes' at most once per session and cache a
+successful result.  A successful query that yields no modes falls back
+to the built-in modes.  A failed query returns nil and is not cached, so
+it can be retried once the connection is up."
+  (or copilot-chat--modes
+      (setq copilot-chat--modes
+            (condition-case err
+                (let* ((root (copilot--workspace-root))
+                       (params
+                        (when root
+                          (list :workspaceFolders
+                                (vector (list :uri (copilot--path-to-uri root)
+                                              :name (file-name-nondirectory
+                                                     (directory-file-name
+                                                      root)))))))
+                       (modes (append (copilot--request 'conversation/modes
+                                                        params)
+                                      nil)))
+                  (or modes (copilot-chat--builtin-modes)))
+              (error
+               (copilot--log 'warning "Could not fetch chat modes: %S" err)
+               nil)))))
+
+(defun copilot-chat--effective-mode ()
+  "Return the effective chat mode as a plist.
+The plist has `:kind' (one of \"Ask\", \"Agent\", or \"InlineAgent\") and
+`:custom-id', a string for a non-built-in custom mode and nil otherwise.
+Derived from the mode chosen with `copilot-chat-select-mode', falling
+back to `copilot-chat-use-agent-mode' (Agent when non-nil, otherwise
+Ask) when no mode is selected."
+  (if copilot-chat--mode
+      (list :kind (plist-get copilot-chat--mode :kind)
+            :custom-id (unless (eq (plist-get copilot-chat--mode :isBuiltIn) t)
+                         (plist-get copilot-chat--mode :id)))
+    (list :kind (if copilot-chat-use-agent-mode "Agent" "Ask"))))
+
+(defun copilot-chat--agent-mode-p ()
+  "Return non-nil when the effective chat mode is an agent-kind mode.
+Both \"Agent\" and \"InlineAgent\" are agent-kind: the server maps them
+to the same agent machinery, so tool registration, tool-call
+confirmation, and the tool-support warning apply to both."
+  (and (member (plist-get (copilot-chat--effective-mode) :kind)
+               '("Agent" "InlineAgent"))
+       t))
+
+(defun copilot-chat--effective-mode-name ()
+  "Return a human-readable name for the effective chat mode."
+  (if copilot-chat--mode
+      (plist-get copilot-chat--mode :name)
+    (plist-get (copilot-chat--effective-mode) :kind)))
+
+(defun copilot-chat--mode-create-params ()
+  "Return `conversation/create' params selecting the effective chat mode.
+Return nil for the default Ask mode so behavior is unchanged for users
+who never pick a mode; otherwise send `chatMode', a `customChatModeId'
+for a custom (non-built-in) mode, and `needToolCallConfirmation' for an
+agent-kind mode."
+  (let* ((mode (copilot-chat--effective-mode))
+         (custom-id (plist-get mode :custom-id))
+         (agentp (copilot-chat--agent-mode-p)))
+    (when (or agentp custom-id)
+      (append (list :chatMode (plist-get mode :kind))
+              (when custom-id (list :customChatModeId custom-id))
+              (when agentp (list :needToolCallConfirmation t))))))
+
+;;;###autoload
+(defun copilot-chat-select-mode ()
+  "Interactively select the Copilot Chat mode.
+Modes (such as `Ask', `Agent', and `InlineAgent', plus any custom
+project modes) are fetched from the server.  `Agent' and `InlineAgent'
+are agent-kind modes that let Copilot run tools; `InlineAgent' uses a
+restricted tool set aimed at inline editing.
+
+The selection takes effect on the next new conversation, since the mode
+is fixed when a conversation is created (start one by resetting the chat
+with `copilot-chat-reset' or sending a message in a fresh chat)."
+  (interactive)
+  (let ((modes (copilot-chat--available-modes)))
+    (unless modes
+      (user-error "Copilot Chat: Could not fetch chat modes"))
+    (let* ((choices
+            (mapcar (lambda (m)
+                      (let ((name (plist-get m :name))
+                            (desc (plist-get m :description)))
+                        (cons (if (and desc (not (string-empty-p desc)))
+                                  (format "%s  %s" name desc)
+                                name)
+                              m)))
+                    modes))
+           (choice (completing-read "Chat mode: " choices nil t))
+           (mode (cdr (assoc choice choices))))
+      (setq copilot-chat--mode mode)
+      (message
+       "Copilot Chat: Mode set to %s (takes effect on the next new conversation)"
+       (plist-get mode :name)))))
+
 (defun copilot-chat--maybe-warn-model-lacks-tools ()
   "Warn when agent mode is on but the active model cannot call tools.
 Without tool support the model just tells the user which commands to run
 instead of running them, which reads as agent mode not working.  This is
 best-effort: it stays silent when tool support can't be determined and
 never blocks starting a conversation."
-  (when copilot-chat-use-agent-mode
+  (when (copilot-chat--agent-mode-p)
     (condition-case nil
         (when-let* ((model (copilot-chat--model)))
           (unless (copilot-chat--model-supports-tools-p model)
@@ -1776,9 +1896,7 @@ of MESSAGE, so the new conversation picks up the saved context."
                       (list (list :uri (concat "file://" root)
                                   :name (file-name-nondirectory
                                          (directory-file-name root)))))))
-             (when copilot-chat-use-agent-mode
-               (list :chatMode "Agent"
-                     :needToolCallConfirmation t))
+             (copilot-chat--mode-create-params)
              (copilot-chat--references-param))
             :success-fn (lambda (result)
                           (when-let* ((buf (get-buffer
@@ -1795,7 +1913,7 @@ of MESSAGE, so the new conversation picks up the saved context."
                               (when (eq copilot-chat--restored-turns
                                         restored)
                                 (setq copilot-chat--restored-turns nil))))
-                          (when copilot-chat-use-agent-mode
+                          (when (copilot-chat--agent-mode-p)
                             (copilot-chat--register-tools))
                           (funcall callback result))
             :error-fn (lambda (err)
@@ -2866,19 +2984,20 @@ last reported by the language server (`copilot-chat--mcp-servers')."
 
 (defun copilot-chat--status-header ()
   "Return the status header line for the chat buffer.
-Show the chat mode (Agent or Ask), the active model, and in agent mode
-the number of available tools.  Built from variables already in memory
+Show the effective chat mode (Agent, InlineAgent, Ask, or a selected
+custom mode), the active model, and for an agent-kind mode the number of
+available tools.  Built from variables already in memory
 \(`copilot-chat-model', the cached `copilot-chat--resolved-model' and
 `copilot-chat--mcp-servers') plus a memoized client-tool count, so it
 is cheap enough to evaluate on every redisplay and never contacts the
 server."
   (let ((segments
-         (list (concat "Copilot Chat  "
-                       (if copilot-chat-use-agent-mode "Agent mode" "Ask mode"))
+         (list (format "Copilot Chat  %s mode"
+                       (copilot-chat--effective-mode-name))
                (or copilot-chat-model
                    copilot-chat--resolved-model
                    "default model")
-               (when copilot-chat-use-agent-mode
+               (when (copilot-chat--agent-mode-p)
                  (format "%d tools" (copilot-chat--tool-count))))))
     (propertize (string-join (delq nil segments) "  •  ")
                 'face 'copilot-chat-status-header-face)))
@@ -3082,10 +3201,10 @@ The set is static per session, so it is fetched once.")
 
 (defun copilot-chat--chat-templates ()
   "Return the server's slash-command templates for the chat.
-Filter to the scope matching the current mode (`agent-panel' when
-`copilot-chat-use-agent-mode' is on, otherwise `chat-panel').  The
-server query is made at most once per session and cached; a failed
-query yields no templates rather than an error."
+Filter to the scope matching the effective mode (`agent-panel' for an
+agent-kind mode, otherwise `chat-panel').  The server query is made at
+most once per session and cached; a failed query yields no templates
+rather than an error."
   (unless copilot-chat--templates
     (setq copilot-chat--templates
           (condition-case err
@@ -3102,7 +3221,7 @@ query yields no templates rather than an error."
             (error
              (copilot--log 'warning "Could not fetch chat templates: %S" err)
              'none))))
-  (let ((scope (if copilot-chat-use-agent-mode "agent-panel" "chat-panel")))
+  (let ((scope (if (copilot-chat--agent-mode-p) "agent-panel" "chat-panel")))
     (seq-filter (lambda (tpl)
                   (seq-contains-p (plist-get tpl :scopes) scope))
                 (if (eq copilot-chat--templates 'none) nil

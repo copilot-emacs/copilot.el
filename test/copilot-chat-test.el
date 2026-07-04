@@ -97,6 +97,18 @@
         (expect (substring-no-properties (copilot-chat--status-header))
                 :to-equal "Copilot Chat  Ask mode  •  gpt-4o")))
 
+    (it "shows the selected mode name with a tool count for InlineAgent"
+      (let ((copilot-chat--mode
+             (list :id "inline-agent" :name "InlineAgent"
+                   :kind "InlineAgent" :isBuiltIn t))
+            (copilot-chat-use-agent-mode nil)
+            (copilot-chat-model "gpt-5-codex")
+            (copilot-chat--mcp-servers nil))
+        (expect (substring-no-properties (copilot-chat--status-header))
+                :to-equal
+                (format "Copilot Chat  InlineAgent mode  •  gpt-5-codex  •  %d tools"
+                        (length (copilot-chat--client-tool-names))))))
+
     (it "falls back to the resolved model when no model is customized"
       (let ((copilot-chat-use-agent-mode nil)
             (copilot-chat-model nil)
@@ -2523,6 +2535,188 @@
                                     (lambda (_r) (setq callback-called t)))
               (expect 'copilot-chat--register-tools :to-have-been-called)
               (expect callback-called :to-be-truthy))
+          (kill-buffer buf)))))
+
+  ;;
+  ;; Chat mode selection
+  ;;
+
+  (describe "copilot-chat--effective-mode"
+    (it "falls back to Ask when no mode is selected and agent mode is off"
+      (let ((copilot-chat--mode nil)
+            (copilot-chat-use-agent-mode nil))
+        (expect (plist-get (copilot-chat--effective-mode) :kind)
+                :to-equal "Ask")))
+
+    (it "falls back to Agent when no mode is selected and agent mode is on"
+      (let ((copilot-chat--mode nil)
+            (copilot-chat-use-agent-mode t))
+        (expect (plist-get (copilot-chat--effective-mode) :kind)
+                :to-equal "Agent")))
+
+    (it "uses the selected mode's kind over the boolean"
+      (let ((copilot-chat--mode
+             (list :id "inline-agent" :name "InlineAgent"
+                   :kind "InlineAgent" :isBuiltIn t))
+            (copilot-chat-use-agent-mode nil))
+        (expect (plist-get (copilot-chat--effective-mode) :kind)
+                :to-equal "InlineAgent")))
+
+    (it "reports no custom id for a built-in mode"
+      (let ((copilot-chat--mode
+             (list :id "agent" :name "Agent" :kind "Agent" :isBuiltIn t)))
+        (expect (plist-get (copilot-chat--effective-mode) :custom-id)
+                :to-be nil)))
+
+    (it "reports the id as custom id for a non-built-in mode"
+      (let ((copilot-chat--mode
+             (list :id "custom-xyz" :name "Reviewer" :kind "Agent"
+                   :isBuiltIn :json-false)))
+        (expect (plist-get (copilot-chat--effective-mode) :custom-id)
+                :to-equal "custom-xyz"))))
+
+  (describe "copilot-chat--agent-mode-p"
+    (it "is true for Agent"
+      (let ((copilot-chat--mode
+             (list :name "Agent" :kind "Agent" :isBuiltIn t)))
+        (expect (copilot-chat--agent-mode-p) :to-be-truthy)))
+
+    (it "is true for InlineAgent"
+      (let ((copilot-chat--mode
+             (list :name "InlineAgent" :kind "InlineAgent" :isBuiltIn t)))
+        (expect (copilot-chat--agent-mode-p) :to-be-truthy)))
+
+    (it "is false for Ask"
+      (let ((copilot-chat--mode
+             (list :name "Ask" :kind "Ask" :isBuiltIn t)))
+        (expect (copilot-chat--agent-mode-p) :to-be nil)))
+
+    (it "follows the boolean fallback when no mode is selected"
+      (let ((copilot-chat--mode nil))
+        (let ((copilot-chat-use-agent-mode t))
+          (expect (copilot-chat--agent-mode-p) :to-be-truthy))
+        (let ((copilot-chat-use-agent-mode nil))
+          (expect (copilot-chat--agent-mode-p) :to-be nil)))))
+
+  (describe "copilot-chat--available-modes"
+    (before-each
+      (setq copilot-chat--modes nil)
+      (spy-on 'copilot--workspace-root :and-return-value nil)
+      (spy-on 'copilot--connection-alivep :and-return-value t))
+    (after-each (setq copilot-chat--modes nil))
+
+    (it "fetches and caches the modes, querying the server once"
+      (spy-on 'jsonrpc-request :and-return-value
+              (vector (list :id "ask" :name "Ask" :kind "Ask" :isBuiltIn t)
+                      (list :id "agent" :name "Agent" :kind "Agent"
+                            :isBuiltIn t)))
+      (let ((modes (copilot-chat--available-modes)))
+        (expect (length modes) :to-equal 2)
+        (expect (plist-get (car modes) :kind) :to-equal "Ask"))
+      (copilot-chat--available-modes)
+      (expect 'jsonrpc-request :to-have-been-called-times 1))
+
+    (it "falls back to the built-ins when the server returns none"
+      (spy-on 'jsonrpc-request :and-return-value [])
+      (let ((kinds (mapcar (lambda (m) (plist-get m :kind))
+                           (copilot-chat--available-modes))))
+        (expect kinds :to-equal '("Ask" "Agent" "InlineAgent"))))
+
+    (it "returns nil when the query fails"
+      (spy-on 'copilot--log)
+      (spy-on 'jsonrpc-request :and-throw-error 'error)
+      (expect (copilot-chat--available-modes) :to-be nil)))
+
+  (describe "copilot-chat-select-mode"
+    (before-each (setq copilot-chat--mode nil))
+    (after-each (setq copilot-chat--mode nil))
+
+    (it "stores the chosen mode"
+      (spy-on 'copilot-chat--available-modes :and-return-value
+              (list (list :id "ask" :name "Ask" :kind "Ask" :isBuiltIn t)
+                    (list :id "inline-agent" :name "InlineAgent"
+                          :kind "InlineAgent" :isBuiltIn t
+                          :description "Inline editing")))
+      (spy-on 'completing-read
+              :and-return-value "InlineAgent  Inline editing")
+      (copilot-chat-select-mode)
+      (expect (plist-get copilot-chat--mode :kind) :to-equal "InlineAgent"))
+
+    (it "errors when modes cannot be fetched"
+      (spy-on 'copilot-chat--available-modes :and-return-value nil)
+      (expect (copilot-chat-select-mode) :to-throw 'user-error)))
+
+  (describe "copilot-chat--create (selected mode)"
+    (it "sends the selected mode's kind without a custom id for a built-in"
+      (let ((captured-params nil)
+            (copilot-chat--mode
+             (list :id "inline-agent" :name "InlineAgent"
+                   :kind "InlineAgent" :isBuiltIn t))
+            (copilot-chat-use-agent-mode nil)
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf (copilot-chat-mode))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'copilot-chat--register-tools)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--create "hello" #'ignore)
+              (expect (plist-get captured-params :chatMode)
+                      :to-equal "InlineAgent")
+              (expect (plist-get captured-params :needToolCallConfirmation)
+                      :to-equal t)
+              (expect (plist-member captured-params :customChatModeId)
+                      :not :to-be-truthy))
+          (kill-buffer buf))))
+
+    (it "sends a custom id for a non-built-in mode"
+      (let ((captured-params nil)
+            (copilot-chat--mode
+             (list :id "custom-xyz" :name "Reviewer" :kind "Agent"
+                   :isBuiltIn :json-false))
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf (copilot-chat-mode))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'copilot-chat--register-tools)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--create "hello" #'ignore)
+              (expect (plist-get captured-params :chatMode) :to-equal "Agent")
+              (expect (plist-get captured-params :customChatModeId)
+                      :to-equal "custom-xyz"))
+          (kill-buffer buf))))
+
+    (it "registers tools for InlineAgent"
+      (let ((copilot-chat--mode
+             (list :id "inline-agent" :name "InlineAgent"
+                   :kind "InlineAgent" :isBuiltIn t))
+            (copilot-chat-use-agent-mode nil)
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf (copilot-chat-mode))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'copilot-chat--register-tools)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method _params &rest args)
+                        (let ((success-fn (plist-get args :success-fn)))
+                          (when success-fn
+                            (funcall success-fn
+                                     (list :conversationId "test"
+                                           :turnId "turn-1"))))
+                        (cons nil nil)))
+              (copilot-chat--create "hello" #'ignore)
+              (expect 'copilot-chat--register-tools :to-have-been-called))
           (kill-buffer buf)))))
 
   (describe "copilot-chat-send-region"

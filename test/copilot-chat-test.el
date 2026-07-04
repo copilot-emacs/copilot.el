@@ -2940,7 +2940,37 @@
                       "commit" "-q" "-m" "init")
         (write-region "changed\n" nil (expand-file-name "f.txt") nil 'quiet)
         (write-region "loose\n" nil (expand-file-name "untracked.txt") nil 'quiet)
-        (expect (copilot-chat--changed-files) :to-equal '("f.txt")))))
+        (expect (copilot-chat--changed-files) :to-equal '("f.txt"))))
+
+    (it "gives an accurate error in a repository with no commits"
+      (let ((default-directory (make-temp-file "copilot-repo" t)))
+        (process-file "git" nil nil nil "init" "-q")
+        (write-region "hello\n" nil (expand-file-name "f.txt") nil 'quiet)
+        (process-file "git" nil nil nil "add" "f.txt")
+        (condition-case err
+            (progn (copilot-chat--changed-files)
+                   (buttercup-fail "expected a user-error"))
+          (user-error
+           (expect (cadr err) :to-match "no commits yet")))))
+
+    (it "returns root-relative paths even with diff.relative set"
+      (let ((default-directory (make-temp-file "copilot-repo" t)))
+        (process-file "git" nil nil nil "init" "-q")
+        (process-file "git" nil nil nil "config" "diff.relative" "true")
+        (make-directory (expand-file-name "src"))
+        (write-region "hello\n" nil (expand-file-name "src/f.txt") nil 'quiet)
+        (process-file "git" nil nil nil "add" ".")
+        (process-file "git" nil nil nil
+                      "-c" "user.email=t@t" "-c" "user.name=t"
+                      "commit" "-q" "-m" "init")
+        (write-region "changed\n" nil (expand-file-name "src/f.txt") nil 'quiet)
+        (let ((default-directory (expand-file-name "src/" default-directory)))
+          (expect (copilot-chat--changed-files) :to-equal '("src/f.txt"))))))
+
+  (describe "copilot-chat--review-file-text"
+    (it "returns nil for a directory (e.g. a dirty submodule entry)"
+      (let ((dir (make-temp-file "copilot-subdir" t)))
+        (expect (copilot-chat--review-file-text dir) :to-be nil))))
 
   (describe "copilot-chat--uncommitted-changes"
     (it "pairs each change with its base and head content"
@@ -3144,7 +3174,57 @@
           (set-buffer-modified-p nil))
         (let ((snippet (aref (plist-get captured-params :snippets) 0)))
           (expect (plist-get snippet :content) :to-equal "line one\nline two")
-          (expect (plist-get snippet :endLine) :to-equal 2)))))
+          (expect (plist-get snippet :endLine) :to-equal 2))))
+
+    (it "sends absolute line numbers from a narrowed buffer"
+      (let ((captured-params nil))
+        (spy-on 'copilot--workspace-root :and-return-value "/repo/")
+        (spy-on 'jsonrpc--async-request-1
+                :and-call-fake
+                (lambda (_conn _method params &rest _args)
+                  (setq captured-params params)
+                  (cons nil nil)))
+        (with-temp-buffer
+          (insert "line one\nline two\nline three\n")
+          (setq buffer-file-name "/repo/f.el")
+          ;; Narrow to lines 2-3, review line 2: the file line is 2
+          ;; even though it is the narrowed region's first line.
+          (narrow-to-region 10 (point-max))
+          (copilot-chat-review-region 10 18)
+          (set-buffer-modified-p nil))
+        (let ((snippet (aref (plist-get captured-params :snippets) 0)))
+          (expect (plist-get snippet :startLine) :to-equal 2)
+          (expect (plist-get snippet :endLine) :to-equal 2))))
+
+    (it "sends a generous timeout with a timeout handler"
+      (let ((captured-args nil))
+        (spy-on 'copilot--workspace-root :and-return-value "/repo/")
+        (spy-on 'jsonrpc--async-request-1
+                :and-call-fake
+                (lambda (_conn _method _params &rest args)
+                  (setq captured-args args)
+                  (cons nil nil)))
+        (with-temp-buffer
+          (insert "line one\n")
+          (setq buffer-file-name "/repo/f.el")
+          (copilot-chat-review-region (point-min) (point-max))
+          (set-buffer-modified-p nil))
+        ;; jsonrpc's 10s default would drop most real reviews.
+        (expect (plist-get captured-args :timeout) :to-equal 130)
+        (expect (functionp (plist-get captured-args :timeout-fn))
+                :to-be-truthy)))
+
+    (it "refuses to run while a chat response is streaming"
+      (let ((buf (get-buffer-create copilot-chat--buffer-name)))
+        (with-current-buffer buf
+          (copilot-chat-mode)
+          (setq copilot-chat--streaming-p t))
+        (with-temp-buffer
+          (insert "line one\n")
+          (setq buffer-file-name "/repo/f.el")
+          (expect (copilot-chat-review-region (point-min) (point-max))
+                  :to-throw 'user-error)
+          (set-buffer-modified-p nil)))))
 
   (describe "copilot-chat--format-review-comment"
     (it "renders location, kind, message, and suggestion"
@@ -3159,7 +3239,17 @@
         (expect rendered :to-match "\\*\\*src/a\\.el:1\\*\\* \\[consistency\\]")
         (expect rendered :to-match "Watch out")
         (expect rendered :to-match "Suggested change:")
-        (expect rendered :to-match "(safer)")))
+        (expect rendered :to-match "```\n(safer)\n```")))
+
+    (it "outgrows backtick runs inside the suggestion"
+      (let ((rendered (copilot-chat--format-review-comment
+                       '(:uri "file:///repo/README.md"
+                         :range (:start (:line 0 :character 0)
+                                 :end (:line 0 :character 1))
+                         :message "Fix the fence"
+                         :suggestion "```elisp\n(code)\n```")
+                       "/repo/")))
+        (expect rendered :to-match "````\n```elisp\n(code)\n```\n````")))
 
     (it "omits the suggestion block when there is none"
       (let ((rendered (copilot-chat--format-review-comment

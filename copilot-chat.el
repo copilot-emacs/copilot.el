@@ -2312,10 +2312,18 @@ List the files `git diff HEAD' touches, staged or not.  Deleted files
 are excluded (a review needs the file's new content), and renames are
 reported as a delete plus an add for the same reason.  Signal a
 `user-error' when git fails or when nothing has changed."
+  (unless (eql 0 (process-file "git" nil nil nil
+                               "rev-parse" "--verify" "--quiet" "HEAD"))
+    (user-error
+     "Copilot Chat: The repository has no commits yet, so there is no base to review against"))
   (let* ((exit nil)
          (out (with-temp-buffer
+                ;; --no-relative: with diff.relative set, paths would
+                ;; come back relative to the invoking subdirectory and
+                ;; never resolve against the repository root.
                 (setq exit (process-file "git" nil t nil
                                          "diff" "--name-only" "--no-renames"
+                                         "--no-relative"
                                          "--diff-filter=d" "-z" "HEAD"))
                 (buffer-string))))
     (unless (eql exit 0)
@@ -2332,7 +2340,8 @@ reported as a delete plus an add for the same reason.  Signal a
 Return nil when the file is unreadable, larger than
 `copilot-chat--review-max-file-bytes', or binary (contains NUL bytes),
 none of which belong in a review request."
-  (when (and (file-readable-p path)
+  (when (and (file-regular-p path)
+             (file-readable-p path)
              (when-let* ((size (file-attribute-size (file-attributes path))))
                (<= size copilot-chat--review-max-file-bytes)))
     (let ((coding-system-for-read 'utf-8))
@@ -2399,7 +2408,18 @@ ROOT is the directory file paths are shortened against."
               (format " [%s]" kind))
             "\n" text "\n"
             (when (and (stringp suggestion) (not (string-empty-p suggestion)))
-              (format "\nSuggested change:\n\n```\n%s\n```\n" suggestion)))))
+              ;; The fence must outgrow any backtick run inside the
+              ;; suggestion (e.g. when reviewing markdown), or the
+              ;; block terminates early.
+              (let* ((longest 0)
+                     (pos 0))
+                (while (string-match "`+" suggestion pos)
+                  (setq longest (max longest (- (match-end 0)
+                                                (match-beginning 0))))
+                  (setq pos (match-end 0)))
+                (let ((fence (make-string (max 3 (1+ longest)) ?`)))
+                  (format "\nSuggested change:\n\n%s\n%s\n%s\n"
+                          fence suggestion fence)))))))
 
 (defun copilot-chat--insert-review-results (comments root)
   "Render the review COMMENTS in the chat buffer.
@@ -2430,6 +2450,11 @@ one in flight."
     (with-current-buffer chat-buf
       (unless (derived-mode-p 'copilot-chat-mode)
         (copilot-chat-mode))
+      ;; Reviews and chat replies both append at point-max; letting a
+      ;; review start while an answer streams would splice their output
+      ;; together.
+      (when copilot-chat--streaming-p
+        (user-error "Copilot Chat: A response is currently being streamed"))
       (copilot-chat--insert-prompt request)
       (copilot-chat--scroll-to-bottom))
     (display-buffer chat-buf)
@@ -2441,6 +2466,12 @@ one in flight."
     (with-current-buffer chat-buf
       (copilot--async-request
        method params
+       ;; jsonrpc's 10s default would silently drop most real reviews:
+       ;; the server's own review pipeline allows 120s.
+       :timeout 130
+       :timeout-fn (lambda ()
+                     (copilot-chat--insert-error "Code review timed out")
+                     (message "Copilot Chat: Code review timed out"))
        :success-fn (lambda (result)
                      (copilot-chat--insert-review-results
                       (append (plist-get result :comments) nil) root)
@@ -2499,8 +2530,10 @@ and suggested change) in the chat buffer."
                      (goto-char end)
                      (when (and (> end start) (bolp)) (forward-line -1))
                      (line-end-position)))
-         (start-line (line-number-at-pos snip-beg))
-         (end-line (line-number-at-pos snip-end))
+         ;; Absolute line numbers: under narrowing the default counts
+         ;; from the accessible region's start, not the file's.
+         (start-line (line-number-at-pos snip-beg t))
+         (end-line (line-number-at-pos snip-end t))
          (path (copilot--get-relative-path))
          (root (or (copilot--workspace-root)
                    (file-name-directory buffer-file-name))))

@@ -1538,8 +1538,20 @@ publicly available code), unrelated to Emacs `xref' cross-references."
   "Posn information without overlay.
 To work around posn problems with after-string property.")
 
-(defconst copilot-completion-map (make-sparse-keymap)
-  "Keymap for Copilot completion overlay.")
+(defconst copilot-completion-map
+  (let ((map (make-sparse-keymap)))
+    (keymap-set map "<tab>" #'copilot-accept-completion)
+    (keymap-set map "TAB" #'copilot-accept-completion)
+    (keymap-set map "C-<tab>" #'copilot-accept-completion-by-word)
+    (keymap-set map "C-TAB" #'copilot-accept-completion-by-word)
+    (keymap-set map "M-n" #'copilot-next-completion)
+    (keymap-set map "M-p" #'copilot-previous-completion)
+    map)
+  "Keymap for Copilot completion overlay.
+These bindings are active only while a completion overlay is
+visible and otherwise fall through to their usual commands.  To
+disable them, rebind or clear this map, for example
+\(keymap-unset copilot-completion-map \"TAB\").")
 
 (defun copilot--posn-advice (&rest args)
   "Remap posn if in `copilot-mode' with ARGS."

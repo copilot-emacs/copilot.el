@@ -382,7 +382,7 @@ When a suggestion is pending:
 
 > [!NOTE]
 >
-> `copilot-nes-mode` predefines **TAB** and **C-g**, whereas `copilot-mode` ships no completion keybindings and leaves `copilot-completion-map` for you to populate. In both cases the bindings only take effect while a suggestion (or completion) is pending and otherwise fall through to their usual commands, so the predefined NES keys are safe to leave enabled.
+> Both `copilot-nes-mode` and `copilot-mode` ship default keybindings: NES predefines **TAB** and **C-g**, and `copilot-mode` predefines **TAB** (accept) plus a few more in `copilot-completion-map` (see [Keybindings](#keybindings)). In both cases the bindings only take effect while a suggestion (or completion) is pending and otherwise fall through to their usual commands, so they are safe to leave enabled.
 
 Customization variables:
 - **`copilot-nes-idle-delay`** — seconds of idle time before requesting a suggestion (default `0.5`)
@@ -391,7 +391,7 @@ Customization variables:
 
 ### Keybindings
 
-`copilot-mode` does not set any keybindings by default. Use `copilot-completion-map` (active while a completion overlay is visible) to bind keys:
+`copilot-mode` binds these keys in `copilot-completion-map`, active only while a completion overlay is visible (they otherwise fall through to their usual commands):
 
 ```elisp
 (keymap-set copilot-completion-map "<tab>" #'copilot-accept-completion)
@@ -402,11 +402,15 @@ Customization variables:
 (keymap-set copilot-completion-map "M-p" #'copilot-previous-completion)
 ```
 
+To change them, rebind the keys you want or clear the map, for example `(keymap-unset copilot-completion-map "TAB")`. The alternatives below are drop-in replacements.
+
 #### Fish-style keybindings
 
-If you use `company-mode` or `corfu`, TAB is already taken. An alternative inspired by Fish shell avoids the conflict entirely — right-arrow accepts, and forward-word/end-of-line accept partially:
+If you use `company-mode` or `corfu`, TAB is already taken. An alternative inspired by Fish shell avoids the conflict entirely — right-arrow accepts, and forward-word/end-of-line accept partially. Unbind the default TAB first, then:
 
 ```elisp
+(keymap-unset copilot-completion-map "<tab>")
+(keymap-unset copilot-completion-map "TAB")
 (keymap-set copilot-completion-map "<right>" #'copilot-accept-completion)
 (keymap-set copilot-completion-map "C-f" #'copilot-accept-completion)
 (keymap-set copilot-completion-map "M-<right>" #'copilot-accept-completion-by-word)

@@ -1381,6 +1381,29 @@
           (expect (nth 2 result) :to-equal "lib)"))))))
 
   ;;
+  ;; copilot-completion-map
+  ;;
+
+  (describe "copilot-completion-map"
+    (it "binds TAB to accept the completion"
+      (expect (keymap-lookup copilot-completion-map "TAB")
+              :to-be 'copilot-accept-completion)
+      (expect (keymap-lookup copilot-completion-map "<tab>")
+              :to-be 'copilot-accept-completion))
+
+    (it "binds C-TAB to accept by word"
+      (expect (keymap-lookup copilot-completion-map "C-TAB")
+              :to-be 'copilot-accept-completion-by-word)
+      (expect (keymap-lookup copilot-completion-map "C-<tab>")
+              :to-be 'copilot-accept-completion-by-word))
+
+    (it "binds M-n/M-p to cycle completions"
+      (expect (keymap-lookup copilot-completion-map "M-n")
+              :to-be 'copilot-next-completion)
+      (expect (keymap-lookup copilot-completion-map "M-p")
+              :to-be 'copilot-previous-completion)))
+
+  ;;
   ;; copilot-accept-completion
   ;;
 

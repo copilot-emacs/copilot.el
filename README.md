@@ -258,7 +258,7 @@ Key bindings in the `*copilot-chat*` buffer:
 
 Attach extra context for the next message with `copilot-chat-add-file-reference` (`C-c C-f`) or `copilot-chat-add-region-reference`; `copilot-chat-clear-references` drops anything pending.
 
-`copilot-chat-retry` regenerates the last answer: it deletes the dead turn on the server, trims the exchange from the transcript, and re-sends the request so the buffer shows a single clean exchange rather than two. `copilot-chat-rate-response` (and the `copilot-chat-thumbs-up` / `copilot-chat-thumbs-down` shortcuts) sends good/bad feedback about the current response to GitHub; it is telemetry only and has no local effect.
+`copilot-chat-retry` regenerates the last answer: it deletes the dead turn on the server and re-sends the request. The original exchange stays put until the new answer arrives and then is replaced, so the buffer ends up with a single clean exchange, and a failed regenerate leaves the original untouched. `copilot-chat-rate-response` (and the `copilot-chat-thumbs-up` / `copilot-chat-thumbs-down` shortcuts) sends good/bad feedback about the current response to GitHub; it is telemetry only and has no local effect.
 
 The chat buffer's header line shows at a glance which mode is active (Agent, InlineAgent, Ask, or a selected custom mode), which model answers, and for an agent-kind mode how many tools are available. Set `copilot-chat-show-status-header` to `nil` to hide it; the setting is read when the chat buffer is created, so it takes effect for new chat buffers.
 

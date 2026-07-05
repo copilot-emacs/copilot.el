@@ -323,6 +323,25 @@ faces; the underlying `header-line' face still applies on its own."
 (defvar-local copilot-chat--current-turn-id nil
   "Turn ID currently being streamed.")
 
+(defvar-local copilot-chat--last-request nil
+  "Text of the most recently sent request, kept for `copilot-chat-retry'.
+Unlike `copilot-chat--current-request' this survives turn completion and
+records the last request whether or not its turn succeeded, so retry
+always targets the request the user last sent.")
+
+(defvar-local copilot-chat--last-prompt-start nil
+  "Marker at the start of the last prompt inserted into the chat buffer.
+Lets `copilot-chat-retry' remove exactly the previous exchange by
+position instead of searching buffer text for a prompt heading, which a
+reply could spoof.")
+
+(defvar-local copilot-chat--retry-pending nil
+  "In-flight `copilot-chat-retry' state, or nil.
+A plist with `:start' (a marker at the exchange being regenerated) and
+`:recorded' (whether that exchange is in `copilot-chat--turns').  The old
+exchange is removed only once the replacement turn succeeds, so a failed
+regenerate never destroys the original answer.")
+
 (defvar-local copilot-chat--work-done-token nil
   "Token for routing `$/progress' notifications.")
 
@@ -645,6 +664,8 @@ and cleans up active tokens."
       (with-current-buffer buf
         (copilot-chat--end-streaming)
         (copilot-chat--remove-active-tokens buf)
+        ;; A failed retry keeps the original exchange in place.
+        (copilot-chat--finish-retry nil)
         ;; A failed turn never reaches the end-progress that would
         ;; clear the capture state; without this the busy guards would
         ;; wedge the chat closed for good.
@@ -849,12 +870,17 @@ so it never disrupts the end of a turn."
             (when copilot-chat--current-request
               (let ((reply (apply #'concat
                                   (nreverse copilot-chat--reply-chunks))))
-                (unless (or error-msg (string-empty-p reply))
+                (if (or error-msg (string-empty-p reply))
+                    ;; A failed/empty replacement leaves the original
+                    ;; exchange in place.
+                    (copilot-chat--finish-retry nil)
                   (setq copilot-chat--turns
                         (append copilot-chat--turns
                                 (list (cons copilot-chat--current-request
                                             reply))))
-                  (copilot-chat--save-history)))
+                  (copilot-chat--save-history)
+                  ;; The replacement landed; trim the exchange it replaced.
+                  (copilot-chat--finish-retry t)))
               (setq copilot-chat--current-request nil
                     copilot-chat--reply-chunks nil)))
           (copilot-chat--scroll-to-bottom)
@@ -1900,6 +1926,7 @@ of MESSAGE, so the new conversation picks up the saved context."
     (with-current-buffer (get-buffer copilot-chat--buffer-name)
       (setq copilot-chat--work-done-token token)
       (setq copilot-chat--current-request message
+            copilot-chat--last-request message
             copilot-chat--reply-chunks nil)
       (setq restored copilot-chat--restored-turns)
       (push (cons token (current-buffer)) copilot-chat--active-buffers))
@@ -1951,6 +1978,7 @@ of MESSAGE, so the new conversation picks up the saved context."
     (with-current-buffer chat-buf
       (setq copilot-chat--work-done-token token)
       (setq copilot-chat--current-request message
+            copilot-chat--last-request message
             copilot-chat--reply-chunks nil)
       (push (cons token chat-buf) copilot-chat--active-buffers)
       (let ((conv-id copilot-chat--conversation-id)
@@ -2145,6 +2173,11 @@ the `You:'/`Copilot:' scaffolding, the org frontend writes `* You' and
 `** Copilot' headings."
   (let ((inhibit-read-only t))
     (goto-char (point-max))
+    ;; Mark where this prompt starts so `copilot-chat-retry' can excise
+    ;; exactly this exchange later without matching buffer text.
+    (unless (markerp copilot-chat--last-prompt-start)
+      (setq copilot-chat--last-prompt-start (make-marker)))
+    (set-marker copilot-chat--last-prompt-start (point))
     (pcase copilot-chat-frontend
       ('org (copilot-chat--insert-prompt-org message))
       (_ (copilot-chat--insert-prompt-markdown message)))))
@@ -3051,18 +3084,39 @@ quietly ignored, so a failed delete never blocks re-sending."
      :error-fn (lambda (err)
                  (copilot--log 'error "turnDelete failed: %S" err)))))
 
-(defun copilot-chat--delete-last-exchange ()
-  "Remove the last rendered You/Copilot exchange from the chat buffer."
-  (let ((inhibit-read-only t))
-    (goto-char (point-max))
-    (when (re-search-backward copilot-chat--prompt-heading-re nil t)
-      (delete-region (line-beginning-position) (point-max)))))
+(defun copilot-chat--finish-retry (success)
+  "Resolve a pending `copilot-chat-retry' after its replacement turn ended.
+When SUCCESS, excise the exchange that was being regenerated from the
+buffer and, if it was a recorded turn, from `copilot-chat--turns',
+leaving only the fresh answer.  Otherwise leave the original exchange
+untouched, so a failed regenerate never loses it.  A no-op when no retry
+is pending."
+  (when copilot-chat--retry-pending
+    (let ((start (plist-get copilot-chat--retry-pending :start))
+          (recorded (plist-get copilot-chat--retry-pending :recorded)))
+      (when success
+        (let ((old (marker-position start))
+              (new (and (markerp copilot-chat--last-prompt-start)
+                        (marker-position copilot-chat--last-prompt-start))))
+          (when (and old new (< old new))
+            (let ((inhibit-read-only t))
+              (delete-region old new))))
+        (when recorded
+          ;; The new pair was just appended, so the turns now end with
+          ;; the OLD pair followed by the NEW one; drop the OLD.
+          (setq copilot-chat--turns
+                (append (butlast copilot-chat--turns 2)
+                        (last copilot-chat--turns)))
+          (copilot-chat--save-history)))
+      (when (markerp start) (set-marker start nil))
+      (setq copilot-chat--retry-pending nil))))
 
 (defun copilot-chat-retry (&optional edit)
   "Regenerate the answer to the last request.
-Delete the last turn on the server (best effort), drop it from the
-transcript and the chat buffer, and re-send the same request so a fresh
-answer streams into a single clean exchange.
+Re-send the last request so a fresh answer streams in; the previous
+exchange is replaced only once the new answer arrives, so a failed
+regenerate leaves the original in place.  The dead turn is also removed
+on the server (best effort).
 
 With a prefix argument EDIT, pre-fill the last request in the minibuffer
 for editing before it is re-sent."
@@ -3071,23 +3125,27 @@ for editing before it is re-sent."
     (user-error "Copilot Chat: Not in a chat buffer"))
   (when (or copilot-chat--streaming-p copilot-chat--current-request)
     (user-error "Copilot Chat: A response is currently being streamed"))
-  (unless copilot-chat--turns
+  (unless copilot-chat--last-request
     (user-error "Copilot Chat: No previous request to retry"))
   (unless copilot-chat--conversation-id
     (user-error "Copilot Chat: No active conversation"))
-  (let* ((request (car (car (last copilot-chat--turns))))
-         (msg (if edit
-                  (read-string "Copilot Chat (retry): " request)
-                request)))
+  (let ((msg (if edit
+                 (read-string "Copilot Chat (retry): " copilot-chat--last-request)
+               copilot-chat--last-request)))
     (when (string-empty-p msg)
       (user-error "Copilot Chat: Empty message"))
-    ;; Delete the dead server turn so the conversation does not accumulate
-    ;; one; this is best effort and must not wedge the retry.
+    ;; Remove the dead server turn (best effort) so the conversation does
+    ;; not accumulate one; it must never wedge the retry.
     (copilot-chat--delete-turn copilot-chat--current-turn-id)
-    ;; Drop the last exchange from the recorded turns and the buffer so the
-    ;; regenerated answer replaces it instead of piling up beneath it.
-    (setq copilot-chat--turns (butlast copilot-chat--turns))
-    (copilot-chat--delete-last-exchange)
+    ;; Remember the exchange to replace and whether it is a recorded turn,
+    ;; then send.  `copilot-chat--finish-retry' trims the old exchange only
+    ;; after the replacement succeeds.
+    (setq copilot-chat--retry-pending
+          (list :start (copy-marker (or copilot-chat--last-prompt-start
+                                        (point-max)))
+                :recorded (and copilot-chat--turns
+                               (equal (car (car (last copilot-chat--turns)))
+                                      copilot-chat--last-request))))
     (copilot-chat--insert-prompt msg)
     (copilot-chat--send-turn msg)))
 
@@ -3558,6 +3616,8 @@ only when there is nothing to cancel at all, reset the conversation."
         (copilot-chat--end-streaming)
         (copilot-chat--insert-error "Cancelled")
         (copilot-chat--remove-active-tokens chat-buf)
+        ;; A cancelled retry keeps the original exchange in place.
+        (copilot-chat--finish-retry nil)
         ;; The cancelled turn's end will never arrive; drop its capture
         ;; state so the busy guards don't wedge the chat closed.
         (setq copilot-chat--current-request nil
@@ -3576,9 +3636,11 @@ well; the saved history file on disk, if any, is left untouched (see
   (copilot-chat--destroy)
   (when-let* ((buf (get-buffer copilot-chat--buffer-name)))
     (with-current-buffer buf
+      (copilot-chat--finish-retry nil)
       (setq copilot-chat--turns nil
             copilot-chat--restored-turns nil
             copilot-chat--current-request nil
+            copilot-chat--last-request nil
             copilot-chat--reply-chunks nil
             copilot-chat--turn-start-time nil
             copilot-chat--session-root nil)

@@ -4440,19 +4440,33 @@
           (kill-buffer buf)))))
 
   (describe "copilot-chat-retry"
-    (it "deletes the last turn, trims the exchange, and resends"
+    ;; Set up a chat buffer with two rendered exchanges and the state
+    ;; retry reads; point `copilot-chat--last-prompt-start' at the last
+    ;; `You:' so retry knows the exchange boundary.
+    (defun copilot-chat-test--setup-retry (buf)
+      (with-current-buffer buf
+        (copilot-chat-mode)
+        (setq copilot-chat--conversation-id "conv-1"
+              copilot-chat--current-turn-id "turn-2"
+              copilot-chat--last-request "q2"
+              copilot-chat--turns '(("q1" . "a1") ("q2" . "a2")))
+        (let ((inhibit-read-only t))
+          (insert "You:\nq1\n\nCopilot:\na1\n\n")
+          (setq copilot-chat--last-prompt-start (copy-marker (point)))
+          (insert "You:\nq2\n\nCopilot:\na2\n\n"))))
+
+    (it "resends the last request and deletes the dead server turn"
       (let ((buf (get-buffer-create "*copilot-chat-test-retry*"))
             (captured nil))
         (unwind-protect
             (progn
+              (copilot-chat-test--setup-retry buf)
+              ;; The last prompt marker must reflect the last `You:'.
               (with-current-buffer buf
-                (copilot-chat-mode)
-                (setq copilot-chat--conversation-id "conv-1"
-                      copilot-chat--current-turn-id "turn-1"
-                      copilot-chat--turns '(("q1" . "a1") ("q2" . "a2")))
-                (let ((inhibit-read-only t))
-                  (insert "You:\nq1\n\nCopilot:\na1\n\n"
-                          "You:\nq2\n\nCopilot:\na2\n\n")))
+                (goto-char (point-min))
+                (search-forward "You:\nq2")
+                (set-marker copilot-chat--last-prompt-start
+                            (match-beginning 0)))
               (spy-on 'copilot--connection-alivep :and-return-value t)
               (spy-on 'copilot-chat--send-turn)
               (spy-on 'jsonrpc--async-request-1
@@ -4465,16 +4479,101 @@
               (let ((del (assq 'conversation/turnDelete captured)))
                 (expect del :to-be-truthy)
                 (expect (plist-get (cdr del) :conversationId) :to-equal "conv-1")
-                (expect (plist-get (cdr del) :turnId) :to-equal "turn-1"))
-              ;; The last exchange is gone from the recorded turns...
+                (expect (plist-get (cdr del) :turnId) :to-equal "turn-2"))
+              (expect 'copilot-chat--send-turn :to-have-been-called-with "q2")
               (with-current-buffer buf
-                (expect copilot-chat--turns :to-equal '(("q1" . "a1")))
-                ;; ...and the stale answer is gone from the buffer, with a
-                ;; single fresh prompt re-rendered for the request.
-                (expect (buffer-string) :not :to-match "a2")
-                (expect (buffer-string) :to-match "You:\nq1"))
-              ;; The request was re-sent verbatim.
-              (expect 'copilot-chat--send-turn :to-have-been-called-with "q2"))
+                ;; Nothing is trimmed yet: the original stays until the
+                ;; replacement lands, so a failed retry can't lose it.
+                (expect copilot-chat--turns
+                        :to-equal '(("q1" . "a1") ("q2" . "a2")))
+                (expect (buffer-string) :to-match "a2")
+                (expect copilot-chat--retry-pending :to-be-truthy)))
+          (kill-buffer buf))))
+
+    (it "trims the replaced exchange once the new answer succeeds"
+      (let ((buf (get-buffer-create "*copilot-chat-test-retry-ok*")))
+        (unwind-protect
+            (progn
+              (copilot-chat-test--setup-retry buf)
+              (with-current-buffer buf
+                (goto-char (point-min))
+                (search-forward "You:\nq2")
+                (set-marker copilot-chat--last-prompt-start
+                            (match-beginning 0)))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'copilot-chat--send-turn)
+              (spy-on 'jsonrpc--async-request-1 :and-return-value (cons nil nil))
+              (with-current-buffer buf
+                (copilot-chat-retry)
+                ;; Simulate the replacement turn completing: a fresh prompt
+                ;; was rendered by retry and its answer streamed in.
+                (let ((inhibit-read-only t)) (goto-char (point-max)) (insert "a2new\n\n"))
+                (setq copilot-chat--turns
+                      (append copilot-chat--turns '(("q2" . "a2new"))))
+                (copilot-chat--finish-retry t)
+                ;; The stale exchange is gone from both the turns and the
+                ;; buffer, leaving one clean q2 exchange.
+                (expect copilot-chat--turns
+                        :to-equal '(("q1" . "a1") ("q2" . "a2new")))
+                (expect (buffer-string) :not :to-match "a2\n")
+                (expect (buffer-string) :to-match "a2new")
+                (expect copilot-chat--retry-pending :to-be nil)))
+          (kill-buffer buf))))
+
+    (it "keeps the original exchange when the retry fails"
+      (let ((buf (get-buffer-create "*copilot-chat-test-retry-fail*")))
+        (unwind-protect
+            (progn
+              (copilot-chat-test--setup-retry buf)
+              (with-current-buffer buf
+                (goto-char (point-min))
+                (search-forward "You:\nq2")
+                (set-marker copilot-chat--last-prompt-start
+                            (match-beginning 0)))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'copilot-chat--send-turn)
+              (spy-on 'jsonrpc--async-request-1 :and-return-value (cons nil nil))
+              (with-current-buffer buf
+                (copilot-chat-retry)
+                ;; The replacement fails.
+                (copilot-chat--finish-retry nil)
+                ;; The original answer is still present, nothing lost.
+                (expect copilot-chat--turns
+                        :to-equal '(("q1" . "a1") ("q2" . "a2")))
+                (expect (buffer-string) :to-match "a2")
+                (expect copilot-chat--retry-pending :to-be nil)))
+          (kill-buffer buf))))
+
+    (it "retries the last request even when its turn errored"
+      ;; Errored turns are not recorded in `copilot-chat--turns', so
+      ;; reading the request from there would resend the WRONG (older)
+      ;; request; `copilot-chat--last-request' has the real last one.
+      (let ((buf (get-buffer-create "*copilot-chat-test-retry-errored*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--conversation-id "conv-1"
+                      copilot-chat--current-turn-id "turn-2"
+                      copilot-chat--last-request "q2-failed"
+                      ;; Only the earlier successful turn is recorded.
+                      copilot-chat--turns '(("q1" . "a1")))
+                (let ((inhibit-read-only t))
+                  (insert "You:\nq1\n\nCopilot:\na1\n\n")
+                  (setq copilot-chat--last-prompt-start (copy-marker (point)))
+                  (insert "You:\nq2-failed\n\nCopilot:\n[Error]\n\n")))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'copilot-chat--send-turn)
+              (spy-on 'jsonrpc--async-request-1 :and-return-value (cons nil nil))
+              (with-current-buffer buf (copilot-chat-retry))
+              ;; Resends the failed request, not the older recorded one.
+              (expect 'copilot-chat--send-turn
+                      :to-have-been-called-with "q2-failed")
+              ;; The recorded turn is not the one being retried, so it is
+              ;; not marked for removal.
+              (with-current-buffer buf
+                (expect (plist-get copilot-chat--retry-pending :recorded)
+                        :to-be nil)))
           (kill-buffer buf))))
 
     (it "pre-fills the request for editing with a prefix argument"
@@ -4485,6 +4584,7 @@
                 (copilot-chat-mode)
                 (setq copilot-chat--conversation-id "conv-1"
                       copilot-chat--current-turn-id "turn-1"
+                      copilot-chat--last-request "q2"
                       copilot-chat--turns '(("q2" . "a2")))
                 (let ((inhibit-read-only t))
                   (insert "You:\nq2\n\nCopilot:\na2\n\n")))

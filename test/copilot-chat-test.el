@@ -954,7 +954,22 @@
               :and-call-fake (lambda (&rest _) (signal 'quit nil)))
       (copilot-chat-compose)
       (expect 'copilot-chat--create :not :to-have-been-called)
-      (expect 'copilot-chat--send-turn :not :to-have-been-called)))
+      (expect 'copilot-chat--send-turn :not :to-have-been-called))
+
+    (it "refuses to compose while a response is streaming"
+      ;; The busy check runs before the compose buffer opens, so a long
+      ;; draft is not composed only to be discarded by the send guard.
+      (spy-on 'copilot-chat--edit-in-buffer)
+      (let ((buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p t))
+              (expect (copilot-chat-compose) :to-throw 'user-error)
+              (expect 'copilot-chat--edit-in-buffer
+                      :not :to-have-been-called))
+          (kill-buffer buf)))))
 
   (describe "copilot-chat-display"
     (it "errors when no chat buffer exists"

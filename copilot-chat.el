@@ -3204,11 +3204,17 @@ or cancel with \\[abort-recursive-edit].  The message is routed through
 is sent as a follow-up turn otherwise.  Empty or whitespace-only input
 is not sent."
   (interactive)
+  ;; Check the busy state up front, so a long draft isn't composed and
+  ;; then thrown away by the send-time guard in `copilot-chat'.
+  (when-let* ((buf (get-buffer copilot-chat--buffer-name)))
+    (when (or (buffer-local-value 'copilot-chat--streaming-p buf)
+              (buffer-local-value 'copilot-chat--current-request buf))
+      (user-error "Copilot Chat: A response is currently being streamed")))
   (let ((message (condition-case nil
                      (copilot-chat--edit-in-buffer "" "message"
                                                    "*copilot-chat-compose*")
-                   ;; C-c C-k (or C-g) aborts the recursive edit; treat
-                   ;; that as a clean cancel rather than an empty send.
+                   ;; C-c C-k aborts the recursive edit; treat that as a
+                   ;; clean cancel rather than an empty send.
                    (quit :cancelled))))
     (unless (eq message :cancelled)
       (when (string-blank-p message)

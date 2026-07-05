@@ -665,7 +665,29 @@
                 (expect (window-point win) :to-equal 3)))
           (delete-other-windows)
           (kill-buffer buf)
-          (kill-buffer other)))))
+          (kill-buffer other))))
+
+    (it "leaves the SELECTED window scrolled up untouched"
+      ;; The common case: the user is reading the chat in the selected
+      ;; window, scrolled up.  A bare `goto-char' would move buffer point
+      ;; (which is the selected window's point) to the bottom.
+      (let ((buf (get-buffer-create "*copilot-chat-test-sticky-selected*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p t)
+                (let ((inhibit-read-only t))
+                  (insert "You:\nhi\n\nCopilot:\nline\nline\nline\n")))
+              (set-window-buffer (selected-window) buf)
+              (set-window-point (selected-window) 3)
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "report" :reply "streamed line\n"))))
+              (expect (window-point (selected-window)) :to-equal 3))
+          (kill-buffer buf)))))
 
   ;;
   ;; Turn-end desktop notification

@@ -940,8 +940,13 @@ so it never disrupts the end of a turn."
             ;; insert; a window scrolled up to re-read is left alone.
             (let ((windows (copilot-chat--following-windows (current-buffer)))
                   (inhibit-read-only t))
-              (goto-char (point-max))
-              (insert reply)
+              ;; `save-excursion' keeps buffer point (and thus a
+              ;; scrolled-up selected window's point) from being dragged
+              ;; to `point-max'; only the snapshotted following windows
+              ;; are scrolled.
+              (save-excursion
+                (goto-char (point-max))
+                (insert reply))
               (copilot-chat--scroll-windows windows))))
          ((equal kind "end")
           (let ((windows (copilot-chat--following-windows (current-buffer))))
@@ -956,17 +961,18 @@ so it never disrupts the end of a turn."
               ;; previous turn is never re-inserted.
               (setq copilot-chat--follow-up (plist-get result :followUp))
               (let ((inhibit-read-only t))
-                (goto-char (point-max))
-                (insert "\n\n")
-                ;; Surface a turn-level error the server reports at the
-                ;; end, which would otherwise leave only an empty reply.
-                (when error-msg
-                  (insert (copilot-chat--format-error error-msg)))
-                (when (and (stringp copilot-chat--follow-up)
-                           (not (string-empty-p copilot-chat--follow-up)))
-                  (insert (propertize
-                           (format "Follow-up: %s\n\n" copilot-chat--follow-up)
-                           'face 'copilot-chat-follow-up-face))))
+                (save-excursion
+                  (goto-char (point-max))
+                  (insert "\n\n")
+                  ;; Surface a turn-level error the server reports at the
+                  ;; end, which would otherwise leave only an empty reply.
+                  (when error-msg
+                    (insert (copilot-chat--format-error error-msg)))
+                  (when (and (stringp copilot-chat--follow-up)
+                             (not (string-empty-p copilot-chat--follow-up)))
+                    (insert (propertize
+                             (format "Follow-up: %s\n\n" copilot-chat--follow-up)
+                             'face 'copilot-chat-follow-up-face)))))
               ;; Record the completed turn in the session log; one-shot
               ;; (function-sink) requests never set a current request, so
               ;; they are never captured here.  An errored or empty turn

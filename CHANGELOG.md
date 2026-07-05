@@ -6,6 +6,11 @@
 
 - Add `copilot-chat-compose` (bound to `C-c C-e` in the chat buffer) to draft a multi-line message in a dedicated writable buffer, sending it with `C-c C-c` (as a new conversation or a follow-up, just like `copilot-chat`) or cancelling with `C-c C-k`.
 - Add `copilot-chat-display` (bound to `C-c C-d` in the chat buffer) to show the existing chat buffer without sending a message.
+- Add commands for acting on a chat response, bound in the `*copilot-chat*` buffer:
+  - `copilot-chat-copy-response` (`C-c C-w`) copies the most recent reply to the kill ring.
+  - `copilot-chat-next-turn` (`C-c C-n`) and `copilot-chat-previous-turn` (`C-c C-p`) move between exchanges.
+  - `copilot-chat-retry` (`C-c C-r`) regenerates the answer to the last request, or with a prefix argument pre-fills it for editing before re-sending.
+  - `copilot-chat-rate-response` (`C-c C-t`), along with `copilot-chat-thumbs-up` and `copilot-chat-thumbs-down`, sends good/bad feedback about the current response to GitHub.
 
 ## 0.8.0 (2026-07-04)
 

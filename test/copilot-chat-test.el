@@ -4372,6 +4372,209 @@
         (call-interactively 'copilot-chat-apply-preset)
         (expect 'completing-read :to-have-been-called)
         (expect copilot-chat-model :to-equal "gpt-4o")
-        (expect copilot-chat-use-agent-mode :to-be nil)))))
+        (expect copilot-chat-use-agent-mode :to-be nil))))
+
+  ;;
+  ;; Acting on a response
+  ;;
+
+  (describe "copilot-chat-copy-response"
+    (it "copies the last reply to the kill ring"
+      (let ((buf (get-buffer-create "*copilot-chat-test-copy*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--turns '(("q1" . "a1") ("q2" . "a2"))))
+              (spy-on 'message)
+              (with-current-buffer buf (copilot-chat-copy-response))
+              (expect (current-kill 0) :to-equal "a2"))
+          (kill-buffer buf))))
+
+    (it "errors when there is no response yet"
+      (let ((buf (get-buffer-create "*copilot-chat-test-copy-empty*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf (copilot-chat-mode))
+              (expect (with-current-buffer buf (copilot-chat-copy-response))
+                      :to-throw 'user-error))
+          (kill-buffer buf)))))
+
+  (describe "turn navigation"
+    (it "moves between exchanges and errors at the ends (markdown)"
+      (let ((copilot-chat-frontend 'markdown)
+            (buf (get-buffer-create "*copilot-chat-test-nav-md*")))
+        (unwind-protect
+            (with-current-buffer buf
+              (copilot-chat-mode)
+              (let ((inhibit-read-only t))
+                (insert "You:\nq1\n\nCopilot:\na1\n\n"
+                        "You:\nq2\n\nCopilot:\na2\n\n"))
+              (goto-char (point-min))
+              (copilot-chat-next-turn)
+              (expect (line-number-at-pos) :to-equal 7)
+              (copilot-chat-previous-turn)
+              (expect (line-number-at-pos) :to-equal 1)
+              (expect (copilot-chat-previous-turn) :to-throw 'user-error)
+              (copilot-chat-next-turn)
+              (expect (copilot-chat-next-turn) :to-throw 'user-error))
+          (kill-buffer buf))))
+
+    (it "moves between exchanges and errors at the ends (org)"
+      (let ((copilot-chat-frontend 'org)
+            (buf (get-buffer-create "*copilot-chat-test-nav-org*")))
+        (unwind-protect
+            (with-current-buffer buf
+              (copilot-chat-mode)
+              (let ((inhibit-read-only t))
+                (insert "* You\nq1\n\n** Copilot\na1\n\n"
+                        "* You\nq2\n\n** Copilot\na2\n\n"))
+              (goto-char (point-min))
+              (copilot-chat-next-turn)
+              (expect (line-number-at-pos) :to-equal 7)
+              (copilot-chat-previous-turn)
+              (expect (line-number-at-pos) :to-equal 1)
+              (expect (copilot-chat-previous-turn) :to-throw 'user-error)
+              (copilot-chat-next-turn)
+              (expect (copilot-chat-next-turn) :to-throw 'user-error))
+          (kill-buffer buf)))))
+
+  (describe "copilot-chat-retry"
+    (it "deletes the last turn, trims the exchange, and resends"
+      (let ((buf (get-buffer-create "*copilot-chat-test-retry*"))
+            (captured nil))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--conversation-id "conv-1"
+                      copilot-chat--current-turn-id "turn-1"
+                      copilot-chat--turns '(("q1" . "a1") ("q2" . "a2")))
+                (let ((inhibit-read-only t))
+                  (insert "You:\nq1\n\nCopilot:\na1\n\n"
+                          "You:\nq2\n\nCopilot:\na2\n\n")))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'copilot-chat--send-turn)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn method params &rest _args)
+                        (push (cons method params) captured)
+                        (cons nil nil)))
+              (with-current-buffer buf (copilot-chat-retry))
+              ;; The dead server turn was deleted, correlated by id.
+              (let ((del (assq 'conversation/turnDelete captured)))
+                (expect del :to-be-truthy)
+                (expect (plist-get (cdr del) :conversationId) :to-equal "conv-1")
+                (expect (plist-get (cdr del) :turnId) :to-equal "turn-1"))
+              ;; The last exchange is gone from the recorded turns...
+              (with-current-buffer buf
+                (expect copilot-chat--turns :to-equal '(("q1" . "a1")))
+                ;; ...and the stale answer is gone from the buffer, with a
+                ;; single fresh prompt re-rendered for the request.
+                (expect (buffer-string) :not :to-match "a2")
+                (expect (buffer-string) :to-match "You:\nq1"))
+              ;; The request was re-sent verbatim.
+              (expect 'copilot-chat--send-turn :to-have-been-called-with "q2"))
+          (kill-buffer buf))))
+
+    (it "pre-fills the request for editing with a prefix argument"
+      (let ((buf (get-buffer-create "*copilot-chat-test-retry-edit*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--conversation-id "conv-1"
+                      copilot-chat--current-turn-id "turn-1"
+                      copilot-chat--turns '(("q2" . "a2")))
+                (let ((inhibit-read-only t))
+                  (insert "You:\nq2\n\nCopilot:\na2\n\n")))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'copilot-chat--send-turn)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-return-value (cons nil nil))
+              (spy-on 'read-string :and-return-value "q2 edited")
+              (with-current-buffer buf (copilot-chat-retry t))
+              (expect 'read-string
+                      :to-have-been-called-with "Copilot Chat (retry): " "q2")
+              (expect 'copilot-chat--send-turn
+                      :to-have-been-called-with "q2 edited"))
+          (kill-buffer buf))))
+
+    (it "refuses to retry while a response is streaming"
+      (let ((buf (get-buffer-create "*copilot-chat-test-retry-busy*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--conversation-id "conv-1"
+                      copilot-chat--turns '(("q1" . "a1"))
+                      copilot-chat--streaming-p t))
+              (expect (with-current-buffer buf (copilot-chat-retry))
+                      :to-throw 'user-error))
+          (kill-buffer buf))))
+
+    (it "refuses to retry with no prior turn"
+      (let ((buf (get-buffer-create "*copilot-chat-test-retry-none*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--conversation-id "conv-1"))
+              (expect (with-current-buffer buf (copilot-chat-retry))
+                      :to-throw 'user-error))
+          (kill-buffer buf)))))
+
+  (describe "copilot-chat-rate-response"
+    (it "sends a positive rating for the current turn"
+      (let ((buf (get-buffer-create "*copilot-chat-test-rate-up*"))
+            (captured nil))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--current-turn-id "turn-9"))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'message)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn method params &rest _args)
+                        (push (cons method params) captured)
+                        (cons nil nil)))
+              (with-current-buffer buf (copilot-chat-thumbs-up))
+              (let ((r (assq 'conversation/rating captured)))
+                (expect r :to-be-truthy)
+                (expect (plist-get (cdr r) :turnId) :to-equal "turn-9")
+                (expect (plist-get (cdr r) :rating) :to-equal 1)))
+          (kill-buffer buf))))
+
+    (it "sends a negative rating for the current turn"
+      (let ((buf (get-buffer-create "*copilot-chat-test-rate-down*"))
+            (captured nil))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--current-turn-id "turn-9"))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'message)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn method params &rest _args)
+                        (push (cons method params) captured)
+                        (cons nil nil)))
+              (with-current-buffer buf (copilot-chat-thumbs-down))
+              (let ((r (assq 'conversation/rating captured)))
+                (expect r :to-be-truthy)
+                (expect (plist-get (cdr r) :rating) :to-equal -1)))
+          (kill-buffer buf))))
+
+    (it "errors when there is no turn to rate"
+      (let ((buf (get-buffer-create "*copilot-chat-test-rate-none*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf (copilot-chat-mode))
+              (expect (with-current-buffer buf (copilot-chat-thumbs-up))
+                      :to-throw 'user-error))
+          (kill-buffer buf))))))
 
 ;;; copilot-chat-test.el ends here

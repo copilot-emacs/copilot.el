@@ -2981,6 +2981,162 @@ and suggested change) in the chat buffer."
      root)))
 
 ;;
+;; Acting on a response
+;;
+
+(defconst copilot-chat--prompt-heading-re
+  "^\\(?:You:\\|\\* You\\)$"
+  "Regexp matching a user-prompt heading in either chat frontend.
+The markdown frontend writes `You:' and the org frontend `* You'.")
+
+(defun copilot-chat-copy-response ()
+  "Copy the most recent Copilot reply to the kill ring.
+The reply is taken from the recorded turns, so it is the clean answer
+text without the `You:'/`Copilot:' scaffolding.  Signal a `user-error'
+when the conversation has no answer yet."
+  (interactive)
+  (unless (derived-mode-p 'copilot-chat-mode)
+    (user-error "Copilot Chat: Not in a chat buffer"))
+  (let ((reply (cdr (car (last copilot-chat--turns)))))
+    (unless (and reply (not (string-empty-p reply)))
+      (user-error "Copilot Chat: No response to copy yet"))
+    (kill-new reply)
+    (message "Copilot Chat: Copied last response to kill ring")))
+
+(defun copilot-chat-next-turn ()
+  "Move point to the next exchange in the chat buffer.
+Search forward for the next user prompt (`You:' or `* You', depending on
+`copilot-chat-frontend').  Signal a `user-error' at the last exchange."
+  (interactive)
+  (unless (derived-mode-p 'copilot-chat-mode)
+    (user-error "Copilot Chat: Not in a chat buffer"))
+  (let ((start (point)))
+    ;; Step off the current line so a heading at point is not matched
+    ;; again as the "next" one.
+    (end-of-line)
+    (if (re-search-forward copilot-chat--prompt-heading-re nil t)
+        (goto-char (line-beginning-position))
+      (goto-char start)
+      (user-error "Copilot Chat: No next exchange"))))
+
+(defun copilot-chat-previous-turn ()
+  "Move point to the previous exchange in the chat buffer.
+Search backward for the preceding user prompt (`You:' or `* You',
+depending on `copilot-chat-frontend').  Signal a `user-error' at the
+first exchange."
+  (interactive)
+  (unless (derived-mode-p 'copilot-chat-mode)
+    (user-error "Copilot Chat: Not in a chat buffer"))
+  (let ((start (point)))
+    ;; Search from the line start so a heading at point is not matched as
+    ;; the "previous" one.
+    (beginning-of-line)
+    (if (re-search-backward copilot-chat--prompt-heading-re nil t)
+        (goto-char (line-beginning-position))
+      (goto-char start)
+      (user-error "Copilot Chat: No previous exchange"))))
+
+(defun copilot-chat--delete-turn (turn-id)
+  "Delete TURN-ID from the current conversation on the server.
+Best effort: a nil TURN-ID, a dead connection, or a server error is
+quietly ignored, so a failed delete never blocks re-sending."
+  (when (and turn-id
+             copilot-chat--conversation-id
+             (copilot--connection-alivep))
+    (copilot--async-request
+     'conversation/turnDelete
+     (list :conversationId copilot-chat--conversation-id
+           :turnId turn-id
+           :source "panel")
+     :error-fn (lambda (err)
+                 (copilot--log 'error "turnDelete failed: %S" err)))))
+
+(defun copilot-chat--delete-last-exchange ()
+  "Remove the last rendered You/Copilot exchange from the chat buffer."
+  (let ((inhibit-read-only t))
+    (goto-char (point-max))
+    (when (re-search-backward copilot-chat--prompt-heading-re nil t)
+      (delete-region (line-beginning-position) (point-max)))))
+
+(defun copilot-chat-retry (&optional edit)
+  "Regenerate the answer to the last request.
+Delete the last turn on the server (best effort), drop it from the
+transcript and the chat buffer, and re-send the same request so a fresh
+answer streams into a single clean exchange.
+
+With a prefix argument EDIT, pre-fill the last request in the minibuffer
+for editing before it is re-sent."
+  (interactive "P")
+  (unless (derived-mode-p 'copilot-chat-mode)
+    (user-error "Copilot Chat: Not in a chat buffer"))
+  (when (or copilot-chat--streaming-p copilot-chat--current-request)
+    (user-error "Copilot Chat: A response is currently being streamed"))
+  (unless copilot-chat--turns
+    (user-error "Copilot Chat: No previous request to retry"))
+  (unless copilot-chat--conversation-id
+    (user-error "Copilot Chat: No active conversation"))
+  (let* ((request (car (car (last copilot-chat--turns))))
+         (msg (if edit
+                  (read-string "Copilot Chat (retry): " request)
+                request)))
+    (when (string-empty-p msg)
+      (user-error "Copilot Chat: Empty message"))
+    ;; Delete the dead server turn so the conversation does not accumulate
+    ;; one; this is best effort and must not wedge the retry.
+    (copilot-chat--delete-turn copilot-chat--current-turn-id)
+    ;; Drop the last exchange from the recorded turns and the buffer so the
+    ;; regenerated answer replaces it instead of piling up beneath it.
+    (setq copilot-chat--turns (butlast copilot-chat--turns))
+    (copilot-chat--delete-last-exchange)
+    (copilot-chat--insert-prompt msg)
+    (copilot-chat--send-turn msg)))
+
+(defun copilot-chat--rate (rating)
+  "Send RATING for the current turn to the server as feedback.
+RATING is a positive number for a thumbs-up and a negative number for a
+thumbs-down.  Signal a `user-error' when there is no turn to rate or the
+connection is down."
+  (unless (derived-mode-p 'copilot-chat-mode)
+    (user-error "Copilot Chat: Not in a chat buffer"))
+  (unless copilot-chat--current-turn-id
+    (user-error "Copilot Chat: No response to rate yet"))
+  (unless (copilot--connection-alivep)
+    (user-error "Copilot Chat: Not connected to the Copilot server"))
+  (message "Copilot Chat: %s"
+           (if (> rating 0) "Sent positive feedback" "Sent negative feedback"))
+  ;; Keep the request as the tail form so its id is the return value,
+  ;; matching the other one-way request helpers.
+  (copilot--async-request
+   'conversation/rating
+   (list :turnId copilot-chat--current-turn-id
+         :rating rating
+         :source "panel")
+   :error-fn (lambda (err)
+               (copilot--log 'error "rating failed: %S" err))))
+
+(defun copilot-chat-thumbs-up ()
+  "Send positive feedback about the current Copilot response."
+  (interactive)
+  (copilot-chat--rate 1))
+
+(defun copilot-chat-thumbs-down ()
+  "Send negative feedback about the current Copilot response."
+  (interactive)
+  (copilot-chat--rate -1))
+
+(defun copilot-chat-rate-response (rating)
+  "Rate the current Copilot response as good or bad.
+RATING is the symbol `good' or `bad'; interactively, choose one with
+completion.  The rating is sent to GitHub as feedback telemetry and has
+no local effect."
+  (interactive
+   (list (intern (completing-read "Rate response: " '("good" "bad") nil t))))
+  (pcase rating
+    ('good (copilot-chat--rate 1))
+    ('bad (copilot-chat--rate -1))
+    (_ (user-error "Copilot Chat: Unknown rating `%s'" rating))))
+
+;;
 ;; Major mode
 ;;
 
@@ -2995,6 +3151,11 @@ and suggested change) in the chat buffer."
     (define-key map (kbd "C-c /") #'copilot-chat-slash-command)
     (define-key map (kbd "C-c C-f") #'copilot-chat-add-file-reference)
     (define-key map (kbd "C-c C-d") #'copilot-chat-display)
+    (define-key map (kbd "C-c C-w") #'copilot-chat-copy-response)
+    (define-key map (kbd "C-c C-n") #'copilot-chat-next-turn)
+    (define-key map (kbd "C-c C-p") #'copilot-chat-previous-turn)
+    (define-key map (kbd "C-c C-r") #'copilot-chat-retry)
+    (define-key map (kbd "C-c C-t") #'copilot-chat-rate-response)
     (define-key map (kbd "q") #'quit-window)
     map)
   "Keymap for `copilot-chat-mode'.")

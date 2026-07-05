@@ -169,6 +169,19 @@ for new chat buffers."
   :group 'copilot-chat
   :package-version '(copilot . "0.8"))
 
+(defcustom copilot-chat-show-thinking-indicator t
+  "When non-nil, animate a thinking indicator while a reply streams.
+Between sending a message and the arrival of the first reply chunk the
+chat buffer would otherwise show a bare `Copilot:' label with no sign
+that anything is happening.  With this enabled a small animated spinner
+is shown at the end of the buffer for that gap and removed as soon as the
+first chunk arrives (or the turn ends, is cancelled, or errors).  It is
+only shown for the chat buffer's streamed replies, never for one-shot
+requests such as commit-message generation."
+  :type 'boolean
+  :group 'copilot-chat
+  :package-version '(copilot . "0.9"))
+
 (defcustom copilot-chat-frontend 'markdown
   "Markup used to render the Copilot Chat buffer.
 With the default `markdown' value the buffer is highlighted as
@@ -303,6 +316,11 @@ faces; the underlying `header-line' face still applies on its own."
   "Face for tool invocation lines in the chat buffer."
   :group 'copilot-chat)
 
+(defface copilot-chat-thinking-face
+  '((t :inherit shadow :slant italic))
+  "Face for the streaming thinking indicator in the chat buffer."
+  :group 'copilot-chat)
+
 (defface copilot-chat-diff-added-face
   '((t :inherit diff-added))
   "Face for added lines in a tool edit preview."
@@ -382,6 +400,21 @@ Paired with the accumulated reply and appended to
   "`float-time' when the current streamed turn began, or nil.
 Set at the progress `begin' notification and read at `end' to decide
 whether the turn ran long enough to warrant a desktop notification.")
+
+(defvar-local copilot-chat--thinking-overlay nil
+  "Overlay carrying the streaming thinking indicator, or nil.
+The indicator rides on the overlay's `after-string', so it never becomes
+real buffer text and cannot be swallowed by streamed output; removing it
+is just deleting the overlay.")
+
+(defvar-local copilot-chat--thinking-timer nil
+  "Timer animating the thinking indicator, or nil.
+Always cancelled by `copilot-chat--stop-thinking-indicator', which runs
+on the first reply chunk and on every end, cancel, and error path, so no
+timer is ever left running.")
+
+(defvar-local copilot-chat--thinking-frame 0
+  "Index of the thinking indicator's current spinner frame.")
 
 (defvar-local copilot-chat--restored-turns nil
   "Turns restored by `copilot-chat-restore', pending replay.
@@ -648,8 +681,73 @@ Return nil when no model can be resolved, letting the server pick."
         (cl-remove-if (lambda (entry) (eq (cdr entry) buf))
                       copilot-chat--active-buffers)))
 
+;;
+;; Streaming thinking indicator
+;;
+
+(defconst copilot-chat--thinking-frames ["|" "/" "-" "\\"]
+  "Spinner frames cycled by the streaming thinking indicator.")
+
+(defconst copilot-chat--thinking-interval 0.15
+  "Seconds between thinking-indicator animation frames.")
+
+(defun copilot-chat--thinking-string ()
+  "Return the display string for the current thinking-indicator frame."
+  (propertize
+   (format "%s Thinking..."
+           (aref copilot-chat--thinking-frames
+                 (mod copilot-chat--thinking-frame
+                      (length copilot-chat--thinking-frames))))
+   'face 'copilot-chat-thinking-face))
+
+(defun copilot-chat--thinking-tick (buffer timer)
+  "Advance the thinking-indicator animation in BUFFER, driven by TIMER.
+When BUFFER is dead or its indicator overlay is gone, cancel TIMER so a
+killed or finished chat buffer can never leave the animation running."
+  (if (and (buffer-live-p buffer)
+           (buffer-local-value 'copilot-chat--thinking-overlay buffer))
+      (with-current-buffer buffer
+        (setq copilot-chat--thinking-frame (1+ copilot-chat--thinking-frame))
+        (overlay-put copilot-chat--thinking-overlay
+                     'after-string (copilot-chat--thinking-string)))
+    (cancel-timer timer)))
+
+(defun copilot-chat--start-thinking-indicator ()
+  "Show an animated thinking indicator at the end of the chat buffer.
+Does nothing when `copilot-chat-show-thinking-indicator' is nil.  The
+indicator lives on an overlay's `after-string', so streamed text is never
+eaten, and it is removed by `copilot-chat--stop-thinking-indicator'."
+  (when copilot-chat-show-thinking-indicator
+    ;; Never stack two indicators; clear any leftover first.
+    (copilot-chat--stop-thinking-indicator)
+    (setq copilot-chat--thinking-frame 0)
+    (let ((ov (make-overlay (point-max) (point-max) nil t t)))
+      (overlay-put ov 'after-string (copilot-chat--thinking-string))
+      (setq copilot-chat--thinking-overlay ov))
+    (let* ((buffer (current-buffer))
+           ;; Create the timer, then point it at itself so a tick fired
+           ;; after the buffer is killed can cancel the exact timer.
+           (timer (run-with-timer copilot-chat--thinking-interval
+                                  copilot-chat--thinking-interval
+                                  #'ignore)))
+      (timer-set-function timer #'copilot-chat--thinking-tick
+                          (list buffer timer))
+      (setq copilot-chat--thinking-timer timer))))
+
+(defun copilot-chat--stop-thinking-indicator ()
+  "Remove the streaming thinking indicator and stop its animation.
+Idempotent and safe to call from the report, end, cancel, and error
+paths: it leaves no timer running and no indicator behind."
+  (when (timerp copilot-chat--thinking-timer)
+    (cancel-timer copilot-chat--thinking-timer))
+  (setq copilot-chat--thinking-timer nil)
+  (when (overlayp copilot-chat--thinking-overlay)
+    (delete-overlay copilot-chat--thinking-overlay))
+  (setq copilot-chat--thinking-overlay nil))
+
 (defun copilot-chat--end-streaming ()
   "Reset streaming state in the current chat buffer."
+  (copilot-chat--stop-thinking-indicator)
   (setq copilot-chat--streaming-p nil)
   (setq copilot-chat--request-id nil)
   (force-mode-line-update))
@@ -829,65 +927,73 @@ so it never disrupts the end of a turn."
          ((equal kind "begin")
           (setq copilot-chat--streaming-p t)
           (setq copilot-chat--turn-start-time (float-time))
+          (copilot-chat--start-thinking-indicator)
           (force-mode-line-update))
          ((equal kind "report")
+          ;; The first chunk means the reply is flowing; drop the
+          ;; thinking indicator even if this report carries no text.
+          (copilot-chat--stop-thinking-indicator)
           (when-let* ((reply (copilot-chat--extract-reply value)))
             (when copilot-chat--current-request
               (push reply copilot-chat--reply-chunks))
-            (let ((inhibit-read-only t))
+            ;; Decide which windows are following the stream before the
+            ;; insert; a window scrolled up to re-read is left alone.
+            (let ((windows (copilot-chat--following-windows (current-buffer)))
+                  (inhibit-read-only t))
               (goto-char (point-max))
-              (insert reply))
-            (copilot-chat--scroll-to-bottom)))
+              (insert reply)
+              (copilot-chat--scroll-windows windows))))
          ((equal kind "end")
-          (copilot-chat--end-streaming)
-          (let* ((result (plist-get value :result))
-                 ;; The server normally sends an object here, but
-                 ;; guard against any other shape.
-                 (result (and (listp result) result))
-                 (error-msg (copilot-chat--error-text
-                             (plist-get result :error))))
-            ;; Reset the follow-up every turn so a stale one from a
-            ;; previous turn is never re-inserted.
-            (setq copilot-chat--follow-up (plist-get result :followUp))
-            (let ((inhibit-read-only t))
-              (goto-char (point-max))
-              (insert "\n\n")
-              ;; Surface a turn-level error the server reports at the
-              ;; end, which would otherwise leave only an empty reply.
-              (when error-msg
-                (insert (copilot-chat--format-error error-msg)))
-              (when (and (stringp copilot-chat--follow-up)
-                         (not (string-empty-p copilot-chat--follow-up)))
-                (insert (propertize
-                         (format "Follow-up: %s\n\n" copilot-chat--follow-up)
-                         'face 'copilot-chat-follow-up-face))))
-            ;; Record the completed turn in the session log; one-shot
-            ;; (function-sink) requests never set a current request, so
-            ;; they are never captured here.  An errored or empty turn
-            ;; is dropped rather than recorded: replaying a question
-            ;; with a blank answer to the server (and re-rendering it on
-            ;; restore) helps nobody.
-            (when copilot-chat--current-request
-              (let ((reply (apply #'concat
-                                  (nreverse copilot-chat--reply-chunks))))
-                (if (or error-msg (string-empty-p reply))
-                    ;; A failed/empty replacement leaves the original
-                    ;; exchange in place.
-                    (copilot-chat--finish-retry nil)
-                  (setq copilot-chat--turns
-                        (append copilot-chat--turns
-                                (list (cons copilot-chat--current-request
-                                            reply))))
-                  (copilot-chat--save-history)
-                  ;; The replacement landed; trim the exchange it replaced.
-                  (copilot-chat--finish-retry t)))
-              (setq copilot-chat--current-request nil
-                    copilot-chat--reply-chunks nil)))
-          (copilot-chat--scroll-to-bottom)
-          (copilot-chat--maybe-notify-turn-end chat-buf)
-          (setq copilot-chat--turn-start-time nil)
-          (setq copilot-chat--active-buffers
-                (assoc-delete-all token copilot-chat--active-buffers))))))))
+          (let ((windows (copilot-chat--following-windows (current-buffer))))
+            (copilot-chat--end-streaming)
+            (let* ((result (plist-get value :result))
+                   ;; The server normally sends an object here, but
+                   ;; guard against any other shape.
+                   (result (and (listp result) result))
+                   (error-msg (copilot-chat--error-text
+                               (plist-get result :error))))
+              ;; Reset the follow-up every turn so a stale one from a
+              ;; previous turn is never re-inserted.
+              (setq copilot-chat--follow-up (plist-get result :followUp))
+              (let ((inhibit-read-only t))
+                (goto-char (point-max))
+                (insert "\n\n")
+                ;; Surface a turn-level error the server reports at the
+                ;; end, which would otherwise leave only an empty reply.
+                (when error-msg
+                  (insert (copilot-chat--format-error error-msg)))
+                (when (and (stringp copilot-chat--follow-up)
+                           (not (string-empty-p copilot-chat--follow-up)))
+                  (insert (propertize
+                           (format "Follow-up: %s\n\n" copilot-chat--follow-up)
+                           'face 'copilot-chat-follow-up-face))))
+              ;; Record the completed turn in the session log; one-shot
+              ;; (function-sink) requests never set a current request, so
+              ;; they are never captured here.  An errored or empty turn
+              ;; is dropped rather than recorded: replaying a question
+              ;; with a blank answer to the server (and re-rendering it on
+              ;; restore) helps nobody.
+              (when copilot-chat--current-request
+                (let ((reply (apply #'concat
+                                    (nreverse copilot-chat--reply-chunks))))
+                  (if (or error-msg (string-empty-p reply))
+                      ;; A failed/empty replacement leaves the original
+                      ;; exchange in place.
+                      (copilot-chat--finish-retry nil)
+                    (setq copilot-chat--turns
+                          (append copilot-chat--turns
+                                  (list (cons copilot-chat--current-request
+                                              reply))))
+                    (copilot-chat--save-history)
+                    ;; The replacement landed; trim the exchange it replaced.
+                    (copilot-chat--finish-retry t)))
+                (setq copilot-chat--current-request nil
+                      copilot-chat--reply-chunks nil)))
+            (copilot-chat--scroll-windows windows)
+            (copilot-chat--maybe-notify-turn-end chat-buf)
+            (setq copilot-chat--turn-start-time nil)
+            (setq copilot-chat--active-buffers
+                  (assoc-delete-all token copilot-chat--active-buffers)))))))))
 
 (copilot-on-notification '$/progress #'copilot-chat--handle-progress)
 
@@ -2142,12 +2248,42 @@ the conversation is destroyed.  Cancellable with `copilot-chat-stop'."
 ;; UI helpers
 ;;
 
+(defun copilot-chat--following-windows (buffer)
+  "Return the windows showing BUFFER whose point is following the stream.
+A window counts as following when its point sits within a couple of lines
+of `point-max'.  Call this before an insertion: the pre-insert position
+is what should decide whether the window keeps up with new output, so a
+window scrolled up to re-read earlier text stays put while one already at
+the bottom follows along.  A buffer can be shown in several windows, so
+every window across all frames is considered."
+  (let (following)
+    (with-current-buffer buffer
+      (let ((threshold (save-excursion
+                         (goto-char (point-max))
+                         (forward-line -2)
+                         (point))))
+        (dolist (win (get-buffer-window-list buffer nil t))
+          (when (>= (window-point win) threshold)
+            (push win following)))))
+    following))
+
+(defun copilot-chat--scroll-windows (windows)
+  "Scroll each live window in WINDOWS to show the end of its buffer.
+Used with the list from `copilot-chat--following-windows' so only the
+windows that were already following the stream keep up with new output."
+  (dolist (win windows)
+    (when (window-live-p win)
+      (with-selected-window win
+        (goto-char (point-max))
+        (recenter -1)))))
+
 (defun copilot-chat--scroll-to-bottom ()
-  "Scroll chat window to show the latest output."
-  (when-let* ((win (get-buffer-window copilot-chat--buffer-name)))
-    (with-selected-window win
-      (goto-char (point-max))
-      (recenter -1))))
+  "Scroll the chat windows that are following the stream to the latest output.
+Only windows whose point is still at (or within a line or two of) the end
+of the buffer are scrolled; a window scrolled up to re-read earlier
+output is left in place so it does not fight the stream."
+  (when-let* ((buf (get-buffer copilot-chat--buffer-name)))
+    (copilot-chat--scroll-windows (copilot-chat--following-windows buf))))
 
 (defun copilot-chat--insert-prompt-markdown (message)
   "Insert the markdown prompt scaffolding for MESSAGE at point.

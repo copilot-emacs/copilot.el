@@ -264,6 +264,8 @@ The chat buffer's header line shows at a glance which mode is active (Agent, Inl
 
 Beyond the `copilot-chat-use-agent-mode` toggle (which flips between plain Agent and Ask), `M-x copilot-chat-select-mode` lets you pick any mode the server reports: the built-in `Ask`, `Agent`, and `InlineAgent`, plus any custom project modes. `InlineAgent` is an agent-kind mode with a restricted tool set aimed at inline editing, so tool-call confirmation, tool registration, and the tool count in the header apply to it just as they do to `Agent`. The choice takes effect on the next new conversation, since the mode is fixed when a conversation is created; until you pick one, `copilot-chat-use-agent-mode` still decides between Agent and Ask.
 
+While a reply is being prepared, a small animated indicator is shown under the `Copilot:` label so the wait before the first streamed chunk no longer looks dead; it disappears as soon as the reply starts (or the turn ends, is cancelled, or errors). Set `copilot-chat-show-thinking-indicator` to `nil` to turn it off. While a reply streams the chat window follows the new output only when it is already at the bottom, so you can scroll up to re-read an earlier part of a long response without the stream yanking you back down.
+
 When a turn finishes and you have looked away from the chat, copilot.el raises a desktop notification so you don't have to keep watching it stream. It fires only if the turn took at least `copilot-chat-notify-after-seconds` (10 by default, `nil` disables it) and the chat buffer is not the one in your selected window. The backend prefers D-Bus, falls back to `osascript` on macOS, and to a plain `message` elsewhere; override it via `copilot-chat-notify-function`.
 
 Chat sessions can be persisted across Emacs restarts. Set `copilot-chat-save-history` to `t` (it is off by default, since transcripts land on disk in plain text) and the whole session is saved after each completed turn, one file per workspace under `copilot-chat-history-directory` (`~/.emacs.d/copilot-chat-history/` by default). `M-x copilot-chat-restore` brings the saved conversation back: the transcript reappears in the chat buffer, and the next message continues it with the full context (the saved turns are replayed to the server when the new conversation starts). `copilot-chat-clear-history` deletes the current workspace's saved history; `copilot-chat-reset` clears only the live session and leaves the file alone.
@@ -282,6 +284,7 @@ Customization:
 - **`copilot-chat-save-history`** — save the chat transcript to disk after each turn, for `copilot-chat-restore` (default `nil`)
 - **`copilot-chat-history-directory`** — where saved transcripts live, one file per workspace (default `~/.emacs.d/copilot-chat-history/`)
 - **`copilot-chat-presets`** — named bundles of chat settings you can switch between with `copilot-chat-apply-preset` (default `nil`)
+- **`copilot-chat-show-thinking-indicator`** — animate a thinking indicator while a reply is being prepared (default `t`)
 - **`copilot-chat-notify-after-seconds`** — notify when a turn finishes and you have looked away, but only if it ran at least this long (default `10`, `nil` disables)
 - **`copilot-chat-notify-function`** — function called with a title and body to raise the notification (default `copilot-chat--notify`)
 

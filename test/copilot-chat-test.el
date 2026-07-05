@@ -3891,6 +3891,138 @@
       (expect (copilot-chat--strip-code-fences "````\nfeat: x\n````")
               :to-equal "feat: x")))
 
+  (describe "copilot-chat--method-not-found-p"
+    (it "recognizes a -32601 error"
+      (expect (copilot-chat--method-not-found-p '(:code -32601 :message "x"))
+              :to-be-truthy))
+
+    (it "rejects other error codes"
+      (expect (copilot-chat--method-not-found-p '(:code -32603)) :to-be nil))
+
+    (it "rejects a non-plist error"
+      (expect (copilot-chat--method-not-found-p "boom") :to-be nil)))
+
+  (describe "copilot-chat--commit-generate-params"
+    (it "builds change and commit arrays with the workspace root"
+      (spy-on 'copilot-chat--staged-diff :and-return-value "THE DIFF")
+      (spy-on 'copilot-chat--git-lines :and-call-fake
+              (lambda (&rest args)
+                (cond
+                 ((equal args '("config" "user.email")) '("me@example.com"))
+                 ((equal args '("rev-parse" "--show-toplevel")) '("/repo"))
+                 ((member "--author=me@example.com" args) '("mine 1" "mine 2"))
+                 (t '("recent 1" "recent 2")))))
+      (let ((params (copilot-chat--commit-generate-params)))
+        (expect (plist-get params :changes) :to-equal ["THE DIFF"])
+        (expect (plist-get params :userCommits) :to-equal ["mine 1" "mine 2"])
+        (expect (plist-get params :recentCommits) :to-equal ["recent 1" "recent 2"])
+        (expect (plist-get params :workspaceFolder) :to-equal "file:///repo")))
+
+    (it "omits the workspace folder and user commits when unavailable"
+      (spy-on 'copilot-chat--staged-diff :and-return-value "D")
+      (spy-on 'copilot-chat--git-lines :and-call-fake
+              (lambda (&rest args)
+                (cond
+                 ((equal args '("config" "user.email")) nil)
+                 ((equal args '("rev-parse" "--show-toplevel")) nil)
+                 (t '("recent")))))
+      (let ((params (copilot-chat--commit-generate-params)))
+        (expect (plist-get params :changes) :to-equal ["D"])
+        (expect (plist-get params :userCommits) :to-equal [])
+        (expect (plist-get params :recentCommits) :to-equal ["recent"])
+        (expect (plist-member params :workspaceFolder) :to-be nil))))
+
+  (describe "copilot-chat--insert-commit-message-at"
+    (it "inserts the message at the marker"
+      (with-temp-buffer
+        (insert "prefix ")
+        (let ((pos (point-marker)))
+          (insert " suffix")
+          (spy-on 'message)
+          (copilot-chat--insert-commit-message-at "MSG" nil (current-buffer) pos)
+          (expect (buffer-string) :to-equal "prefix MSG suffix"))))
+
+    (it "reports an error message"
+      (spy-on 'message)
+      (copilot-chat--insert-commit-message-at
+       nil "boom" (current-buffer) (point-marker))
+      (expect 'message :to-have-been-called-with
+              "Copilot Chat: Commit message generation failed: %s" "boom"))
+
+    (it "reports an empty message"
+      (spy-on 'message)
+      (copilot-chat--insert-commit-message-at
+       "" nil (current-buffer) (point-marker))
+      (expect 'message :to-have-been-called-with
+              "Copilot Chat: Got an empty commit message"))
+
+    (it "salvages to the kill ring when the target buffer is read-only"
+      (with-temp-buffer
+        (setq buffer-read-only t)
+        (spy-on 'message)
+        (copilot-chat--insert-commit-message-at
+         "MSG" nil (current-buffer) (point-marker))
+        (expect (current-kill 0) :to-equal "MSG"))))
+
+  (describe "copilot-chat-insert-commit-message"
+    (it "sends git/commitGenerate and inserts the returned message"
+      (let ((captured nil))
+        (spy-on 'copilot-chat--commit-generate-params
+                :and-return-value '(:changes ["D"]))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn method params &rest args)
+                  (setq captured (list method params args))
+                  (list 1)))
+        (with-temp-buffer
+          (insert "X")
+          (goto-char (point-min))
+          (spy-on 'message)
+          (copilot-chat-insert-commit-message)
+          (expect (nth 0 captured) :to-equal 'git/commitGenerate)
+          (funcall (plist-get (nth 2 captured) :success-fn)
+                   '(:commitMessage "feat: y"))
+          (expect (buffer-string) :to-equal "feat: yX"))))
+
+    (it "falls back to a one-shot conversation on method-not-found"
+      (let ((captured nil))
+        (spy-on 'copilot-chat--commit-generate-params
+                :and-return-value '(:changes ["D"]))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn method params &rest args)
+                  (setq captured (list method params args))
+                  (list 1)))
+        (spy-on 'copilot-chat--insert-commit-message-fallback)
+        (spy-on 'message)
+        (with-temp-buffer
+          (copilot-chat-insert-commit-message)
+          (funcall (plist-get (nth 2 captured) :error-fn)
+                   '(:code -32601 :message "no method"))
+          (expect 'copilot-chat--insert-commit-message-fallback
+                  :to-have-been-called))))
+
+    (it "reports other errors without falling back"
+      (let ((captured nil))
+        (spy-on 'copilot-chat--commit-generate-params
+                :and-return-value '(:changes ["D"]))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn method params &rest args)
+                  (setq captured (list method params args))
+                  (list 1)))
+        (spy-on 'copilot-chat--insert-commit-message-fallback)
+        (spy-on 'message)
+        (with-temp-buffer
+          (copilot-chat-insert-commit-message)
+          (funcall (plist-get (nth 2 captured) :error-fn)
+                   '(:code -32000 :message "boom"))
+          (expect 'copilot-chat--insert-commit-message-fallback
+                  :not :to-have-been-called)
+          (expect 'message :to-have-been-called-with
+                  "Copilot Chat: Commit message generation failed: %s"
+                  "boom")))))
+
   (describe "copilot-chat--handle-progress with a function sink"
     (it "passes progress values to the sink and unregisters it on end"
       (let* ((seen '())
@@ -4360,23 +4492,14 @@
         (expect rendered :to-match "/elsewhere/b\\.el:10")
         (expect rendered :not :to-match "Suggested change:"))))
 
-  (describe "copilot-chat-insert-commit-message"
+  (describe "copilot-chat-insert-commit-message (fallback)"
     (it "errors before sending when the diff cannot be collected"
       (spy-on 'copilot-chat--staged-diff :and-throw-error 'user-error)
-      (spy-on 'copilot-chat--one-shot)
+      (spy-on 'jsonrpc--async-request-1)
       (expect (copilot-chat-insert-commit-message) :to-throw 'user-error)
-      (expect 'copilot-chat--one-shot :not :to-have-been-called))
+      (expect 'jsonrpc--async-request-1 :not :to-have-been-called))
 
-    (it "sends the prompt followed by the staged diff"
-      (spy-on 'copilot-chat--staged-diff :and-return-value "THE DIFF")
-      (spy-on 'copilot-chat--one-shot)
-      (spy-on 'message)
-      (let ((copilot-chat-commit-message-prompt "PROMPT"))
-        (with-temp-buffer (copilot-chat-insert-commit-message)))
-      (expect (car (spy-calls-args-for 'copilot-chat--one-shot 0))
-              :to-equal "PROMPT\n\nTHE DIFF"))
-
-    (it "inserts the fence-stripped reply into the originating buffer"
+    (it "inserts the fence-stripped reply from the one-shot fallback"
       (let ((reply-fn nil))
         (spy-on 'copilot-chat--staged-diff :and-return-value "diff")
         (spy-on 'copilot-chat--one-shot
@@ -4384,15 +4507,16 @@
                 (lambda (_message callback) (setq reply-fn callback)))
         (spy-on 'message)
         (with-temp-buffer
-          (copilot-chat-insert-commit-message)
-          (let ((origin (current-buffer)))
+          (let ((origin (current-buffer))
+                (pos (point-marker)))
+            (copilot-chat--insert-commit-message-fallback origin pos)
             ;; The reply arrives later, with another buffer current.
             (with-temp-buffer
               (funcall reply-fn "```\nfeat: add thing\n```" nil))
             (expect (with-current-buffer origin (buffer-string))
                     :to-equal "feat: add thing")))))
 
-    (it "reports a server error instead of inserting"
+    (it "reports a server error from the fallback instead of inserting"
       (let ((reply-fn nil))
         (spy-on 'copilot-chat--staged-diff :and-return-value "diff")
         (spy-on 'copilot-chat--one-shot
@@ -4400,23 +4524,10 @@
                 (lambda (_message callback) (setq reply-fn callback)))
         (spy-on 'message)
         (with-temp-buffer
-          (copilot-chat-insert-commit-message)
+          (copilot-chat--insert-commit-message-fallback
+           (current-buffer) (point-marker))
           (funcall reply-fn nil "boom")
-          (expect (buffer-string) :to-equal ""))))
-
-    (it "copies the reply to the kill ring when the buffer is read-only"
-      (let ((reply-fn nil))
-        (spy-on 'copilot-chat--staged-diff :and-return-value "diff")
-        (spy-on 'copilot-chat--one-shot
-                :and-call-fake
-                (lambda (_message callback) (setq reply-fn callback)))
-        (spy-on 'message)
-        (with-temp-buffer
-          (copilot-chat-insert-commit-message)
-          (setq buffer-read-only t)
-          (funcall reply-fn "feat: x" nil)
-          (expect (buffer-string) :to-equal ""))
-        (expect (current-kill 0) :to-equal "feat: x"))))
+          (expect (buffer-string) :to-equal "")))))
 
   (describe "copilot-chat--rewrite-request"
     (it "composes the prompt, instruction, language tag, and code"

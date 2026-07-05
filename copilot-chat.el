@@ -2685,45 +2685,122 @@ wrapping the whole reply defensively when it adds one anyway."
         (string-trim (match-string 1 text))
       text)))
 
+(defun copilot-chat--git-lines (&rest args)
+  "Run git with ARGS in `default-directory' and return its output lines.
+Blank lines are dropped.  Return nil when git is unavailable or fails,
+so an optional lookup (recent commits, user email) degrades quietly.
+Use `process-file' so a TRAMP buffer runs git on the remote host."
+  (with-temp-buffer
+    (when (eql 0 (apply #'process-file "git" nil t nil args))
+      (split-string (buffer-string) "\n" t))))
+
+(defun copilot-chat--commit-generate-params ()
+  "Return the `git/commitGenerate' params for the staged diff.
+Signal a `user-error' when nothing is staged (via `copilot-chat--staged-diff').
+Recent user and repository commit subjects are included so the server can
+match the repository's commit style; the workspace folder is passed so
+server-side commit instructions are picked up."
+  (let ((diff (copilot-chat--staged-diff))
+        (email (car (copilot-chat--git-lines "config" "user.email")))
+        (root (car (copilot-chat--git-lines "rev-parse" "--show-toplevel"))))
+    (append
+     (list :changes (vector diff)
+           :userCommits (vconcat
+                         (and email
+                              (copilot-chat--git-lines
+                               "log" "-n" "10" "--format=%s"
+                               (concat "--author=" email))))
+           :recentCommits (vconcat
+                           (copilot-chat--git-lines
+                            "log" "-n" "10" "--format=%s")))
+     (when root
+       ;; `copilot--path-to-uri' percent-encodes and gets the Windows
+       ;; drive-letter form right, unlike a raw "file://" concat.
+       (list :workspaceFolder (copilot--path-to-uri root))))))
+
+(defun copilot-chat--method-not-found-p (err)
+  "Return non-nil when jsonrpc error ERR is a method-not-found error."
+  (and (listp err) (eql (plist-get err :code) -32601)))
+
+(defun copilot-chat--insert-commit-message-at (reply error-msg buf pos)
+  "Insert commit-message REPLY at POS in BUF, or report ERROR-MSG.
+REPLY is the final message text (already free of code fences).  Runs
+inside the jsonrpc process filter, so it never signals: a read-only or
+dead target buffer is reported instead, and a read-only buffer's message
+is salvaged to the kill ring."
+  (cond
+   (error-msg
+    (message "Copilot Chat: Commit message generation failed: %s" error-msg))
+   ((or (null reply) (string-empty-p reply))
+    (message "Copilot Chat: Got an empty commit message"))
+   ((not (buffer-live-p buf))
+    (message "Copilot Chat: Commit message buffer is gone"))
+   ((buffer-local-value 'buffer-read-only buf)
+    (kill-new reply)
+    (message
+     "Copilot Chat: Buffer is read-only; commit message copied to kill ring"))
+   (t
+    (with-current-buffer buf
+      (save-excursion
+        (goto-char pos)
+        (insert reply)))
+    (set-marker pos nil)
+    (message "Copilot Chat: Commit message inserted"))))
+
+(defun copilot-chat--insert-commit-message-fallback (buf pos)
+  "Generate a commit message via a one-shot conversation, then insert it.
+Used when the server lacks the native `git/commitGenerate' method.  The
+reply is a chat message, so strip any code fences the model adds; insert
+it at POS in BUF via `copilot-chat--insert-commit-message-at'."
+  (copilot-chat--one-shot
+   (copilot-chat--commit-message-request)
+   (lambda (reply error-msg)
+     (copilot-chat--insert-commit-message-at
+      (and reply (copilot-chat--strip-code-fences reply))
+      error-msg buf pos))))
+
 ;;;###autoload
 (defun copilot-chat-insert-commit-message ()
   "Generate a commit message from the staged diff and insert it at point.
 Meant to be called from a commit message buffer (e.g. Magit's
 COMMIT_EDITMSG), but works from any buffer inside a git repository.
-The staged diff is sent to Copilot with
-`copilot-chat-commit-message-prompt', and the reply is inserted
-asynchronously at point once it arrives.  The request runs outside the
-chat panel and does not disturb an ongoing chat conversation."
+
+Use the language server's native `git/commitGenerate', which also sees
+your recent commit subjects (for style) and the repository's commit
+instructions.  On a server too old to provide it, fall back to a one-shot
+chat driven by `copilot-chat-commit-message-prompt'.  Either way the
+request runs outside the chat panel and does not disturb an ongoing
+conversation, and the reply is inserted asynchronously at point."
   (interactive)
-  (let ((request (copilot-chat--commit-message-request))
-        (buf (current-buffer))
+  ;; Not named `buf': `copilot--async-request' binds its own `buf' around
+  ;; the callbacks, which would shadow ours inside them.
+  (let ((params (copilot-chat--commit-generate-params))
+        (target-buf (current-buffer))
         (pos (point-marker)))
     (message "Copilot Chat: Generating commit message...")
-    (copilot-chat--one-shot
-     request
-     (lambda (reply error-msg)
-       (let ((reply (and reply (copilot-chat--strip-code-fences reply))))
-         (cond
-          (error-msg
-           (message "Copilot Chat: Commit message generation failed: %s"
-                    error-msg))
-          ((or (null reply) (string-empty-p reply))
-           (message "Copilot Chat: Got an empty commit message"))
-          ((not (buffer-live-p buf))
-           (message "Copilot Chat: Commit message buffer is gone"))
-          ((buffer-local-value 'buffer-read-only buf)
-           ;; Don't signal inside the jsonrpc process filter; salvage
-           ;; the reply instead.
-           (kill-new reply)
-           (message
-            "Copilot Chat: Buffer is read-only; commit message copied to kill ring"))
-          (t
-           (with-current-buffer buf
-             (save-excursion
-               (goto-char pos)
-               (insert reply)))
-           (set-marker pos nil)
-           (message "Copilot Chat: Commit message inserted"))))))))
+    ;; Issue from an always-live buffer: `copilot--async-request' drops
+    ;; its callbacks when the buffer current at call time is killed, and
+    ;; the reply handler targets TARGET-BUF explicitly anyway.
+    (with-current-buffer (get-buffer-create " *copilot-chat-one-shot*")
+      (copilot--async-request
+       'git/commitGenerate
+       params
+       :success-fn
+       (lambda (result)
+         (copilot-chat--insert-commit-message-at
+          (plist-get result :commitMessage) nil target-buf pos))
+       :error-fn
+       (lambda (err)
+         (if (copilot-chat--method-not-found-p err)
+             (copilot-chat--insert-commit-message-fallback target-buf pos)
+           (copilot-chat--insert-commit-message-at
+            nil (or (copilot-chat--error-text err) "unknown error")
+            target-buf pos)))
+       :timeout 130
+       :timeout-fn
+       (lambda ()
+         (copilot-chat--insert-commit-message-at
+          nil "request timed out" target-buf pos))))))
 
 ;;
 ;; Region rewrite

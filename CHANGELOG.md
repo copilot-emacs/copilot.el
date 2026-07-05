@@ -20,6 +20,7 @@
 ### Changes
 
 - `copilot-mode` now binds `TAB` (accept the suggestion), `C-TAB` (accept by word), and `M-n`/`M-p` (cycle suggestions) in `copilot-completion-map`, so inline completion works out of the box. The bindings act only while a suggestion overlay is visible; rebind or clear the map to change them.
+- `copilot-chat-insert-commit-message` now uses the language server's native commit-message generator, which also sees your recent commit subjects (so the result matches your repository's style) and the repository's commit instructions. On a server too old to provide it, it falls back to the previous one-shot chat, so `copilot-chat-commit-message-prompt` still applies there.
 
 ## 0.8.0 (2026-07-04)
 

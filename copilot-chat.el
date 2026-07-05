@@ -3847,20 +3847,94 @@ turns since the last compaction, which is reported but not an error."
          :timeout-fn
          (lambda () (message "Copilot Chat: Compaction timed out")))))))
 
+(defun copilot-chat--model-locked-p (model)
+  "Return non-nil when MODEL is policy-locked (its terms are unaccepted).
+A model is locked when it carries a `:policy' whose `:state' is not
+\"enabled\"; a model with no policy is unrestricted.  A present policy
+with a missing or non-\"enabled\" state counts as locked, so a
+malformed entry errs toward asking for consent rather than silently
+using a gated model."
+  (let ((policy (plist-get model :policy)))
+    (and policy (not (equal (plist-get policy :state) "enabled")))))
+
+(defun copilot-chat--model-annotation (model)
+  "Return a bracketed marker string for MODEL, or an empty string.
+Flags a premium model (billed against the premium-request quota) and a
+policy-locked one."
+  (let* ((premium (eq (plist-get (plist-get model :billing) :is_premium) t))
+         (flags (delq nil (list (and premium "premium")
+                                (and (copilot-chat--model-locked-p model)
+                                     "locked")))))
+    (if flags (format " [%s]" (string-join flags ", ")) "")))
+
+(defun copilot-chat--set-model (model-id)
+  "Select MODEL-ID as the chat model and forget any cached default.
+Clearing the cache lets a later nil re-resolve the default from the
+server, mirroring the rest of the model-selection commands."
+  (setq copilot-chat-model model-id
+        copilot-chat--model-resolved nil))
+
+(defun copilot-chat--accept-model-policy (model)
+  "Ask to accept MODEL's policy terms and, on yes, enable it on the server.
+Prompt with the model's `:terms', then send `copilot/setModelPolicy' to
+accept them; the model is selected only once the server confirms.  A
+declined prompt leaves the current model untouched."
+  (let* ((model-id (plist-get model :id))
+         (terms (plist-get (plist-get model :policy) :terms)))
+    (if (not (yes-or-no-p
+              (format "Model %s requires accepting its terms%s.  Enable it? "
+                      model-id
+                      (if (and (stringp terms) (not (string-empty-p terms)))
+                          (format " (%s)" terms)
+                        ""))))
+        (message "Copilot Chat: %s left disabled" model-id)
+      (message "Copilot Chat: Enabling %s..." model-id)
+      ;; `copilot--async-request' drops its success handler when the
+      ;; buffer current at call time has been killed by the time the
+      ;; reply arrives.  Selecting a model touches only globals, so issue
+      ;; the request from a buffer that is always live; otherwise killing
+      ;; the buffer M-x was run from within the request window would let
+      ;; the server accept the policy while `copilot-chat-model' never
+      ;; updates.  This mirrors the one-shot conversation requests.
+      (with-current-buffer (get-buffer-create " *copilot-chat-one-shot*")
+        (copilot--async-request
+         'copilot/setModelPolicy
+         (list :model model-id :status "enabled")
+         :success-fn
+         (lambda (_result)
+           (copilot-chat--set-model model-id)
+           (message "Copilot Chat: Enabled and selected %s" model-id))
+         :error-fn
+         (lambda (err)
+           (message "Copilot Chat: Could not enable %s: %s"
+                    model-id
+                    (or (copilot-chat--error-text err) "unknown error")))
+         :timeout 30
+         :timeout-fn
+         (lambda ()
+           (message "Copilot Chat: Enabling %s timed out" model-id)))))))
+
 (defun copilot-chat-select-model ()
-  "Interactively select a Copilot Chat model."
+  "Interactively select a Copilot Chat model.
+Premium and policy-locked models are flagged in the completion list.
+Selecting a policy-locked model prompts to accept its terms and enables
+it via the server's `copilot/setModelPolicy' before switching; the model
+is selected only once the server confirms."
   (interactive)
   (let* ((choices (mapcar (lambda (m)
-                            (cons (format "%s (%s)" (plist-get m :modelName) (plist-get m :id))
-                                  (plist-get m :id)))
+                            (cons (format "%s (%s)%s"
+                                          (plist-get m :modelName)
+                                          (plist-get m :id)
+                                          (copilot-chat--model-annotation m))
+                                  m))
                           (copilot-chat--chat-models)))
          (choice (completing-read "Chat model: " choices nil t))
-         (model-id (cdr (assoc choice choices))))
-    (setq copilot-chat-model model-id
-          ;; Forget any cached default so clearing the model later
-          ;; re-resolves from the server.
-          copilot-chat--model-resolved nil)
-    (message "Copilot Chat: Model set to %s" model-id)))
+         (model (cdr (assoc choice choices)))
+         (model-id (plist-get model :id)))
+    (if (copilot-chat--model-locked-p model)
+        (copilot-chat--accept-model-policy model)
+      (copilot-chat--set-model model-id)
+      (message "Copilot Chat: Model set to %s" model-id))))
 
 ;;;###autoload
 (defun copilot-chat-apply-preset (name)

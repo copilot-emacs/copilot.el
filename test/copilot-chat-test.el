@@ -477,6 +477,197 @@
           (kill-buffer buf)))))
 
   ;;
+  ;; Streaming thinking indicator
+  ;;
+
+  (describe "streaming thinking indicator"
+    (it "shows an overlay indicator and schedules a timer on begin"
+      (let ((buf (get-buffer-create "*copilot-chat-test-thinking-begin*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p nil))
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "begin")))
+                (with-current-buffer buf
+                  (expect (overlayp copilot-chat--thinking-overlay)
+                          :to-be-truthy)
+                  (expect (timerp copilot-chat--thinking-timer)
+                          :to-be-truthy)
+                  ;; It rides on the overlay's after-string, so it never
+                  ;; becomes real buffer text that streamed output could eat.
+                  (expect (buffer-string) :not :to-match "Thinking")
+                  (expect (overlay-get copilot-chat--thinking-overlay
+                                       'after-string)
+                          :to-match "Thinking")
+                  ;; Never leave a live timer running behind the spec.
+                  (copilot-chat--stop-thinking-indicator))))
+          (kill-buffer buf))))
+
+    (it "removes the indicator on the first reply chunk"
+      (let ((buf (get-buffer-create "*copilot-chat-test-thinking-report*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p nil))
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "begin")))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "report" :reply "Hi")))
+                (with-current-buffer buf
+                  (expect copilot-chat--thinking-overlay :to-be nil)
+                  (expect copilot-chat--thinking-timer :to-be nil)
+                  (expect (buffer-string) :to-match "Hi"))))
+          (kill-buffer buf))))
+
+    (it "removes the indicator when a turn ends with no reply"
+      (let ((buf (get-buffer-create "*copilot-chat-test-thinking-end*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p nil))
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "begin")))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "end")))
+                (with-current-buffer buf
+                  (expect copilot-chat--thinking-overlay :to-be nil)
+                  (expect copilot-chat--thinking-timer :to-be nil))))
+          (kill-buffer buf))))
+
+    (it "removes the indicator when the turn is cancelled"
+      (let ((buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p nil)
+                (setq copilot-chat--request-id 42))
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "begin"))))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc-notify)
+              (copilot-chat-stop)
+              (with-current-buffer buf
+                (expect copilot-chat--thinking-overlay :to-be nil)
+                (expect copilot-chat--thinking-timer :to-be nil)))
+          (kill-buffer buf))))
+
+    (it "removes the indicator when the turn errors"
+      (let ((buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p nil))
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "begin"))))
+              (copilot-chat--handle-request-error "boom" "turn")
+              (with-current-buffer buf
+                (expect copilot-chat--thinking-overlay :to-be nil)
+                (expect copilot-chat--thinking-timer :to-be nil)))
+          (kill-buffer buf))))
+
+    (it "does nothing when the indicator is disabled"
+      (let ((buf (get-buffer-create "*copilot-chat-test-thinking-off*"))
+            (copilot-chat-show-thinking-indicator nil))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p nil))
+              (let ((copilot-chat--active-buffers
+                     (list (cons "test-token" buf))))
+                (copilot-chat--handle-progress
+                 (list :token "test-token"
+                       :value (list :kind "begin")))
+                (with-current-buffer buf
+                  (expect copilot-chat--thinking-overlay :to-be nil)
+                  (expect copilot-chat--thinking-timer :to-be nil))))
+          (kill-buffer buf)))))
+
+  ;;
+  ;; Sticky scrollback
+  ;;
+
+  (describe "sticky scrollback"
+    (it "follows the stream in a window parked at the end"
+      (let ((buf (get-buffer-create "*copilot-chat-test-sticky-follow*"))
+            (other (get-buffer-create "*copilot-chat-test-sticky-other*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p t)
+                (let ((inhibit-read-only t))
+                  (insert "You:\nhi\n\nCopilot:\n")))
+              (set-window-buffer (selected-window) other)
+              (let ((win (split-window)))
+                (set-window-buffer win buf)
+                ;; Park this window's point at the very end: it is following.
+                (with-current-buffer buf
+                  (set-window-point win (point-max)))
+                (let ((copilot-chat--active-buffers
+                       (list (cons "test-token" buf))))
+                  (copilot-chat--handle-progress
+                   (list :token "test-token"
+                         :value (list :kind "report"
+                                      :reply "streamed line\n"))))
+                (with-current-buffer buf
+                  (expect (window-point win) :to-equal (point-max)))))
+          (delete-other-windows)
+          (kill-buffer buf)
+          (kill-buffer other))))
+
+    (it "leaves a window scrolled up untouched"
+      (let ((buf (get-buffer-create "*copilot-chat-test-sticky-scrolled*"))
+            (other (get-buffer-create "*copilot-chat-test-sticky-other2*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--streaming-p t)
+                (let ((inhibit-read-only t))
+                  (insert "You:\nhi\n\nCopilot:\nline\nline\nline\n")))
+              (set-window-buffer (selected-window) other)
+              (let ((win (split-window)))
+                (set-window-buffer win buf)
+                ;; Scroll this window up to re-read the top of the buffer.
+                (with-current-buffer buf
+                  (set-window-point win 3))
+                (let ((copilot-chat--active-buffers
+                       (list (cons "test-token" buf))))
+                  (copilot-chat--handle-progress
+                   (list :token "test-token"
+                         :value (list :kind "report"
+                                      :reply "streamed line\n"))))
+                ;; The stream did not yank the window down to the bottom.
+                (expect (window-point win) :to-equal 3)))
+          (delete-other-windows)
+          (kill-buffer buf)
+          (kill-buffer other)))))
+
+  ;;
   ;; Turn-end desktop notification
   ;;
 

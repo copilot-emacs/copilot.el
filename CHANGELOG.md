@@ -11,6 +11,8 @@
   - `copilot-chat-next-turn` (`C-c C-n`) and `copilot-chat-previous-turn` (`C-c C-p`) move between exchanges.
   - `copilot-chat-retry` (`C-c C-r`) regenerates the answer to the last request, or with a prefix argument pre-fills it for editing before re-sending.
   - `copilot-chat-rate-response` (`C-c C-t`), along with `copilot-chat-thumbs-up` and `copilot-chat-thumbs-down`, sends good/bad feedback about the current response to GitHub.
+- Show an animated thinking indicator under the `Copilot:` label while a reply is being prepared, so the gap before the first streamed chunk no longer looks dead; it disappears the moment the reply starts (or the turn ends, is cancelled, or errors) and is disabled with `copilot-chat-show-thinking-indicator`.
+- Keep manual scrollback sticky while a reply streams: a chat window is only auto-scrolled to follow new output when it is already at the bottom, so scrolling up to re-read an earlier part of a long response no longer fights the stream.
 
 ## 0.8.0 (2026-07-04)
 

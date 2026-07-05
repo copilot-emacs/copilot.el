@@ -1236,6 +1236,17 @@ TRIGGER-KIND is 1 for invoked, 2 for automatic (default)."
 (defvar copilot--panel-lang nil
   "Language of current panel solutions.")
 
+(defvar-local copilot--panel-target nil
+  "Marker in the buffer that requested the current panel solutions.
+Points at the position where an accepted solution is inserted.")
+
+(defvar-local copilot--panel-solutions nil
+  "Hash table mapping a solution's SHA to its raw completion text.
+The panel renders each solution as an Org source block, but the text
+is recovered from this table rather than by re-parsing the block, so a
+completion that itself contains Org markup (a `#+END_SRC' line, a
+`*'-heading line) round-trips intact.")
+
 (defvar copilot--request-handlers (make-hash-table :test 'equal)
   "Hash table storing request handlers.")
 
@@ -1283,19 +1294,23 @@ Each request METHOD can have only one HANDLER."
  (lambda (msg)
    (copilot--dbind (((:completionText completion-text)) ((:score completion-score))) msg
      (with-current-buffer "*copilot-panel*"
-       (unless (member (secure-hash 'sha256 completion-text)
-                       (org-map-entries (lambda () (org-entry-get nil "SHA"))))
-         (save-excursion
-           (goto-char (point-max))
-           (insert "* Solution\n"
-                   "  :PROPERTIES:\n"
-                   "  :SCORE: " (number-to-string completion-score) "\n"
-                   "  :SHA: " (secure-hash 'sha256 completion-text) "\n"
-                   "  :END:\n"
-                   "#+BEGIN_SRC " copilot--panel-lang "\n"
-                   completion-text "\n#+END_SRC\n\n")
-           (goto-char (point-min))
-           (org-sort-entries nil ?R nil nil "SCORE")))))))
+       (let ((sha (secure-hash 'sha256 completion-text)))
+         (unless (member sha (org-map-entries (lambda () (org-entry-get nil "SHA"))))
+           (unless (hash-table-p copilot--panel-solutions)
+             (setq copilot--panel-solutions (make-hash-table :test 'equal)))
+           (puthash sha completion-text copilot--panel-solutions)
+           (let ((inhibit-read-only t))
+             (save-excursion
+               (goto-char (point-max))
+               (insert "* Solution\n"
+                       "  :PROPERTIES:\n"
+                       "  :SCORE: " (number-to-string completion-score) "\n"
+                       "  :SHA: " sha "\n"
+                       "  :END:\n"
+                       "#+BEGIN_SRC " copilot--panel-lang "\n"
+                       completion-text "\n#+END_SRC\n\n")
+               (goto-char (point-min))
+               (org-sort-entries nil ?R nil nil "SCORE")))))))))
 
 (copilot-on-notification
  'PanelSolutionsDone
@@ -1303,9 +1318,10 @@ Each request METHOD can have only one HANDLER."
    (copilot--log 'info "Finished synthesizing solutions.")
    (display-buffer "*copilot-panel*")
    (with-current-buffer "*copilot-panel*"
-     (save-excursion
-       (goto-char (point-max))
-       (insert "End of solutions.\n")))))
+     (let ((inhibit-read-only t))
+       (save-excursion
+         (goto-char (point-max))
+         (insert "End of solutions.\n"))))))
 
 (copilot-on-notification
  'didChangeStatus
@@ -1507,19 +1523,67 @@ publicly available code), unrelated to Emacs `xref' cross-references."
                                         (copilot--log 'warning "Copilot server timeout."))))
 
 
+(declare-function org-back-to-heading "org")
+
+(defun copilot--panel-solution-at-point ()
+  "Return the completion text of the panel solution at point, or nil.
+The text is recovered from `copilot--panel-solutions' by the SHA
+recorded on the enclosing heading, so a solution containing Org markup
+is returned verbatim rather than by re-parsing its source block."
+  (when (hash-table-p copilot--panel-solutions)
+    (save-excursion
+      (when (ignore-errors (org-back-to-heading t) t)
+        (let ((sha (org-entry-get nil "SHA")))
+          (and sha (gethash sha copilot--panel-solutions)))))))
+
+(defun copilot-panel-accept-completion ()
+  "Insert the panel solution at point into the buffer that requested it.
+Meant to be called from the *copilot-panel* buffer populated by
+`copilot-panel-complete'."
+  (interactive)
+  (let ((text (copilot--panel-solution-at-point))
+        (target copilot--panel-target))
+    (unless text
+      (user-error "No Copilot solution at point"))
+    (unless (and (markerp target) (buffer-live-p (marker-buffer target)))
+      (user-error "The buffer this panel came from is no longer available"))
+    (quit-window)
+    (pop-to-buffer (marker-buffer target))
+    (goto-char target)
+    (insert text)
+    (message "Copilot: inserted solution")))
+
+(defvar copilot-panel-mode-map
+  (let ((map (make-sparse-keymap)))
+    (keymap-set map "RET" #'copilot-panel-accept-completion)
+    (keymap-set map "C-c C-c" #'copilot-panel-accept-completion)
+    map)
+  "Keymap for `copilot-panel-mode'.")
+
+(define-minor-mode copilot-panel-mode
+  "Minor mode for the *copilot-panel* buffer.
+Accept the solution at point with \\[copilot-panel-accept-completion]."
+  :lighter " Copilot-Panel"
+  :keymap copilot-panel-mode-map)
+
 (defun copilot-panel-complete ()
-  "Pop a buffer with a list of suggested completions based on the current file ."
+  "Pop a buffer with a list of suggested completions based on the current file."
   (interactive)
   (require 'org)
   (setq copilot--last-doc-version copilot--doc-version)
   (setq copilot--panel-lang (copilot--get-language-id))
-
-  (copilot--get-panel-completions
-   (jsonrpc-lambda (&key solutionCountTarget)
-     (copilot--log 'info "Synthesizing %d solutions..." solutionCountTarget)))
-  (with-current-buffer (get-buffer-create "*copilot-panel*")
-    (org-mode)
-    (erase-buffer)))
+  (let ((target (point-marker)))
+    (copilot--get-panel-completions
+     (jsonrpc-lambda (&key solutionCountTarget)
+       (copilot--log 'info "Synthesizing %d solutions..." solutionCountTarget)))
+    (with-current-buffer (get-buffer-create "*copilot-panel*")
+      (org-mode)
+      (copilot-panel-mode 1)
+      (let ((inhibit-read-only t))
+        (erase-buffer))
+      (setq buffer-read-only t)
+      (setq copilot--panel-solutions (make-hash-table :test 'equal))
+      (setq copilot--panel-target target))))
 
 ;;
 ;; UI

@@ -1404,6 +1404,124 @@
               :to-be 'copilot-previous-completion)))
 
   ;;
+  ;; copilot-panel-accept-completion
+  ;;
+
+  (describe "copilot panel accept"
+    ;; Render TEXT into the current buffer exactly as the `PanelSolution'
+    ;; handler does: register it in the SHA table and splice it into a
+    ;; heading + source block.  Recovery keys off the SHA, never the block.
+    (defun copilot-test--panel-insert (text)
+      (require 'org)
+      (unless (hash-table-p copilot--panel-solutions)
+        (setq copilot--panel-solutions (make-hash-table :test 'equal)))
+      (let ((sha (secure-hash 'sha256 text)))
+        (puthash sha text copilot--panel-solutions)
+        (insert "* Solution\n"
+                "  :PROPERTIES:\n"
+                "  :SCORE: 0.9\n"
+                "  :SHA: " sha "\n"
+                "  :END:\n"
+                "#+BEGIN_SRC emacs-lisp\n"
+                text "\n#+END_SRC\n\n")))
+
+    (it "extracts the solution text at the heading"
+      (with-temp-buffer
+        (org-mode)
+        (copilot-test--panel-insert "(+ a b)")
+        (goto-char (point-min))
+        (expect (copilot--panel-solution-at-point) :to-equal "(+ a b)")))
+
+    (it "extracts the solution when point is inside the src block"
+      (with-temp-buffer
+        (org-mode)
+        (copilot-test--panel-insert "(+ a b)")
+        (goto-char (point-min))
+        (search-forward "(+ a b)")
+        (expect (copilot--panel-solution-at-point) :to-equal "(+ a b)")))
+
+    (it "round-trips a multi-line solution verbatim"
+      (with-temp-buffer
+        (org-mode)
+        (let ((text "(defun add (a b)\n  (+ a b))"))
+          (copilot-test--panel-insert text)
+          (goto-char (point-min))
+          (expect (copilot--panel-solution-at-point) :to-equal text))))
+
+    (it "round-trips a solution containing a #+END_SRC line"
+      ;; A naive re-parse of the Org block would treat the embedded
+      ;; #+END_SRC as the terminator and silently truncate the text.
+      (with-temp-buffer
+        (org-mode)
+        (let ((text "line1\n#+END_SRC\nline2"))
+          (copilot-test--panel-insert text)
+          (goto-char (point-min))
+          (expect (copilot--panel-solution-at-point) :to-equal text))))
+
+    (it "round-trips a solution whose lines look like Org headings"
+      ;; A naive re-parse would see these as headings and fail to find a
+      ;; src block, refusing to accept the (perfectly valid) solution.
+      (with-temp-buffer
+        (org-mode)
+        (let ((text "* item one\n* item two"))
+          (copilot-test--panel-insert text)
+          (goto-char (point-min))
+          (expect (copilot--panel-solution-at-point) :to-equal text))))
+
+    (it "returns nil when point is not on a solution"
+      (with-temp-buffer
+        (org-mode)
+        (setq copilot--panel-solutions (make-hash-table :test 'equal))
+        (insert "No solutions yet.\n")
+        (goto-char (point-min))
+        (expect (copilot--panel-solution-at-point) :to-be nil)))
+
+    (it "returns nil when no solutions have been recorded"
+      (with-temp-buffer
+        (org-mode)
+        (setq copilot--panel-solutions nil)
+        (insert "* Solution\n  :PROPERTIES:\n  :SHA: abc\n  :END:\n")
+        (goto-char (point-min))
+        (expect (copilot--panel-solution-at-point) :to-be nil)))
+
+    (it "inserts the solution into the originating buffer at the marker"
+      (let ((target (generate-new-buffer "copilot-panel-target"))
+            (panel (get-buffer-create "*copilot-panel*"))
+            (marker nil))
+        (unwind-protect
+            (progn
+              (with-current-buffer target
+                (insert "prefix ")
+                (setq marker (point-marker))
+                (insert " suffix"))
+              (with-current-buffer panel
+                (org-mode)
+                (copilot-panel-mode)
+                (copilot-test--panel-insert "(+ a b)")
+                (setq copilot--panel-target marker)
+                (goto-char (point-min))
+                (switch-to-buffer panel)
+                (copilot-panel-accept-completion))
+              (expect (with-current-buffer target (buffer-string))
+                      :to-equal "prefix (+ a b) suffix"))
+          (kill-buffer target)
+          (when (buffer-live-p panel) (kill-buffer panel)))))
+
+    (it "errors when the origin buffer is gone"
+      (with-temp-buffer
+        (org-mode)
+        (copilot-test--panel-insert "(+ a b)")
+        (goto-char (point-min))
+        (setq-local copilot--panel-target nil)
+        (expect (copilot-panel-accept-completion) :to-throw 'user-error)))
+
+    (it "binds RET and C-c C-c to accept"
+      (expect (keymap-lookup copilot-panel-mode-map "RET")
+              :to-be 'copilot-panel-accept-completion)
+      (expect (keymap-lookup copilot-panel-mode-map "C-c C-c")
+              :to-be 'copilot-panel-accept-completion)))
+
+  ;;
   ;; copilot-accept-completion
   ;;
 

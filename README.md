@@ -215,6 +215,8 @@ To customize when completions trigger, see `copilot-enable-predicates` and `copi
 
 Alternatively, you can call `copilot-complete` manually and use `copilot-clear-overlay` in `post-command-hook` to dismiss completions.
 
+`copilot-panel-complete` opens a `*copilot-panel*` buffer listing several suggestions for the point at once, sorted by score. Move to the one you want and press `RET` (or `C-c C-c`) to insert it back at the position you invoked the command from.
+
 ### Chat
 
 `copilot-chat` opens an interactive chat with GitHub Copilot using the `conversation/*` LSP methods. The chat buffer streams responses in real time and automatically provides the current buffer as context.
@@ -523,6 +525,7 @@ releases are not installable) the rest of copilot.el works as usual and
 | `copilot-mode` | Toggle automatic completions in the current buffer |
 | `copilot-complete` | Trigger a completion at point |
 | `copilot-panel-complete` | Show a panel buffer with multiple completion suggestions |
+| `copilot-panel-accept-completion` | Insert the panel solution at point (`RET`/`C-c C-c` in the panel) |
 | `copilot-accept-completion` | Accept the current completion |
 | `copilot-accept-completion-by-word` | Accept the next N words (prefix arg) |
 | `copilot-accept-completion-by-line` | Accept the next N lines (prefix arg) |

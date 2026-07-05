@@ -2,6 +2,11 @@
 
 ## main (unreleased)
 
+### New Features
+
+- Add `copilot-chat-compose` (bound to `C-c C-e` in the chat buffer) to draft a multi-line message in a dedicated writable buffer, sending it with `C-c C-c` (as a new conversation or a follow-up, just like `copilot-chat`) or cancelling with `C-c C-k`.
+- Add `copilot-chat-display` (bound to `C-c C-d` in the chat buffer) to show the existing chat buffer without sending a message.
+
 ## 0.8.0 (2026-07-04)
 
 ### New Features

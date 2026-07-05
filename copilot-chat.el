@@ -1143,16 +1143,18 @@ awaiting each confirmation before invoking."
     (define-key map (kbd "C-c C-c") #'exit-recursive-edit)
     (define-key map (kbd "C-c C-k") #'abort-recursive-edit)
     map)
-  "Keymap active while editing a multi-line tool argument in a buffer.
-Keys it does not bind fall through to the global map, so ordinary text
-editing works as usual.")
+  "Keymap active while editing multi-line text in a temporary buffer.
+Used for tool-argument edits and for `copilot-chat-compose'.  Keys it
+does not bind fall through to the global map, so ordinary text editing
+works as usual.")
 
-(defun copilot-chat--edit-in-buffer (initial description)
+(defun copilot-chat--edit-in-buffer (initial description &optional buffer-name)
   "Let the user edit INITIAL in a temporary buffer and return the new text.
 DESCRIPTION names the value being edited and appears in the header line.
-Editing runs in a recursive edit, keyed by
+BUFFER-NAME, when given, names the scratch buffer; it defaults to a
+tool-edit buffer.  Editing runs in a recursive edit, keyed by
 `copilot-chat--tool-edit-keymap'; cancelling signals `quit'."
-  (let ((buf (generate-new-buffer "*copilot-chat-tool-edit*")))
+  (let ((buf (generate-new-buffer (or buffer-name "*copilot-chat-tool-edit*"))))
     (unwind-protect
         (progn
           (with-current-buffer buf
@@ -1176,11 +1178,12 @@ or \\[abort-recursive-edit] to cancel"
 Return the value in the shape the field expects: a string for `:command',
 a string for `:content', and a vector of strings for `:urls'."
   (pcase field
-    (:command (read-string "Copilot Chat: edit command: " current))
+    (:command (copilot-chat--edit-in-buffer current "command"))
     (:content (copilot-chat--edit-in-buffer current "file content"))
     (:urls (vconcat (split-string
-                     (read-string "Copilot Chat: edit URLs (space-separated): "
-                                  (mapconcat #'identity (append current nil) " "))
+                     (copilot-chat--edit-in-buffer
+                      (mapconcat #'identity (append current nil) "\n")
+                      "URLs (one per line or space-separated)")
                      nil t)))))
 
 (defun copilot-chat--read-tool-edit (msg)
@@ -2985,11 +2988,13 @@ and suggested change) in the chat buffer."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c RET") #'copilot-chat-send)
     (define-key map (kbd "C-c C-c") #'copilot-chat-send)
+    (define-key map (kbd "C-c C-e") #'copilot-chat-compose)
     (define-key map (kbd "C-c C-k") #'copilot-chat-stop)
     (define-key map (kbd "C-c C-i") #'copilot-chat-insert-code-block)
     (define-key map (kbd "C-c M-w") #'copilot-chat-copy-code-block)
     (define-key map (kbd "C-c /") #'copilot-chat-slash-command)
     (define-key map (kbd "C-c C-f") #'copilot-chat-add-file-reference)
+    (define-key map (kbd "C-c C-d") #'copilot-chat-display)
     (define-key map (kbd "q") #'quit-window)
     map)
   "Keymap for `copilot-chat-mode'.")
@@ -3187,6 +3192,39 @@ When called interactively, prompt for the message."
                      (plist-get result :conversationId))
                (setq copilot-chat--current-turn-id
                      (plist-get result :turnId))))))))))
+
+;;;###autoload
+(defun copilot-chat-compose ()
+  "Draft a Copilot Chat message in a dedicated compose buffer.
+Pop a writable buffer where you can compose a multi-line message with
+the usual editing and yank commands.
+\\<copilot-chat--tool-edit-keymap>Send it with \\[exit-recursive-edit],
+or cancel with \\[abort-recursive-edit].  The message is routed through
+`copilot-chat', so it starts a new conversation when none exists yet and
+is sent as a follow-up turn otherwise.  Empty or whitespace-only input
+is not sent."
+  (interactive)
+  (let ((message (condition-case nil
+                     (copilot-chat--edit-in-buffer "" "message"
+                                                   "*copilot-chat-compose*")
+                   ;; C-c C-k (or C-g) aborts the recursive edit; treat
+                   ;; that as a clean cancel rather than an empty send.
+                   (quit :cancelled))))
+    (unless (eq message :cancelled)
+      (when (string-blank-p message)
+        (user-error "Copilot Chat: Empty message"))
+      (copilot-chat message))))
+
+;;;###autoload
+(defun copilot-chat-display ()
+  "Display the existing Copilot Chat buffer without sending a message.
+Signal a `user-error' when no chat buffer exists yet, since there is
+nothing to show; start a conversation with `copilot-chat' first."
+  (interactive)
+  (let ((chat-buf (get-buffer copilot-chat--buffer-name)))
+    (unless chat-buf
+      (user-error "Copilot Chat: No active chat buffer"))
+    (display-buffer chat-buf)))
 
 ;;;###autoload
 (defun copilot-chat-send-region (start end &optional prompt)

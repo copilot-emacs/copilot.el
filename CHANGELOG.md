@@ -14,6 +14,7 @@
 - Show an animated thinking indicator under the `Copilot:` label while a reply is being prepared, so the gap before the first streamed chunk no longer looks dead; it disappears the moment the reply starts (or the turn ends, is cancelled, or errors) and is disabled with `copilot-chat-show-thinking-indicator`.
 - Keep manual scrollback sticky while a reply streams: a chat window is only auto-scrolled to follow new output when it is already at the bottom, so scrolling up to re-read an earlier part of a long response no longer fights the stream.
 - Add `copilot-panel-accept-completion` to insert a solution from the `*copilot-panel*` buffer back into the buffer that requested it. Move to a suggestion and press `RET` or `C-c C-c`; previously the panel could only be read, never accepted from.
+- Add `copilot-chat-compact` (in the `copilot-menu` chat section) to compact the current chat conversation on demand: it asks the server to summarize the discussion so far, reclaiming token budget while the conversation continues. The visible transcript is left as-is, and it reports how many turns were compacted along with the resulting context usage.
 
 ### Changes
 

@@ -31,6 +31,23 @@ optional description string)."
       (funcall walk copilot-menu--definition))
     (nreverse commands)))
 
+(defun copilot-menu-test--layout-keys ()
+  "Collect every suffix key string from `copilot-menu--definition'.
+A transient prefix has a single flat keymap, so these must be unique
+across the whole menu."
+  (let (keys)
+    (letrec ((walk
+              (lambda (x)
+                (cond
+                 ((vectorp x) (mapc walk x))
+                 ((and (consp x) (stringp (car x)))
+                  (let ((cand (if (stringp (nth 1 x)) (nth 2 x) (nth 1 x))))
+                    (when (and cand (symbolp cand))
+                      (push (car x) keys))))
+                 ((proper-list-p x) (mapc walk x))))))
+      (funcall walk copilot-menu--definition))
+    (nreverse keys)))
+
 (describe "copilot-menu"
   (it "is defined as a transient prefix when transient is available"
     (assume (featurep 'transient) "transient is not available")
@@ -55,6 +72,7 @@ optional description string)."
                          copilot-chat-slash-command
                          copilot-chat-add-file-reference
                          copilot-chat-clear-references
+                         copilot-chat-compact
                          copilot-chat-select-model
                          copilot-menu-toggle-agent-mode
                          copilot-chat-select-mode
@@ -71,7 +89,19 @@ optional description string)."
         (expect commands :to-contain command))
       ;; Exactly these, so a future suffix shape the walker doesn't
       ;; understand cannot silently drop commands from the check.
-      (expect (length commands) :to-equal 21)))
+      (expect (length commands) :to-equal 22)))
+
+  (it "binds every suffix to a distinct key"
+    ;; A transient prefix has a single flat keymap; a duplicate key
+    ;; silently shadows an earlier command (see the `c'/`C' split for
+    ;; complete vs compact).
+    (let* ((keys (copilot-menu-test--layout-keys))
+           (dups (seq-uniq
+                  (seq-filter (lambda (k) (> (seq-count (lambda (o) (equal o k))
+                                                        keys)
+                                             1))
+                              keys))))
+      (expect dups :to-equal nil)))
 
   (describe "copilot-menu-toggle-agent-mode"
     (it "flips copilot-chat-use-agent-mode"

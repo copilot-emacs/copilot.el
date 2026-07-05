@@ -227,6 +227,8 @@ M-x copilot-chat
 M-x copilot-chat-send-region
 ```
 
+For anything longer than a quick question, `copilot-chat-compose` (`C-c C-e` in the chat buffer) pops a dedicated writable buffer where you can draft a multi-line, multi-paragraph message with the usual editing and yank commands, then send it with `C-c C-c` or cancel with `C-c C-k`. It sends the same way `copilot-chat` does: as a new conversation when none exists yet, or as a follow-up turn otherwise. `copilot-chat-display` (`C-c C-d`) just shows the existing chat buffer without sending anything.
+
 There are also one-shot task commands that send the active region (or the function at point when no region is active) with a canned prompt, so you don't have to type anything; the answer streams into the chat buffer as usual:
 
 - `copilot-chat-review` — review the code for bugs, risks, and improvements
@@ -241,11 +243,13 @@ Beyond the prose feedback of `copilot-chat-review`, there is also native Copilot
 
 Key bindings in the `*copilot-chat*` buffer:
 - **C-c RET** or **C-c C-c** — send a follow-up message
+- **C-c C-e** — compose a multi-line message in a dedicated buffer
 - **C-c C-k** — cancel streaming, or reset if idle
 - **C-c C-i** — insert the code block at point into the source buffer
 - **C-c M-w** — copy the code block at point to the kill ring
 - **C-c /** — pick and send a slash command (`/explain`, `/fix`, `/tests`, ...)
 - **C-c C-f** — attach a file as context for the next message
+- **C-c C-d** — display the chat buffer without sending a message
 - **q** — quit the chat window
 
 Attach extra context for the next message with `copilot-chat-add-file-reference` (`C-c C-f`) or `copilot-chat-add-region-reference`; `copilot-chat-clear-references` drops anything pending.
@@ -286,7 +290,7 @@ If you often flip between a couple of setups (say a quick ask-mode model and a t
 
 At each tool confirmation prompt you can answer `yes`, `no`, or `always`; `always` approves that tool for the rest of the conversation so it stops asking.
 
-For the tools copilot.el runs itself, the prompt also offers `edit`, which lets you change the input before the tool runs: the shell command of `run_in_terminal`, the content of `create_file` (edited in a temporary buffer, confirmed with `C-c C-c` or cancelled with `C-c C-k`), or the URLs of `fetch_web_page`. The tool then runs once with your edited input. Server-executed and MCP tools do not offer `edit`, since the server does not accept a modified input back.
+For the tools copilot.el runs itself, the prompt also offers `edit`, which lets you change the input before the tool runs: the shell command of `run_in_terminal`, the content of `create_file`, or the URLs of `fetch_web_page`. Each opens in a temporary buffer, confirmed with `C-c C-c` or cancelled with `C-c C-k`. The tool then runs once with your edited input. Server-executed and MCP tools do not offer `edit`, since the server does not accept a modified input back.
 
 > [!IMPORTANT]
 >
@@ -519,6 +523,8 @@ releases are not installable) the rest of copilot.el works as usual and
 | `copilot-previous-completion` | Cycle to the previous completion |
 | **Chat** | |
 | `copilot-chat` | Open Copilot Chat and send a message |
+| `copilot-chat-compose` | Draft a multi-line message in a dedicated buffer and send it |
+| `copilot-chat-display` | Display the chat buffer without sending a message |
 | `copilot-chat-send` | Send a follow-up message in the current chat |
 | `copilot-chat-send-region` | Send the selected region as context with an optional prompt |
 | `copilot-chat-task` | Pick a one-shot task and run it on the region or defun at point |

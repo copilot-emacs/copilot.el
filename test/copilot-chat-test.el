@@ -917,6 +917,59 @@
         (kill-buffer copilot-chat--buffer-name))
       (expect (copilot-chat-send "hello") :to-throw 'user-error)))
 
+  (describe "copilot-chat-compose"
+    (before-each
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name))
+      (spy-on 'copilot-chat--create)
+      (spy-on 'copilot-chat--send-turn)
+      (spy-on 'display-buffer))
+
+    (it "sends the composed multi-line message as a new conversation"
+      (spy-on 'copilot-chat--edit-in-buffer
+              :and-return-value "first line\n\nsecond paragraph")
+      (copilot-chat-compose)
+      (expect 'copilot-chat--create :to-have-been-called)
+      (expect (car (spy-calls-args-for 'copilot-chat--create 0))
+              :to-equal "first line\n\nsecond paragraph"))
+
+    (it "sends the composed message as a follow-up turn when a conversation exists"
+      (spy-on 'copilot-chat--edit-in-buffer :and-return-value "follow-up text")
+      (with-current-buffer (get-buffer-create copilot-chat--buffer-name)
+        (copilot-chat-mode)
+        (setq copilot-chat--conversation-id "conv-1"))
+      (copilot-chat-compose)
+      (expect 'copilot-chat--send-turn
+              :to-have-been-called-with "follow-up text")
+      (expect 'copilot-chat--create :not :to-have-been-called))
+
+    (it "does not send whitespace-only input"
+      (spy-on 'copilot-chat--edit-in-buffer :and-return-value "   \n\t ")
+      (expect (copilot-chat-compose) :to-throw 'user-error)
+      (expect 'copilot-chat--create :not :to-have-been-called)
+      (expect 'copilot-chat--send-turn :not :to-have-been-called))
+
+    (it "does not send when the compose buffer is cancelled"
+      (spy-on 'copilot-chat--edit-in-buffer
+              :and-call-fake (lambda (&rest _) (signal 'quit nil)))
+      (copilot-chat-compose)
+      (expect 'copilot-chat--create :not :to-have-been-called)
+      (expect 'copilot-chat--send-turn :not :to-have-been-called)))
+
+  (describe "copilot-chat-display"
+    (it "errors when no chat buffer exists"
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name))
+      (expect (copilot-chat-display) :to-throw 'user-error))
+
+    (it "displays the existing chat buffer"
+      (get-buffer-create copilot-chat--buffer-name)
+      (spy-on 'display-buffer)
+      (copilot-chat-display)
+      (expect 'display-buffer
+              :to-have-been-called-with
+              (get-buffer copilot-chat--buffer-name))))
+
   ;;
   ;; Conversation creation params
   ;;
@@ -2126,10 +2179,31 @@
                 :to-equal '(:result "dismiss"))
         (expect copilot-chat--tool-edits :to-be nil)))
 
+    (it "edits a shell command through the compose buffer"
+      (let ((copilot-chat--tool-edits nil))
+        (spy-on 'copilot-chat--ask-tool :and-return-value 'edit)
+        ;; The compose helper stands in for the recursive-edit buffer.
+        (spy-on 'copilot-chat--edit-in-buffer :and-return-value "echo safe")
+        (spy-on 'copilot-chat--execute-run-in-terminal
+                :and-return-value (copilot-chat--tool-result "success" "ok"))
+        (copilot-chat--handle-tool-confirmation
+         (list :name "run_in_terminal"
+               :toolCallId "cls_c"
+               :input (list :command "rm -rf /")))
+        (copilot-chat--handle-tool-invocation
+         (list :name "run_in_terminal"
+               :toolCallId "cls_c"
+               :input (list :command "rm -rf /")))
+        (expect 'copilot-chat--execute-run-in-terminal
+                :to-have-been-called-with (list :command "echo safe"))))
+
     (it "edits a fetch_web_page URL list back into a vector"
       (let ((copilot-chat--tool-edits nil))
         (spy-on 'copilot-chat--ask-tool :and-return-value 'edit)
-        (spy-on 'read-string :and-return-value "https://a.test https://b.test")
+        ;; The compose helper returns whitespace/newline-separated URLs,
+        ;; which the field reader splits back into a vector.
+        (spy-on 'copilot-chat--edit-in-buffer
+                :and-return-value "https://a.test\nhttps://b.test")
         (spy-on 'copilot-chat--execute-fetch-web-page
                 :and-return-value (copilot-chat--tool-result "success" "ok"))
         (copilot-chat--handle-tool-confirmation

@@ -756,6 +756,12 @@ default from the server (its designated chat default, or an `auto` model)
 rather than leaving the model unset, which some servers answer with an empty
 reply.
 
+The completion list flags premium models (billed against your premium-request
+quota) and policy-locked ones (models whose provider terms you have not yet
+accepted). Selecting a policy-locked model prompts you to accept its terms and
+enables it on the server before switching, so you no longer have to leave Emacs
+to unlock a model in the GitHub settings.
+
 ### Public code references
 
 Copilot can detect when a suggestion closely matches publicly available code.

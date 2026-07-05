@@ -3558,7 +3558,131 @@
                   "GPT-4o (gpt-4o)"))
         (copilot-chat-select-model)
         (expect (length captured-choices) :to-equal 1)
-        (expect (cdar captured-choices) :to-equal "gpt-4o"))))
+        ;; Each choice maps its display string to the model plist now.
+        (expect (plist-get (cdar captured-choices) :id) :to-equal "gpt-4o")))
+
+    (it "flags premium and policy-locked models in the completion list"
+      (let ((copilot-chat-model nil)
+            (captured-choices nil))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc-request
+                :and-return-value
+                (list (list :modelName "Plain" :id "plain"
+                            :scopes (list "chat-panel"))
+                      (list :modelName "Premium" :id "premium"
+                            :scopes (list "chat-panel")
+                            :billing (list :is_premium t :multiplier 1))
+                      (list :modelName "Locked" :id "locked"
+                            :scopes (list "chat-panel")
+                            :policy (list :state "unconfigured" :terms "T&C"))
+                      (list :modelName "Both" :id "both"
+                            :scopes (list "chat-panel")
+                            :billing (list :is_premium t)
+                            :policy (list :state "unconfigured" :terms "T&C"))))
+        (spy-on 'completing-read
+                :and-call-fake
+                (lambda (_prompt choices &rest _args)
+                  (setq captured-choices choices)
+                  "Plain (plain)"))
+        (copilot-chat-select-model)
+        (expect (mapcar #'car captured-choices)
+                :to-equal '("Plain (plain)"
+                            "Premium (premium) [premium]"
+                            "Locked (locked) [locked]"
+                            "Both (both) [premium, locked]"))))
+
+    (it "enables a policy-locked model via setModelPolicy on consent"
+      (let ((copilot-chat-model nil)
+            (captured nil))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc-request
+                :and-return-value
+                (list (list :modelName "Locked" :id "locked"
+                            :scopes (list "chat-panel")
+                            :policy (list :state "unconfigured" :terms "T&C"))))
+        (spy-on 'completing-read :and-return-value "Locked (locked) [locked]")
+        (spy-on 'yes-or-no-p :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn method params &rest args)
+                  (setq captured (list method params args))
+                  (list 1)))
+        (spy-on 'message)
+        (copilot-chat-select-model)
+        ;; The model is not set until the server confirms.
+        (expect copilot-chat-model :to-be nil)
+        (expect (nth 0 captured) :to-equal 'copilot/setModelPolicy)
+        (expect (plist-get (nth 1 captured) :model) :to-equal "locked")
+        (expect (plist-get (nth 1 captured) :status) :to-equal "enabled")
+        ;; Firing the success callback selects the model.
+        (funcall (plist-get (nth 2 captured) :success-fn) "OK")
+        (expect copilot-chat-model :to-equal "locked")))
+
+    (it "records the unlock even if the origin buffer is killed"
+      ;; The request is issued from a persistent buffer, so killing the
+      ;; buffer M-x ran from before the reply arrives must not drop the
+      ;; server-accepted unlock.
+      (let ((copilot-chat-model nil)
+            (captured nil)
+            (origin (generate-new-buffer "copilot-select-origin")))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc-request
+                :and-return-value
+                (list (list :modelName "Locked" :id "locked"
+                            :scopes (list "chat-panel")
+                            :policy (list :state "unconfigured" :terms "T&C"))))
+        (spy-on 'completing-read :and-return-value "Locked (locked) [locked]")
+        (spy-on 'yes-or-no-p :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn _method _params &rest args)
+                  (setq captured args)
+                  (list 1)))
+        (spy-on 'message)
+        (with-current-buffer origin
+          (copilot-chat-select-model))
+        (kill-buffer origin)
+        ;; The wrapped success-fn is bound to a live buffer, so it runs.
+        (funcall (plist-get captured :success-fn) "OK")
+        (expect copilot-chat-model :to-equal "locked")))
+
+    (it "leaves the model untouched when the terms prompt is declined"
+      (let ((copilot-chat-model "previous"))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc-request
+                :and-return-value
+                (list (list :modelName "Locked" :id "locked"
+                            :scopes (list "chat-panel")
+                            :policy (list :state "unconfigured" :terms "T&C"))))
+        (spy-on 'completing-read :and-return-value "Locked (locked) [locked]")
+        (spy-on 'yes-or-no-p :and-return-value nil)
+        (spy-on 'jsonrpc--async-request-1)
+        (spy-on 'message)
+        (copilot-chat-select-model)
+        (expect copilot-chat-model :to-equal "previous")
+        (expect 'jsonrpc--async-request-1 :not :to-have-been-called))))
+
+  (describe "copilot-chat--model-annotation"
+    (it "returns an empty string for an unrestricted model"
+      (expect (copilot-chat--model-annotation '(:id "m")) :to-equal ""))
+
+    (it "does not flag a model whose policy is already enabled"
+      (expect (copilot-chat--model-annotation
+               '(:id "m" :policy (:state "enabled" :terms "T")))
+              :to-equal ""))
+
+    (it "flags a locked model"
+      (expect (copilot-chat--model-annotation
+               '(:id "m" :policy (:state "unconfigured" :terms "T")))
+              :to-equal " [locked]"))
+
+    (it "flags a premium model"
+      (expect (copilot-chat--model-annotation
+               '(:id "m" :billing (:is_premium t)))
+              :to-equal " [premium]"))
+
+    (it "does not flag a non-premium billing entry"
+      (expect (copilot-chat--model-annotation
+               '(:id "m" :billing (:is_premium :json-false)))
+              :to-equal "")))
 
   (describe "copilot-chat--handle-mcp-tools"
     (before-each (setq copilot-chat--mcp-servers nil

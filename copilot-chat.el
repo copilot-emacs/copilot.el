@@ -3789,6 +3789,64 @@ well; the saved history file on disk, if any, is left untouched (see
       (let ((inhibit-read-only t))
         (erase-buffer)))))
 
+(defun copilot-chat--context-usage-string (context-info)
+  "Return a short \" (context N% used)\" note from CONTEXT-INFO, or \"\".
+CONTEXT-INFO is the server's post-compaction context report; its
+`:utilizationPercentage' is used when present."
+  (let ((pct (and context-info
+                  (plist-get context-info :utilizationPercentage))))
+    (if (numberp pct)
+        (format " (context %s%% used)"
+                (string-trim-right (format "%.1f" pct) "\\.0"))
+      "")))
+
+(defun copilot-chat-compact ()
+  "Compact the current chat conversation to reclaim context.
+Ask the language server to summarize the conversation so far (via its
+`conversation/compress' method), freeing token budget while the
+conversation continues.  The visible transcript is left untouched; only
+the server-side context that the next message is built from is
+compressed.  The server also compacts on its own as the context fills;
+this triggers the same summarization on demand.
+
+Signal a `user-error' when there is no active conversation or while a
+response is streaming.  The server declines when there have been no new
+turns since the last compaction, which is reported but not an error."
+  (interactive)
+  (let ((chat-buf (get-buffer copilot-chat--buffer-name)))
+    (unless (and chat-buf (buffer-live-p chat-buf)
+                 (buffer-local-value 'copilot-chat--conversation-id chat-buf))
+      (user-error "Copilot Chat: No active conversation to compact"))
+    (with-current-buffer chat-buf
+      (when (or copilot-chat--streaming-p copilot-chat--current-request)
+        (user-error "Copilot Chat: A response is currently being streamed"))
+      (unless (copilot--connection-alivep)
+        (user-error "Copilot Chat: Not connected to the language server"))
+      (let ((conv-id copilot-chat--conversation-id))
+        (message "Copilot Chat: Compacting conversation...")
+        (copilot--async-request
+         'conversation/compress
+         (list :conversationId conv-id)
+         :success-fn
+         (lambda (result)
+           (if (eq (plist-get result :success) t)
+               (let ((turns (or (plist-get result :turnCount) 0)))
+                 (message "Copilot Chat: Compacted %d turn%s%s"
+                          turns (if (= turns 1) "" "s")
+                          (copilot-chat--context-usage-string
+                           (plist-get result :contextInfo))))
+             (message "Copilot Chat: Nothing to compact (%s)"
+                      (or (copilot-chat--error-text (plist-get result :error))
+                          "no new turns since the last compaction"))))
+         :error-fn
+         (lambda (err)
+           (copilot--log 'error "Chat compaction failed: %S" err)
+           (message "Copilot Chat: Compaction failed: %s"
+                    (or (copilot-chat--error-text err) "unknown error")))
+         :timeout 130
+         :timeout-fn
+         (lambda () (message "Copilot Chat: Compaction timed out")))))))
+
 (defun copilot-chat-select-model ()
   "Interactively select a Copilot Chat model."
   (interactive)

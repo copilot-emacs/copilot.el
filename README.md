@@ -272,6 +272,8 @@ When a turn finishes and you have looked away from the chat, copilot.el raises a
 
 Chat sessions can be persisted across Emacs restarts. Set `copilot-chat-save-history` to `t` (it is off by default, since transcripts land on disk in plain text) and the whole session is saved after each completed turn, one file per workspace under `copilot-chat-history-directory` (`~/.emacs.d/copilot-chat-history/` by default). `M-x copilot-chat-restore` brings the saved conversation back: the transcript reappears in the chat buffer, and the next message continues it with the full context (the saved turns are replayed to the server when the new conversation starts). `copilot-chat-clear-history` deletes the current workspace's saved history; `copilot-chat-reset` clears only the live session and leaves the file alone.
 
+On a long-running conversation, `copilot-chat-compact` asks the server to summarize the discussion so far, reclaiming token budget while the conversation continues (the visible transcript is left as-is). The server already compacts automatically as the context fills; this triggers the same summarization on demand and reports how many turns were compacted and the resulting context usage. It is a no-op when there have been no new turns since the last compaction.
+
 `copilot-chat-rewrite` rewrites the active region according to a free-form instruction (e.g. "make it iterative"). The rewritten code is shown as a diff-style preview against the region and applied only after you confirm, so nothing is changed behind your back; the region is tracked with markers, so edits elsewhere in the buffer while the request is in flight are fine, while edits to the region itself drop the rewrite. The instruction preamble can be customized via `copilot-chat-rewrite-prompt`, the applied code is re-indented unless `copilot-chat-rewrite-indent` is set to `nil`, and a pending rewrite can be cancelled with `copilot-chat-stop`. Like `copilot-chat-insert-commit-message`, it runs outside the chat panel and never disturbs an ongoing conversation.
 
 `copilot-chat-insert-commit-message` generates a commit message from the staged changes and inserts it at point. It is meant to be called from a commit message buffer (e.g. Magit's `COMMIT_EDITMSG` or any `git-commit` buffer), but works from any buffer inside a git repository. It runs outside the chat panel, so it never disturbs an ongoing conversation; the instruction sent along with the diff can be customized via `copilot-chat-commit-message-prompt`.
@@ -554,6 +556,7 @@ releases are not installable) the rest of copilot.el works as usual and
 | `copilot-chat-review-region` | Review the selected code with native Copilot Code Review |
 | `copilot-chat-stop` | Cancel streaming, or reset the conversation if idle |
 | `copilot-chat-reset` | Destroy the current conversation and clear the chat buffer |
+| `copilot-chat-compact` | Compact the conversation on the server to reclaim context |
 | `copilot-chat-restore` | Restore the saved chat for the current workspace |
 | `copilot-chat-clear-history` | Delete the saved chat history for the current workspace |
 | `copilot-chat-insert-commit-message` | Generate a commit message for the staged changes and insert it at point |

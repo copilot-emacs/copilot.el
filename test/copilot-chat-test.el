@@ -1059,6 +1059,96 @@
       (copilot-chat-reset)))
 
   ;;
+  ;; Compaction
+  ;;
+
+  (describe "copilot-chat--context-usage-string"
+    (it "returns an empty string for nil context-info"
+      (expect (copilot-chat--context-usage-string nil) :to-equal ""))
+
+    (it "drops a trailing .0 from a whole-number percentage"
+      (expect (copilot-chat--context-usage-string '(:utilizationPercentage 42.0))
+              :to-equal " (context 42% used)"))
+
+    (it "keeps a fractional percentage"
+      (expect (copilot-chat--context-usage-string '(:utilizationPercentage 42.5))
+              :to-equal " (context 42.5% used)"))
+
+    (it "ignores a non-numeric percentage"
+      (expect (copilot-chat--context-usage-string '(:utilizationPercentage nil))
+              :to-equal "")))
+
+  (describe "copilot-chat-compact"
+    (it "errors when there is no active conversation"
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name))
+      (expect (copilot-chat-compact) :to-throw 'user-error))
+
+    (it "errors while a response is streaming"
+      (let ((buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--conversation-id "conv-1"
+                      copilot-chat--streaming-p t))
+              (expect (copilot-chat-compact) :to-throw 'user-error))
+          (kill-buffer buf))))
+
+    (it "sends conversation/compress and reports the turn count on success"
+      (let ((buf (get-buffer-create copilot-chat--buffer-name))
+            (captured nil))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--conversation-id "conv-1"
+                      copilot-chat--streaming-p nil
+                      copilot-chat--current-request nil))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              ;; `copilot--async-request' is a macro; mock the inner
+              ;; primitive it expands to and capture the wrapped success-fn.
+              (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                      (lambda (_conn method params &rest args)
+                        (setq captured (list method params args))
+                        (list 1)))
+              (spy-on 'message)
+              (copilot-chat-compact)
+              (expect (nth 0 captured) :to-equal 'conversation/compress)
+              (expect (plist-get (nth 1 captured) :conversationId)
+                      :to-equal "conv-1")
+              (funcall (plist-get (nth 2 captured) :success-fn)
+                       '(:success t :turnCount 3
+                                  :contextInfo (:utilizationPercentage 50.0)))
+              (expect 'message :to-have-been-called-with
+                      "Copilot Chat: Compacted %d turn%s%s"
+                      3 "s" " (context 50% used)"))
+          (kill-buffer buf))))
+
+    (it "reports nothing to compact when the server declines"
+      (let ((buf (get-buffer-create copilot-chat--buffer-name))
+            (captured nil))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--conversation-id "conv-1"))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                      (lambda (_conn method params &rest args)
+                        (setq captured (list method params args))
+                        (list 1)))
+              (spy-on 'message)
+              (copilot-chat-compact)
+              (funcall (plist-get (nth 2 captured) :success-fn)
+                       '(:success :json-false
+                                  :error "No new turns since last compression"))
+              (expect 'message :to-have-been-called-with
+                      "Copilot Chat: Nothing to compact (%s)"
+                      "No new turns since last compression"))
+          (kill-buffer buf)))))
+
+  ;;
   ;; Destroy
   ;;
 

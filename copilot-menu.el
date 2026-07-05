@@ -117,6 +117,7 @@ the boolean)."
        ("/" "Slash command" copilot-chat-slash-command)
        ("f" "Attach file as context" copilot-chat-add-file-reference)
        ("k" "Clear pending context" copilot-chat-clear-references)
+       ("C" "Compact conversation" copilot-chat-compact)
        ("m" copilot-chat-select-model
         :description copilot-menu--chat-model-description)]
       ["Agent"

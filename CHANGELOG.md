@@ -14,6 +14,10 @@
 - Show an animated thinking indicator under the `Copilot:` label while a reply is being prepared, so the gap before the first streamed chunk no longer looks dead; it disappears the moment the reply starts (or the turn ends, is cancelled, or errors) and is disabled with `copilot-chat-show-thinking-indicator`.
 - Keep manual scrollback sticky while a reply streams: a chat window is only auto-scrolled to follow new output when it is already at the bottom, so scrolling up to re-read an earlier part of a long response no longer fights the stream.
 
+### Changes
+
+- `copilot-mode` now binds `TAB` (accept the suggestion), `C-TAB` (accept by word), and `M-n`/`M-p` (cycle suggestions) in `copilot-completion-map`, so inline completion works out of the box. The bindings act only while a suggestion overlay is visible; rebind or clear the map to change them.
+
 ## 0.8.0 (2026-07-04)
 
 ### New Features

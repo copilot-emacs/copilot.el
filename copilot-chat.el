@@ -4076,6 +4076,12 @@ Selecting a BYOK model routes future turns to that provider."
 Azure stores its key per model (`saveApiKey' needs a model id and
 `deleteApiKey' is unsupported); the rest use one key per provider.")
 
+(defconst copilot-chat--byok-api-types
+  '("chatCompletions" "responses" "messages")
+  "API shapes a custom BYOK provider endpoint can speak.
+\"chatCompletions\" is the OpenAI-style API, \"messages\" the
+Anthropic-style one, and \"responses\" the OpenAI Responses API.")
+
 (defun copilot-chat--byok-read-provider (&optional prompt providers)
   "Read a built-in BYOK provider name with completion.
 PROMPT defaults to \"Provider: \"; PROVIDERS defaults to
@@ -4083,6 +4089,24 @@ PROMPT defaults to \"Provider: \"; PROVIDERS defaults to
   (completing-read (or prompt "Provider: ")
                    (or providers copilot-chat--byok-providers)
                    nil t))
+
+(defun copilot-chat--byok-custom-p (provider)
+  "Return non-nil when PROVIDER is a custom (user-named) BYOK provider.
+Custom providers are OpenAI-compatible endpoints registered with
+`copilot-chat-byok-add-custom-provider'; their models need a per-model
+deployment URL."
+  (not (member provider copilot-chat--byok-providers)))
+
+(defun copilot-chat--byok-custom-providers ()
+  "Return the names of your configured custom BYOK providers, or nil.
+Best-effort: a server without the method, or any error, yields nil."
+  (condition-case nil
+      (mapcar (lambda (p) (plist-get p :providerName))
+              (plist-get (copilot--request
+                          'copilot/byok/listCustomProviderConfigs nil
+                          :timeout 5)
+                         :providers))
+    (error nil)))
 
 (defun copilot-chat--byok-request (method params success-message)
   "Send a BYOK METHOD request with PARAMS and report the outcome.
@@ -4127,35 +4151,77 @@ per model, so a model id is requested for that provider."
              (and azure (list :modelId model-id)))
      (format "Saved API key for %s" provider))))
 
+(defun copilot-chat-byok-add-custom-provider ()
+  "Register a custom OpenAI-compatible BYOK provider (endpoint and key).
+The provider name must not be one of the built-in providers.  The key is
+read without echoing and handed to the language server, which stores it;
+copilot.el never keeps or displays it.  Register models for this provider
+with `copilot-chat-byok-add-model', which asks for each model's endpoint
+URL."
+  (interactive)
+  (let ((provider (read-string "Custom provider name: ")))
+    (when (string-empty-p (string-trim provider))
+      (user-error "Copilot Chat: Provider name must not be empty"))
+    (unless (copilot-chat--byok-custom-p provider)
+      (user-error
+       "Copilot Chat: %s is a built-in provider; use `copilot-chat-byok-add-key'"
+       provider))
+    (let ((api-type (completing-read "API type: " copilot-chat--byok-api-types
+                                     nil t nil nil "chatCompletions"))
+          (group (read-string (format "Group name (default %s): " provider)
+                              nil nil provider))
+          (key (read-passwd (format "%s API key: " provider))))
+      (when (string-empty-p (string-trim key))
+        (user-error "Copilot Chat: API key must not be empty"))
+      (copilot-chat--byok-request
+       'copilot/byok/saveCustomProviderConfig
+       (list :providerName provider :apiKey key
+             :groupName group :apiType api-type)
+       (format "Saved custom provider %s" provider)))))
+
 (defun copilot-chat-byok-add-model ()
   "Register a Bring Your Own Key model so it appears in model selection.
 Prompts for the provider, model id, display name, and tool-call/vision
-support.  Azure additionally needs a deployment URL.  Save the provider's
-API key first with `copilot-chat-byok-add-key'."
+support.  The provider list includes your custom endpoints alongside the
+built-in providers; Azure and custom-endpoint providers additionally need
+a per-model deployment URL.  Save the provider's API key first
+\(`copilot-chat-byok-add-key' or `copilot-chat-byok-add-custom-provider')."
   (interactive)
-  (let ((provider (copilot-chat--byok-read-provider))
+  (let ((provider (copilot-chat--byok-read-provider
+                   "Provider: "
+                   (append copilot-chat--byok-providers
+                           (copilot-chat--byok-custom-providers))))
         (model-id (read-string "Model id: ")))
     ;; Validate the id before asking the rest, so a blank entry fails fast.
     (when (string-empty-p (string-trim model-id))
       (user-error "Copilot Chat: Model id must not be empty"))
-    (let* ((azure (equal provider "Azure"))
+    (let* ((custom (copilot-chat--byok-custom-p provider))
+           ;; Azure and custom OpenAI-compatible endpoints are addressed by
+           ;; a per-model URL.
+           (needs-url (or (equal provider "Azure") custom))
            (deployment
-            (and azure (read-string "Deployment URL (required for Azure): ")))
+            (and needs-url
+                 (read-string (format "Deployment URL (required for %s): "
+                                      provider))))
            (name (read-string (format "Display name (default %s): " model-id)
                               nil nil model-id))
            (tool-calling (y-or-n-p "Model supports tool calls? "))
            (vision (y-or-n-p "Model supports vision? ")))
-      (when (and azure (string-empty-p (string-trim (or deployment ""))))
-        (user-error "Copilot Chat: A deployment URL is required for Azure"))
+      (when (and needs-url (string-empty-p (string-trim (or deployment ""))))
+        (user-error "Copilot Chat: A deployment URL is required for %s"
+                    provider))
       (copilot-chat--byok-request
        'copilot/byok/saveModel
        (append
         (list :providerName provider :modelId model-id
-              :isRegistered t :isCustomModel :json-false
+              :isRegistered t
+              ;; A model typed against a custom endpoint is user-defined
+              ;; rather than a catalog model the provider advertises.
+              :isCustomModel (if custom t :json-false)
               :modelCapabilities (list :name name
                                        :toolCalling (if tool-calling t :json-false)
                                        :vision (if vision t :json-false)))
-        (and azure (list :deploymentUrl deployment)))
+        (and needs-url (list :deploymentUrl deployment)))
        (format "Registered model %s for %s" model-id provider)))))
 
 (defun copilot-chat--byok-pick-model (prompt)
@@ -4185,18 +4251,45 @@ registered."
 
 (defun copilot-chat-byok-remove-key ()
   "Delete the stored Bring Your Own Key API key for a provider.
-Also removes that provider's model configurations.  Azure is omitted:
-its keys are stored per model, so remove Azure entries with
-`copilot-chat-byok-remove-model' instead."
+Also removes that provider's model configurations.  Custom providers are
+offered too; Azure is omitted, since its keys are stored per model, so
+remove Azure entries with `copilot-chat-byok-remove-model' instead."
   (interactive)
   (let ((provider (copilot-chat--byok-read-provider
-                   "Provider: " (remove "Azure" copilot-chat--byok-providers))))
+                   "Provider: "
+                   (append (remove "Azure" copilot-chat--byok-providers)
+                           (copilot-chat--byok-custom-providers)))))
     (when (yes-or-no-p
            (format "Delete the stored API key and models for %s? " provider))
       (copilot-chat--byok-request
        'copilot/byok/deleteApiKey
        (list :providerName provider)
        (format "Deleted API key for %s" provider)))))
+
+(defun copilot-chat-byok-list-custom-providers ()
+  "List your configured custom (OpenAI-compatible) BYOK providers."
+  (interactive)
+  (condition-case err
+      (let ((providers
+             (plist-get (copilot--request
+                         'copilot/byok/listCustomProviderConfigs nil
+                         :timeout 5)
+                        :providers)))
+        (if (null providers)
+            (message "Copilot Chat: No custom BYOK providers")
+          (message "Copilot Chat: Custom BYOK providers: %s"
+                   (mapconcat (lambda (p)
+                                (format "%s (%s)"
+                                        (plist-get p :providerName)
+                                        (or (plist-get p :apiType) "chatCompletions")))
+                              providers ", "))))
+    (error
+     ;; A synchronous `copilot--request' signals `jsonrpc-error', whose
+     ;; data is an alist (not the `:message' plist `copilot-chat--error-text'
+     ;; expects), so pull the server message out of it directly.
+     (message "Copilot Chat: Could not list custom providers: %s"
+              (or (alist-get 'jsonrpc-error-message (cddr err))
+                  (error-message-string err))))))
 
 (defun copilot-chat-byok-list ()
   "List your registered Bring Your Own Key models."

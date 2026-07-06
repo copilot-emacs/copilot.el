@@ -524,8 +524,10 @@ releases are not installable) the rest of copilot.el works as usual and
 | `copilot-chat-select-model` | Choose which model to use for chat |
 | `copilot-chat-select-mode` | Choose the chat mode (Ask, Agent, InlineAgent, ...) |
 | `copilot-chat-byok-add-key` | Save your own API key for a model provider (BYOK) |
+| `copilot-chat-byok-add-custom-provider` | Register a custom OpenAI-compatible BYOK endpoint |
 | `copilot-chat-byok-add-model` | Register a BYOK model to use in chat |
 | `copilot-chat-byok-list` | List your registered BYOK models |
+| `copilot-chat-byok-list-custom-providers` | List your configured custom BYOK providers |
 | `copilot-chat-byok-remove-model` | Remove a registered BYOK model |
 | `copilot-chat-byok-remove-key` | Delete a provider's stored BYOK API key |
 | **Completion** | |
@@ -786,6 +788,15 @@ OpenRouter, Azure) in chat instead of Copilot's models:
 `copilot-chat-byok-list` shows what you have registered, and
 `copilot-chat-byok-remove-model` / `copilot-chat-byok-remove-key` remove a model
 or a provider's key.
+
+Beyond the built-in providers you can point BYOK at any OpenAI-compatible
+endpoint. `copilot-chat-byok-add-custom-provider` registers one under a name of
+your choice (that is not a built-in provider), along with its API type
+(`chatCompletions`, `responses`, or `messages`) and key.
+`copilot-chat-byok-add-model` then offers your custom providers alongside the
+built-in ones; a custom provider's models each need their endpoint's deployment
+URL. `copilot-chat-byok-list-custom-providers` lists the custom providers you
+have configured.
 
 Using a BYOK model requires a BYOK-eligible Copilot account; without one the
 server rejects the turn with a "BYOK is disabled for this account" error.

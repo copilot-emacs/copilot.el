@@ -94,6 +94,38 @@
         (funcall captured-error-fn '(:code -1 :message "test"))
         (expect custom-called :to-be-truthy))))
 
+  (describe "copilot-login"
+    (defun copilot-test--login-with-confirm-error (confirm-message)
+      "Drive `copilot-login' so signInConfirm fails with CONFIRM-MESSAGE.
+Return the resulting `user-error' message string."
+      (spy-on 'copilot--connection-alivep :and-return-value t)
+      (spy-on 'read-from-minibuffer :and-return-value "")
+      (spy-on 'browse-url)
+      (spy-on 'gui-set-selection)
+      (spy-on 'copilot--log)
+      (spy-on 'jsonrpc-request :and-call-fake
+              (lambda (_conn method &rest _)
+                (pcase method
+                  ('signInInitiate
+                   (list :status "NotSignedIn" :userCode "ABCD-1234"
+                         :verificationUri "https://github.com/login/device"))
+                  ('signInConfirm
+                   (signal 'jsonrpc-error
+                           (list "err" '(jsonrpc-error-code . -32000)
+                                 (cons 'jsonrpc-error-message confirm-message))))
+                  (_ nil))))
+      (condition-case err
+          (progn (copilot-login) nil)
+        (user-error (error-message-string err))))
+
+    (it "gives a proxy/TLS hint when authentication times out"
+      (expect (copilot-test--login-with-confirm-error "Timed out")
+              :to-match "proxy or a TLS-inspecting"))
+
+    (it "reports other authentication errors verbatim"
+      (expect (copilot-test--login-with-confirm-error "Device code expired")
+              :to-match "Authentication failure: Device code expired")))
+
   ;;
   ;; Utility functions
   ;;

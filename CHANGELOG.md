@@ -2,6 +2,10 @@
 
 ## main (unreleased)
 
+### Changes
+
+- `copilot-login` waits longer for the language server to authenticate with GitHub, and when it times out it points you at proxy/TLS setup (`copilot-network-proxy`, `NODE_EXTRA_CA_CERTS`) instead of only reporting `Authentication failure: Timed out`, which reads like a credential problem when it is usually a TLS-inspecting proxy or firewall.
+
 ## 0.9.0 (2026-07-06)
 
 ### New Features

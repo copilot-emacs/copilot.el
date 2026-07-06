@@ -468,11 +468,30 @@ Tracked separately from `copilot-chat--resolved-model' so that a nil
 result (no usable default) is cached too and not re-queried on every
 message.")
 
+(defvar copilot-chat--model-provider nil
+  "Provider name of the selected BYOK model, or nil for a Copilot model.
+Set alongside `copilot-chat-model' by `copilot-chat-select-model' when a
+Bring Your Own Key model is chosen; sent as `modelInfo.providerName' so
+the server routes the turn to that provider.")
+
 (defun copilot-chat--chat-models ()
   "Return the models the server scopes for the chat panel."
   (seq-filter (lambda (m)
                 (seq-contains-p (plist-get m :scopes) "chat-panel"))
               (copilot--request 'copilot/models nil :timeout 5)))
+
+(defun copilot-chat--byok-models ()
+  "Return the user's registered Bring Your Own Key models, or nil.
+These come from `copilot/byok/listModels' and never appear in
+`copilot/models', so model selection queries them separately.
+Best-effort: a server without the method, or any error, yields nil so
+model selection still works."
+  (condition-case nil
+      (seq-filter (lambda (m) (eq (plist-get m :isRegistered) t))
+                  (plist-get (copilot--request 'copilot/byok/listModels nil
+                                               :timeout 5)
+                             :models))
+    (error nil)))
 
 (defun copilot-chat--resolve-default-model ()
   "Query the server for a default chat model id, or nil.
@@ -665,10 +684,19 @@ never blocks starting a conversation."
 (defun copilot-chat--model-param ()
   "Return request params identifying the chat model to use.
 Send the modern `modelInfo' object alongside the deprecated `model'
-field so both current and older language servers resolve a model.
-Return nil when no model can be resolved, letting the server pick."
+field so both current and older language servers resolve a model.  For a
+Bring Your Own Key model, attach `modelInfo.providerName' so the server
+routes the turn to that provider.  Return nil when no model can be
+resolved, letting the server pick."
   (when-let* ((model (copilot-chat--model)))
-    (list :modelInfo (list :id model)
+    (list :modelInfo (append
+                      (list :id model)
+                      ;; Only tag the provider for an explicit BYOK
+                      ;; selection: a server-resolved default is always a
+                      ;; Copilot model, so a stale provider must not leak
+                      ;; onto it.
+                      (when (and copilot-chat-model copilot-chat--model-provider)
+                        (list :providerName copilot-chat--model-provider)))
           :model model)))
 
 ;;
@@ -3944,11 +3972,15 @@ policy-locked one."
                                      "locked")))))
     (if flags (format " [%s]" (string-join flags ", ")) "")))
 
-(defun copilot-chat--set-model (model-id)
+(defun copilot-chat--set-model (model-id &optional provider)
   "Select MODEL-ID as the chat model and forget any cached default.
-Clearing the cache lets a later nil re-resolve the default from the
-server, mirroring the rest of the model-selection commands."
+PROVIDER is the BYOK provider name when MODEL-ID is a Bring Your Own Key
+model, or nil for a Copilot model; it is tracked so the turn request can
+route to that provider.  Clearing the cache lets a later nil re-resolve
+the default from the server, mirroring the rest of the model-selection
+commands."
   (setq copilot-chat-model model-id
+        copilot-chat--model-provider provider
         copilot-chat--model-resolved nil))
 
 (defun copilot-chat--accept-model-policy (model)
@@ -3991,27 +4023,48 @@ declined prompt leaves the current model untouched."
          (lambda ()
            (message "Copilot Chat: Enabling %s timed out" model-id)))))))
 
+(defun copilot-chat--byok-choice (model)
+  "Return a (display . plist) completion choice for BYOK MODEL.
+The plist carries `:id' and `:byok-provider' so the caller can route the
+selection through `copilot/byok'."
+  (let* ((id (plist-get model :modelId))
+         (provider (plist-get model :providerName))
+         (name (or (plist-get (plist-get model :modelCapabilities) :name) id)))
+    (cons (format "%s (%s) [BYOK: %s]" name id provider)
+          (list :id id :byok-provider provider))))
+
 (defun copilot-chat-select-model ()
   "Interactively select a Copilot Chat model.
-Premium and policy-locked models are flagged in the completion list.
-Selecting a policy-locked model prompts to accept its terms and enables
-it via the server's `copilot/setModelPolicy' before switching; the model
-is selected only once the server confirms."
+Premium and policy-locked models are flagged in the completion list, and
+your registered Bring Your Own Key models are listed too (tagged
+`[BYOK: PROVIDER]').  Selecting a policy-locked model prompts to accept
+its terms and enables it via the server's `copilot/setModelPolicy'
+before switching; the model is selected only once the server confirms.
+Selecting a BYOK model routes future turns to that provider."
   (interactive)
-  (let* ((choices (mapcar (lambda (m)
-                            (cons (format "%s (%s)%s"
-                                          (plist-get m :modelName)
-                                          (plist-get m :id)
-                                          (copilot-chat--model-annotation m))
-                                  m))
-                          (copilot-chat--chat-models)))
+  (let* ((choices (append
+                   (mapcar (lambda (m)
+                             (cons (format "%s (%s)%s"
+                                           (plist-get m :modelName)
+                                           (plist-get m :id)
+                                           (copilot-chat--model-annotation m))
+                                   m))
+                           (copilot-chat--chat-models))
+                   (mapcar #'copilot-chat--byok-choice
+                           (copilot-chat--byok-models))))
          (choice (completing-read "Chat model: " choices nil t))
          (model (cdr (assoc choice choices)))
-         (model-id (plist-get model :id)))
-    (if (copilot-chat--model-locked-p model)
-        (copilot-chat--accept-model-policy model)
+         (model-id (plist-get model :id))
+         (provider (plist-get model :byok-provider)))
+    (cond
+     (provider
+      (copilot-chat--set-model model-id provider)
+      (message "Copilot Chat: Model set to %s (BYOK: %s)" model-id provider))
+     ((copilot-chat--model-locked-p model)
+      (copilot-chat--accept-model-policy model))
+     (t
       (copilot-chat--set-model model-id)
-      (message "Copilot Chat: Model set to %s" model-id))))
+      (message "Copilot Chat: Model set to %s" model-id)))))
 
 ;;;###autoload
 (defun copilot-chat-apply-preset (name)
@@ -4049,6 +4102,10 @@ keys and an example."
          "Copilot Chat: Preset %S has a non-list `:auto-approve-tools'" name))
       (when (plist-member preset :model)
         (setq copilot-chat-model (plist-get preset :model)
+              ;; Presets carry Copilot model ids, so clear any BYOK
+              ;; provider left over from a previous selection; otherwise
+              ;; its `providerName' would ride along with the new id.
+              copilot-chat--model-provider nil
               ;; Forget any cached default so clearing the model later
               ;; re-resolves from the server, mirroring
               ;; `copilot-chat-select-model'.

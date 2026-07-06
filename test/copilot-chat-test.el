@@ -1334,6 +1334,51 @@
                       :to-equal "gpt-4o"))
           (kill-buffer buf))))
 
+    (it "attaches the BYOK provider name to modelInfo"
+      (let ((captured-params nil)
+            (copilot-chat-model "claude-opus-4-8")
+            (copilot-chat--model-provider "Anthropic")
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--create "hello" #'ignore)
+              (expect (plist-get (plist-get captured-params :modelInfo)
+                                 :providerName)
+                      :to-equal "Anthropic")
+              (expect (plist-get (plist-get captured-params :modelInfo) :id)
+                      :to-equal "claude-opus-4-8"))
+          (kill-buffer buf))))
+
+    (it "does not attach a stale provider to a resolved default"
+      (let ((captured-params nil)
+            (copilot-chat-model nil)
+            (copilot-chat--model-provider "Anthropic")
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode))
+              (spy-on 'copilot-chat--default-model :and-return-value "auto")
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--create "hello" #'ignore)
+              (expect (plist-member (plist-get captured-params :modelInfo)
+                                    :providerName)
+                      :to-be nil))
+          (kill-buffer buf))))
+
     (it "sends a server-resolved default when copilot-chat-model is nil"
       (let ((captured-params nil)
             (copilot-chat-model nil)
@@ -3541,6 +3586,33 @@
         (copilot-chat-select-model)
         (expect copilot-chat-model :to-equal "claude-3.5-sonnet")))
 
+    (it "selects a BYOK model and records its provider"
+      (let ((copilot-chat-model nil)
+            (copilot-chat--model-provider nil))
+        (spy-on 'copilot-chat--chat-models :and-return-value
+                (list (list :modelName "GPT-4o" :id "gpt-4o"
+                            :scopes (list "chat-panel"))))
+        (spy-on 'copilot-chat--byok-models :and-return-value
+                (list (list :modelId "claude-opus-4-8" :providerName "Anthropic"
+                            :isRegistered t)))
+        (spy-on 'completing-read
+                :and-return-value "claude-opus-4-8 (claude-opus-4-8) [BYOK: Anthropic]")
+        (copilot-chat-select-model)
+        (expect copilot-chat-model :to-equal "claude-opus-4-8")
+        (expect copilot-chat--model-provider :to-equal "Anthropic")))
+
+    (it "clears the provider when switching back to a Copilot model"
+      (let ((copilot-chat-model "claude-opus-4-8")
+            (copilot-chat--model-provider "Anthropic"))
+        (spy-on 'copilot-chat--chat-models :and-return-value
+                (list (list :modelName "GPT-4o" :id "gpt-4o"
+                            :scopes (list "chat-panel"))))
+        (spy-on 'copilot-chat--byok-models :and-return-value nil)
+        (spy-on 'completing-read :and-return-value "GPT-4o (gpt-4o)")
+        (copilot-chat-select-model)
+        (expect copilot-chat-model :to-equal "gpt-4o")
+        (expect copilot-chat--model-provider :to-be nil)))
+
     (it "excludes completion-only models"
       (let ((copilot-chat-model nil)
             (captured-choices nil))
@@ -3659,6 +3731,41 @@
         (copilot-chat-select-model)
         (expect copilot-chat-model :to-equal "previous")
         (expect 'jsonrpc--async-request-1 :not :to-have-been-called))))
+
+  (describe "copilot-chat--byok-models"
+    (it "returns only registered models from copilot/byok/listModels"
+      (spy-on 'copilot--connection-alivep :and-return-value t)
+      (spy-on 'jsonrpc-request
+              :and-return-value
+              (list :models
+                    (list (list :modelId "m1" :providerName "Anthropic"
+                                :isRegistered t)
+                          (list :modelId "m2" :providerName "OpenAI"
+                                :isRegistered :json-false))))
+      (let ((models (copilot-chat--byok-models)))
+        (expect (length models) :to-equal 1)
+        (expect (plist-get (car models) :modelId) :to-equal "m1")))
+
+    (it "returns nil when the request errors (e.g. old server)"
+      (spy-on 'copilot--connection-alivep :and-return-value t)
+      (spy-on 'jsonrpc-request :and-throw-error 'error)
+      (expect (copilot-chat--byok-models) :to-be nil)))
+
+  (describe "copilot-chat--byok-choice"
+    (it "formats the display and carries id and provider"
+      (let ((choice (copilot-chat--byok-choice
+                     '(:modelId "claude-opus-4-8" :providerName "Anthropic"))))
+        (expect (car choice)
+                :to-equal "claude-opus-4-8 (claude-opus-4-8) [BYOK: Anthropic]")
+        (expect (plist-get (cdr choice) :id) :to-equal "claude-opus-4-8")
+        (expect (plist-get (cdr choice) :byok-provider) :to-equal "Anthropic")))
+
+    (it "prefers the capability name for the display label"
+      (let ((choice (copilot-chat--byok-choice
+                     '(:modelId "opus" :providerName "Anthropic"
+                       :modelCapabilities (:name "Claude Opus")))))
+        (expect (car choice)
+                :to-equal "Claude Opus (opus) [BYOK: Anthropic]"))))
 
   (describe "copilot-chat--model-annotation"
     (it "returns an empty string for an unrestricted model"
@@ -4877,6 +4984,13 @@
             (copilot-chat--model-resolved t))
         (copilot-chat-apply-preset "ask-off")
         (expect copilot-chat--model-resolved :to-be t)))
+
+    (it "clears a stale BYOK provider when it sets the model"
+      (let ((copilot-chat-model "byok-model")
+            (copilot-chat--model-provider "Anthropic"))
+        (copilot-chat-apply-preset "fast")
+        (expect copilot-chat-model :to-equal "gpt-4o")
+        (expect copilot-chat--model-provider :to-be nil)))
 
     (it "rejects a non-list :auto-approve-tools without mutating anything"
       (let ((copilot-chat-presets '(("bad" . (:model "m"

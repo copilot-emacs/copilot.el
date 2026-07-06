@@ -762,6 +762,12 @@ accepted). Selecting a policy-locked model prompts you to accept its terms and
 enables it on the server before switching, so you no longer have to leave Emacs
 to unlock a model in the GitHub settings.
 
+Any Bring Your Own Key (BYOK) models you have registered are listed too, tagged
+`[BYOK: PROVIDER]`. Selecting one routes your chat turns to that provider using
+your own API key (held by the language server), rather than through Copilot's
+models. Using a BYOK model requires a BYOK-eligible Copilot account; without one
+the server rejects the turn with a "BYOK is disabled for this account" error.
+
 ### Public code references
 
 Copilot can detect when a suggestion closely matches publicly available code.

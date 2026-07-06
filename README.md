@@ -523,6 +523,11 @@ releases are not installable) the rest of copilot.el works as usual and
 | `copilot-select-completion-model` | Choose which model to use for completions |
 | `copilot-chat-select-model` | Choose which model to use for chat |
 | `copilot-chat-select-mode` | Choose the chat mode (Ask, Agent, InlineAgent, ...) |
+| `copilot-chat-byok-add-key` | Save your own API key for a model provider (BYOK) |
+| `copilot-chat-byok-add-model` | Register a BYOK model to use in chat |
+| `copilot-chat-byok-list` | List your registered BYOK models |
+| `copilot-chat-byok-remove-model` | Remove a registered BYOK model |
+| `copilot-chat-byok-remove-key` | Delete a provider's stored BYOK API key |
 | **Completion** | |
 | `copilot-mode` | Toggle automatic completions in the current buffer |
 | `copilot-complete` | Trigger a completion at point |
@@ -762,11 +767,36 @@ accepted). Selecting a policy-locked model prompts you to accept its terms and
 enables it on the server before switching, so you no longer have to leave Emacs
 to unlock a model in the GitHub settings.
 
-Any Bring Your Own Key (BYOK) models you have registered are listed too, tagged
-`[BYOK: PROVIDER]`. Selecting one routes your chat turns to that provider using
-your own API key (held by the language server), rather than through Copilot's
-models. Using a BYOK model requires a BYOK-eligible Copilot account; without one
-the server rejects the turn with a "BYOK is disabled for this account" error.
+#### Bring Your Own Key (BYOK)
+
+You can use your own model-provider API keys (Anthropic, OpenAI, Gemini, Groq,
+OpenRouter, Azure) in chat instead of Copilot's models:
+
+1. `copilot-chat-byok-add-key` saves a provider's API key. The key is read
+   without echoing and handed to the language server, which stores it;
+   copilot.el never keeps or displays it. (Azure keys are stored per model, so
+   it asks for a model id.)
+2. `copilot-chat-byok-add-model` registers a model for that provider (id,
+   display name, and whether it supports tool calls and vision; Azure also needs
+   a deployment URL).
+3. The model then shows up in `copilot-chat-select-model`, tagged
+   `[BYOK: PROVIDER]`. Selecting it routes your chat turns to that provider using
+   your key.
+
+`copilot-chat-byok-list` shows what you have registered, and
+`copilot-chat-byok-remove-model` / `copilot-chat-byok-remove-key` remove a model
+or a provider's key.
+
+Using a BYOK model requires a BYOK-eligible Copilot account; without one the
+server rejects the turn with a "BYOK is disabled for this account" error.
+Registering keys and models works regardless.
+
+> [!NOTE]
+>
+> If you turn on protocol logging (set `copilot-log-max` to a positive value),
+> the JSON-RPC request bodies, including a BYOK key you are saving, are written
+> to the `*copilot events*` buffer in plaintext. Keep logging off (the default)
+> when saving keys.
 
 ### Public code references
 

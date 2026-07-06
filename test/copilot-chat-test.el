@@ -3767,6 +3767,160 @@
         (expect (car choice)
                 :to-equal "Claude Opus (opus) [BYOK: Anthropic]"))))
 
+  (describe "BYOK management"
+    (it "add-key sends saveApiKey with the provider and key"
+      (let ((captured nil))
+        (spy-on 'copilot-chat--byok-read-provider :and-return-value "Anthropic")
+        (spy-on 'read-passwd :and-return-value "sk-test")
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn method params &rest _args)
+                  (setq captured (list method params)) (list 1)))
+        (spy-on 'message)
+        (copilot-chat-byok-add-key)
+        (expect (nth 0 captured) :to-equal 'copilot/byok/saveApiKey)
+        (expect (plist-get (nth 1 captured) :providerName) :to-equal "Anthropic")
+        (expect (plist-get (nth 1 captured) :apiKey) :to-equal "sk-test")
+        (expect (plist-member (nth 1 captured) :modelId) :to-be nil)))
+
+    (it "add-key includes the model id for Azure"
+      (let ((captured nil))
+        (spy-on 'copilot-chat--byok-read-provider :and-return-value "Azure")
+        (spy-on 'read-string :and-return-value "gpt-4o")
+        (spy-on 'read-passwd :and-return-value "sk")
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn _method params &rest _args)
+                  (setq captured params) (list 1)))
+        (spy-on 'message)
+        (copilot-chat-byok-add-key)
+        (expect (plist-get captured :modelId) :to-equal "gpt-4o")))
+
+    (it "add-key errors on an empty key without sending"
+      (spy-on 'copilot-chat--byok-read-provider :and-return-value "OpenAI")
+      (spy-on 'read-passwd :and-return-value "   ")
+      (spy-on 'jsonrpc--async-request-1)
+      (expect (copilot-chat-byok-add-key) :to-throw 'user-error)
+      (expect 'jsonrpc--async-request-1 :not :to-have-been-called))
+
+    (it "add-model sends saveModel with capabilities"
+      (let ((captured nil))
+        (spy-on 'copilot-chat--byok-read-provider :and-return-value "Anthropic")
+        (spy-on 'read-string :and-call-fake
+                (lambda (prompt &rest _)
+                  (if (string-prefix-p "Model id" prompt)
+                      "claude-opus-4-8" "Claude Opus")))
+        (spy-on 'y-or-n-p :and-return-value t)
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn method params &rest _args)
+                  (setq captured (list method params)) (list 1)))
+        (spy-on 'message)
+        (copilot-chat-byok-add-model)
+        (expect (nth 0 captured) :to-equal 'copilot/byok/saveModel)
+        (let ((p (nth 1 captured)))
+          (expect (plist-get p :providerName) :to-equal "Anthropic")
+          (expect (plist-get p :modelId) :to-equal "claude-opus-4-8")
+          (expect (plist-get p :isRegistered) :to-be t)
+          (expect (plist-get p :isCustomModel) :to-be :json-false)
+          (expect (plist-get (plist-get p :modelCapabilities) :name)
+                  :to-equal "Claude Opus")
+          (expect (plist-get (plist-get p :modelCapabilities) :toolCalling)
+                  :to-be t)
+          (expect (plist-member p :deploymentUrl) :to-be nil))))
+
+    (it "remove-model sends deleteModel for the picked model"
+      (let ((captured nil))
+        (spy-on 'copilot-chat--byok-models :and-return-value
+                (list (list :modelId "m1" :providerName "Anthropic"
+                            :isRegistered t)))
+        (spy-on 'completing-read :and-return-value "m1 (Anthropic)")
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn method params &rest _args)
+                  (setq captured (list method params)) (list 1)))
+        (spy-on 'message)
+        (copilot-chat-byok-remove-model)
+        (expect (nth 0 captured) :to-equal 'copilot/byok/deleteModel)
+        (expect (plist-get (nth 1 captured) :modelId) :to-equal "m1")
+        (expect (plist-get (nth 1 captured) :providerName) :to-equal "Anthropic")))
+
+    (it "remove-model errors when there are no BYOK models"
+      (spy-on 'copilot-chat--byok-models :and-return-value nil)
+      (expect (copilot-chat-byok-remove-model) :to-throw 'user-error))
+
+    (it "add-model errors on an empty model id before prompting further"
+      (spy-on 'copilot-chat--byok-read-provider :and-return-value "Anthropic")
+      (spy-on 'read-string :and-return-value "  ")
+      (spy-on 'y-or-n-p)
+      (spy-on 'jsonrpc--async-request-1)
+      (expect (copilot-chat-byok-add-model) :to-throw 'user-error)
+      (expect 'y-or-n-p :not :to-have-been-called)
+      (expect 'jsonrpc--async-request-1 :not :to-have-been-called))
+
+    (it "remove-key omits Azure from the provider choices"
+      (let ((captured-providers nil))
+        (spy-on 'completing-read
+                :and-call-fake
+                (lambda (_prompt providers &rest _args)
+                  (setq captured-providers providers)
+                  "OpenAI"))
+        (spy-on 'yes-or-no-p :and-return-value nil)
+        (spy-on 'message)
+        (copilot-chat-byok-remove-key)
+        (expect captured-providers :not :to-contain "Azure")
+        (expect captured-providers :to-contain "OpenAI")))
+
+    (it "remove-key sends deleteApiKey after confirmation"
+      (let ((captured nil))
+        (spy-on 'copilot-chat--byok-read-provider :and-return-value "OpenAI")
+        (spy-on 'yes-or-no-p :and-return-value t)
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn method params &rest _args)
+                  (setq captured (list method params)) (list 1)))
+        (spy-on 'message)
+        (copilot-chat-byok-remove-key)
+        (expect (nth 0 captured) :to-equal 'copilot/byok/deleteApiKey)
+        (expect (plist-get (nth 1 captured) :providerName) :to-equal "OpenAI")))
+
+    (it "remove-key sends nothing when declined"
+      (spy-on 'copilot-chat--byok-read-provider :and-return-value "OpenAI")
+      (spy-on 'yes-or-no-p :and-return-value nil)
+      (spy-on 'jsonrpc--async-request-1)
+      (spy-on 'message)
+      (copilot-chat-byok-remove-key)
+      (expect 'jsonrpc--async-request-1 :not :to-have-been-called))
+
+    (it "list reports the registered models"
+      (spy-on 'copilot-chat--byok-models :and-return-value
+              (list (list :modelId "m1" :providerName "Anthropic")))
+      (spy-on 'message)
+      (copilot-chat-byok-list)
+      (expect 'message :to-have-been-called-with
+              "Copilot Chat: BYOK models: %s" "m1 (Anthropic)"))
+
+    (it "list reports when there are none"
+      (spy-on 'copilot-chat--byok-models :and-return-value nil)
+      (spy-on 'message)
+      (copilot-chat-byok-list)
+      (expect 'message :to-have-been-called-with
+              "Copilot Chat: No registered BYOK models"))
+
+    (it "byok-request prefers the server's message on success"
+      (let ((captured nil))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn _method _params &rest args)
+                  (setq captured args) (list 1)))
+        (spy-on 'message)
+        (copilot-chat--byok-request 'copilot/byok/saveApiKey
+                                    '(:providerName "X") "fallback")
+        (funcall (plist-get captured :success-fn)
+                 '(:success t :message "server says ok"))
+        (expect 'message :to-have-been-called-with
+                "Copilot Chat: %s" "server says ok"))))
+
   (describe "copilot-chat--model-annotation"
     (it "returns an empty string for an unrestricted model"
       (expect (copilot-chat--model-annotation '(:id "m")) :to-equal ""))

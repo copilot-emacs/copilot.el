@@ -4066,6 +4066,151 @@ Selecting a BYOK model routes future turns to that provider."
       (copilot-chat--set-model model-id)
       (message "Copilot Chat: Model set to %s" model-id)))))
 
+;;
+;; Bring Your Own Key (BYOK) management
+;;
+
+(defconst copilot-chat--byok-providers
+  '("Anthropic" "OpenAI" "Gemini" "Groq" "OpenRouter" "Azure")
+  "Built-in provider names the language server accepts for BYOK.
+Azure stores its key per model (`saveApiKey' needs a model id and
+`deleteApiKey' is unsupported); the rest use one key per provider.")
+
+(defun copilot-chat--byok-read-provider (&optional prompt providers)
+  "Read a built-in BYOK provider name with completion.
+PROMPT defaults to \"Provider: \"; PROVIDERS defaults to
+`copilot-chat--byok-providers'."
+  (completing-read (or prompt "Provider: ")
+                   (or providers copilot-chat--byok-providers)
+                   nil t))
+
+(defun copilot-chat--byok-request (method params success-message)
+  "Send a BYOK METHOD request with PARAMS and report the outcome.
+Show SUCCESS-MESSAGE (or the server's own message) on success and the
+server error otherwise.  Issue the request from an always-live buffer so
+`copilot--async-request' does not drop the reply if the buffer the
+command ran from is gone by the time it arrives."
+  (with-current-buffer (get-buffer-create " *copilot-chat-one-shot*")
+    (copilot--async-request
+     method params
+     :success-fn
+     (lambda (result)
+       (message "Copilot Chat: %s"
+                (or (and (listp result) (plist-get result :message))
+                    success-message)))
+     :error-fn
+     (lambda (err)
+       (message "Copilot Chat: %s"
+                (or (copilot-chat--error-text err) "BYOK request failed")))
+     :timeout 15
+     :timeout-fn
+     (lambda () (message "Copilot Chat: BYOK request timed out")))))
+
+(defun copilot-chat-byok-add-key ()
+  "Save a Bring Your Own Key API key for a provider.
+The key is read without echoing and handed to the language server, which
+stores it; copilot.el never keeps or displays it.  Azure keys are stored
+per model, so a model id is requested for that provider."
+  (interactive)
+  (let* ((provider (copilot-chat--byok-read-provider))
+         (azure (equal provider "Azure"))
+         (model-id (and azure
+                        (read-string "Model id (required for Azure): ")))
+         (key (read-passwd (format "%s API key: " provider))))
+    (when (string-empty-p (string-trim key))
+      (user-error "Copilot Chat: API key must not be empty"))
+    (when (and azure (string-empty-p (string-trim (or model-id ""))))
+      (user-error "Copilot Chat: A model id is required for Azure"))
+    (copilot-chat--byok-request
+     'copilot/byok/saveApiKey
+     (append (list :providerName provider :apiKey key)
+             (and azure (list :modelId model-id)))
+     (format "Saved API key for %s" provider))))
+
+(defun copilot-chat-byok-add-model ()
+  "Register a Bring Your Own Key model so it appears in model selection.
+Prompts for the provider, model id, display name, and tool-call/vision
+support.  Azure additionally needs a deployment URL.  Save the provider's
+API key first with `copilot-chat-byok-add-key'."
+  (interactive)
+  (let ((provider (copilot-chat--byok-read-provider))
+        (model-id (read-string "Model id: ")))
+    ;; Validate the id before asking the rest, so a blank entry fails fast.
+    (when (string-empty-p (string-trim model-id))
+      (user-error "Copilot Chat: Model id must not be empty"))
+    (let* ((azure (equal provider "Azure"))
+           (deployment
+            (and azure (read-string "Deployment URL (required for Azure): ")))
+           (name (read-string (format "Display name (default %s): " model-id)
+                              nil nil model-id))
+           (tool-calling (y-or-n-p "Model supports tool calls? "))
+           (vision (y-or-n-p "Model supports vision? ")))
+      (when (and azure (string-empty-p (string-trim (or deployment ""))))
+        (user-error "Copilot Chat: A deployment URL is required for Azure"))
+      (copilot-chat--byok-request
+       'copilot/byok/saveModel
+       (append
+        (list :providerName provider :modelId model-id
+              :isRegistered t :isCustomModel :json-false
+              :modelCapabilities (list :name name
+                                       :toolCalling (if tool-calling t :json-false)
+                                       :vision (if vision t :json-false)))
+        (and azure (list :deploymentUrl deployment)))
+       (format "Registered model %s for %s" model-id provider)))))
+
+(defun copilot-chat--byok-pick-model (prompt)
+  "Read a registered BYOK model with completion using PROMPT.
+Return the model plist, or signal a `user-error' when none are
+registered."
+  (let* ((models (copilot-chat--byok-models))
+         (choices (mapcar (lambda (m)
+                            (cons (format "%s (%s)"
+                                          (plist-get m :modelId)
+                                          (plist-get m :providerName))
+                                  m))
+                          models)))
+    (unless choices
+      (user-error "Copilot Chat: No registered BYOK models"))
+    (cdr (assoc (completing-read prompt choices nil t) choices))))
+
+(defun copilot-chat-byok-remove-model ()
+  "Remove a registered Bring Your Own Key model."
+  (interactive)
+  (let ((model (copilot-chat--byok-pick-model "Remove BYOK model: ")))
+    (copilot-chat--byok-request
+     'copilot/byok/deleteModel
+     (list :providerName (plist-get model :providerName)
+           :modelId (plist-get model :modelId))
+     (format "Removed model %s" (plist-get model :modelId)))))
+
+(defun copilot-chat-byok-remove-key ()
+  "Delete the stored Bring Your Own Key API key for a provider.
+Also removes that provider's model configurations.  Azure is omitted:
+its keys are stored per model, so remove Azure entries with
+`copilot-chat-byok-remove-model' instead."
+  (interactive)
+  (let ((provider (copilot-chat--byok-read-provider
+                   "Provider: " (remove "Azure" copilot-chat--byok-providers))))
+    (when (yes-or-no-p
+           (format "Delete the stored API key and models for %s? " provider))
+      (copilot-chat--byok-request
+       'copilot/byok/deleteApiKey
+       (list :providerName provider)
+       (format "Deleted API key for %s" provider)))))
+
+(defun copilot-chat-byok-list ()
+  "List your registered Bring Your Own Key models."
+  (interactive)
+  (let ((models (copilot-chat--byok-models)))
+    (if (null models)
+        (message "Copilot Chat: No registered BYOK models")
+      (message "Copilot Chat: BYOK models: %s"
+               (mapconcat (lambda (m)
+                            (format "%s (%s)"
+                                    (plist-get m :modelId)
+                                    (plist-get m :providerName)))
+                          models ", ")))))
+
 ;;;###autoload
 (defun copilot-chat-apply-preset (name)
   "Apply the Copilot Chat preset named NAME from `copilot-chat-presets'.

@@ -1,7 +1,7 @@
 ;; -*- mode: eask; lexical-binding: t -*-
 
 (package "copilot"
-         "0.8.0"
+         "0.9.0"
          "An Emacs plugin for GitHub Copilot")
 
 (website-url "https://github.com/copilot-emacs/copilot.el")

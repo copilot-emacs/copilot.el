@@ -3921,6 +3921,136 @@
         (expect 'message :to-have-been-called-with
                 "Copilot Chat: %s" "server says ok"))))
 
+  (describe "BYOK custom providers"
+    (it "identifies custom vs built-in providers"
+      (expect (copilot-chat--byok-custom-p "Anthropic") :to-be nil)
+      (expect (copilot-chat--byok-custom-p "Azure") :to-be nil)
+      (expect (copilot-chat--byok-custom-p "my-endpoint") :to-be-truthy))
+
+    (it "lists configured custom provider names"
+      (spy-on 'copilot--connection-alivep :and-return-value t)
+      (spy-on 'jsonrpc-request
+              :and-return-value
+              (list :providers
+                    (list (list :providerName "my-endpoint"
+                                :groupName "g" :apiType "chatCompletions")
+                          (list :providerName "other" :apiType "messages"))))
+      (expect (copilot-chat--byok-custom-providers)
+              :to-equal '("my-endpoint" "other")))
+
+    (it "returns nil when listing custom providers errors"
+      (spy-on 'copilot--connection-alivep :and-return-value t)
+      (spy-on 'jsonrpc-request :and-throw-error 'error)
+      (expect (copilot-chat--byok-custom-providers) :to-be nil))
+
+    (it "add-custom-provider sends saveCustomProviderConfig"
+      (let ((captured nil))
+        (spy-on 'read-string :and-call-fake
+                (lambda (prompt &rest _)
+                  (if (string-prefix-p "Custom provider" prompt)
+                      "my-endpoint" "my-group")))
+        (spy-on 'completing-read :and-return-value "messages")
+        (spy-on 'read-passwd :and-return-value "sk-custom")
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn method params &rest _args)
+                  (setq captured (list method params)) (list 1)))
+        (spy-on 'message)
+        (copilot-chat-byok-add-custom-provider)
+        (expect (nth 0 captured) :to-equal 'copilot/byok/saveCustomProviderConfig)
+        (let ((p (nth 1 captured)))
+          (expect (plist-get p :providerName) :to-equal "my-endpoint")
+          (expect (plist-get p :apiKey) :to-equal "sk-custom")
+          (expect (plist-get p :apiType) :to-equal "messages")
+          (expect (plist-get p :groupName) :to-equal "my-group"))))
+
+    (it "add-custom-provider rejects a built-in provider name"
+      (spy-on 'read-string :and-return-value "OpenAI")
+      (spy-on 'jsonrpc--async-request-1)
+      (expect (copilot-chat-byok-add-custom-provider) :to-throw 'user-error)
+      (expect 'jsonrpc--async-request-1 :not :to-have-been-called))
+
+    (it "add-model sends deploymentUrl and isCustomModel for a custom provider"
+      (let ((captured nil))
+        (spy-on 'copilot-chat--byok-custom-providers
+                :and-return-value '("my-endpoint"))
+        (spy-on 'copilot-chat--byok-read-provider :and-return-value "my-endpoint")
+        (spy-on 'read-string :and-call-fake
+                (lambda (prompt &rest _)
+                  (cond ((string-prefix-p "Model id" prompt) "llama-3")
+                        ((string-prefix-p "Deployment URL" prompt)
+                         "https://api.example.com")
+                        (t "Llama 3"))))
+        (spy-on 'y-or-n-p :and-return-value nil)
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'jsonrpc--async-request-1 :and-call-fake
+                (lambda (_conn method params &rest _args)
+                  (setq captured (list method params)) (list 1)))
+        (spy-on 'message)
+        (copilot-chat-byok-add-model)
+        (expect (nth 0 captured) :to-equal 'copilot/byok/saveModel)
+        (let ((p (nth 1 captured)))
+          (expect (plist-get p :providerName) :to-equal "my-endpoint")
+          (expect (plist-get p :deploymentUrl) :to-equal "https://api.example.com")
+          (expect (plist-get p :isCustomModel) :to-be t))))
+
+    (it "add-model errors on an empty deployment URL for a custom provider"
+      (spy-on 'copilot-chat--byok-custom-providers :and-return-value '("my-endpoint"))
+      (spy-on 'copilot-chat--byok-read-provider :and-return-value "my-endpoint")
+      (spy-on 'read-string :and-call-fake
+              (lambda (prompt &rest _)
+                (cond ((string-prefix-p "Model id" prompt) "llama-3")
+                      ((string-prefix-p "Deployment URL" prompt) "  ")
+                      (t "Llama 3"))))
+      (spy-on 'y-or-n-p :and-return-value nil)
+      (spy-on 'jsonrpc--async-request-1)
+      (expect (copilot-chat-byok-add-model) :to-throw 'user-error)
+      (expect 'jsonrpc--async-request-1 :not :to-have-been-called))
+
+    (it "remove-key offers custom providers alongside built-ins"
+      (let ((captured-providers nil))
+        (spy-on 'copilot-chat--byok-custom-providers
+                :and-return-value '("my-endpoint"))
+        (spy-on 'completing-read
+                :and-call-fake
+                (lambda (_prompt providers &rest _args)
+                  (setq captured-providers providers)
+                  "my-endpoint"))
+        (spy-on 'yes-or-no-p :and-return-value nil)
+        (spy-on 'message)
+        (copilot-chat-byok-remove-key)
+        (expect captured-providers :to-contain "my-endpoint")
+        (expect captured-providers :to-contain "OpenAI")
+        (expect captured-providers :not :to-contain "Azure")))
+
+    (it "list-custom-providers reports configured providers"
+      (spy-on 'copilot--connection-alivep :and-return-value t)
+      (spy-on 'jsonrpc-request
+              :and-return-value
+              (list :providers
+                    (list (list :providerName "my-endpoint"
+                                :apiType "chatCompletions"))))
+      (spy-on 'message)
+      (copilot-chat-byok-list-custom-providers)
+      (expect 'message :to-have-been-called-with
+              "Copilot Chat: Custom BYOK providers: %s"
+              "my-endpoint (chatCompletions)"))
+
+    (it "list-custom-providers shows the server message on an error"
+      (spy-on 'copilot--connection-alivep :and-return-value t)
+      (spy-on 'jsonrpc-request
+              :and-call-fake
+              (lambda (&rest _)
+                (signal 'jsonrpc-error
+                        (list "request failed"
+                              '(jsonrpc-error-code . -32601)
+                              '(jsonrpc-error-message . "Unhandled method")))))
+      (spy-on 'message)
+      (copilot-chat-byok-list-custom-providers)
+      (expect 'message :to-have-been-called-with
+              "Copilot Chat: Could not list custom providers: %s"
+              "Unhandled method")))
+
   (describe "copilot-chat--model-annotation"
     (it "returns an empty string for an unrestricted model"
       (expect (copilot-chat--model-annotation '(:id "m")) :to-equal ""))

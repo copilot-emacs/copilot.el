@@ -18,6 +18,7 @@
 - `copilot-chat-select-model` now flags premium and policy-locked models in the completion list, and selecting a policy-locked one prompts to accept its terms and enables it on the server (via `copilot/setModelPolicy`) before switching, instead of leaving you to hit an error on the next message.
 - Add Bring Your Own Key (BYOK) support, letting you use your own model-provider API keys (Anthropic, OpenAI, Gemini, Groq, OpenRouter, Azure) in chat:
   - `copilot-chat-byok-add-key` saves a provider API key (read without echoing and held by the language server, never stored or shown by copilot.el), and `copilot-chat-byok-add-model` registers a model to use with it.
+  - `copilot-chat-byok-add-custom-provider` registers a custom OpenAI-compatible endpoint (any provider name that is not built in, with its API type and key); `copilot-chat-byok-add-model` then registers models for it (each with its deployment URL), and `copilot-chat-byok-list-custom-providers` shows the ones you have configured.
   - `copilot-chat-byok-list`, `copilot-chat-byok-remove-model`, and `copilot-chat-byok-remove-key` manage what you have registered.
   - `copilot-chat-select-model` lists your registered BYOK models (tagged `[BYOK: PROVIDER]`) alongside Copilot's own, and selecting one routes chat turns to that provider using your key.
   - Using a BYOK model needs a BYOK-eligible Copilot account; otherwise the server rejects the turn.

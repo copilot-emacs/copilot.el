@@ -853,9 +853,19 @@ automatically, browse to %s." user-code verification-uri))
       (read-from-minibuffer (format "Please open %s in your browser. Press ENTER if you finish authorizing." verification-uri)))
     (copilot--log 'info "Verifying...")
     (condition-case err
-        (copilot--request 'signInConfirm (list :userCode user-code))
+        ;; The server exchanges the device code for a token with GitHub
+        ;; here, so allow more than the default 10s for a slow network.
+        (copilot--request 'signInConfirm (list :userCode user-code) :timeout 30)
       (jsonrpc-error
-       (user-error "Copilot: Authentication failure: %s" (alist-get 'jsonrpc-error-message (cddr err)))))
+       (let ((msg (alist-get 'jsonrpc-error-message (cddr err))))
+         (if (equal msg "Timed out")
+             ;; A client-side timeout here means the server could not reach
+             ;; GitHub, most often a proxy or TLS-inspecting firewall.
+             (user-error "Copilot: Timed out waiting for the language server \
+to authenticate with GitHub.  If you are behind a proxy or a TLS-inspecting \
+firewall, see the README \"Network proxy\" section (configure \
+`copilot-network-proxy' or set NODE_EXTRA_CA_CERTS)")
+           (user-error "Copilot: Authentication failure: %s" msg)))))
     (copilot--dbind (user) (copilot--request 'checkStatus nil)
       (copilot--log 'info "Authenticated as GitHub user %s." user))))
 

@@ -470,6 +470,25 @@ For example:
 (setq copilot-network-proxy '(:host "127.0.0.1" :port 7890))
 ```
 
+#### TLS-inspecting proxies and self-signed certificates
+
+If your network runs a TLS-inspecting proxy or firewall (Zscaler and the like) or uses a self-signed certificate, the language server's own HTTPS connection to GitHub can fail. This usually shows up as `copilot-login` reporting a timeout (`Authentication failure: Timed out`), because the server never manages to reach GitHub. There are two ways to handle it.
+
+Point the language server at your proxy and, when it intercepts TLS, tell it not to verify the proxy's certificate:
+
+```elisp
+(setq copilot-network-proxy '(:host "127.0.0.1" :port 7890 :rejectUnauthorized :json-false))
+```
+
+Or make the server trust your CA by exporting `NODE_EXTRA_CA_CERTS` (pointing at your CA chain in PEM format) **before Emacs starts**, since the server reads it only when it launches:
+
+```sh
+export NODE_EXTRA_CA_CERTS=/path/to/ca-chain.pem
+emacs
+```
+
+Setting it from your Emacs config with `(setenv "NODE_EXTRA_CA_CERTS" "...")` works too, as long as it happens before the server process starts; restart the server (or Emacs) afterward. Note that this is a TLS issue in the language server's HTTP client, not something copilot.el can resolve on its own.
+
 ### Handling server messages
 
 `copilot-on-request` registers a handler for incoming JSON-RPC requests from the language server. Return a JSON-serializable value as the result, or call `jsonrpc-error` for errors. [Read more](https://www.gnu.org/software/emacs/manual/html_node/elisp/JSONRPC-Overview.html).

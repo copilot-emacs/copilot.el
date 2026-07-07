@@ -124,7 +124,26 @@ Return the resulting `user-error' message string."
 
     (it "reports other authentication errors verbatim"
       (expect (copilot-test--login-with-confirm-error "Device code expired")
-              :to-match "Authentication failure: Device code expired")))
+              :to-match "Authentication failure: Device code expired"))
+
+    (it "aborts early when the device code comes back empty"
+      (spy-on 'copilot--connection-alivep :and-return-value t)
+      (spy-on 'read-from-minibuffer :and-return-value "")
+      (spy-on 'gui-set-selection)
+      (spy-on 'browse-url)
+      (spy-on 'copilot--log)
+      (spy-on 'jsonrpc-request :and-call-fake
+              (lambda (_conn method &rest _)
+                (pcase method
+                  ('signInInitiate
+                   (list :status "PromptUserDeviceFlow" :userCode ""
+                         :verificationUri "https://github.com/login/device"))
+                  ;; The guard must fire before signInConfirm is sent.
+                  (_ (error "signInConfirm should not be reached")))))
+      (let ((msg (condition-case err
+                     (progn (copilot-login) nil)
+                   (user-error (error-message-string err)))))
+        (expect msg :to-match "could not get a device code"))))
 
   ;;
   ;; Utility functions

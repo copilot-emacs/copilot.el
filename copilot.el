@@ -841,6 +841,16 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
       (copilot--request 'signInInitiate nil)
     (when (string-equal status "AlreadySignedIn")
       (user-error "Copilot: Already signed in as %s" user))
+    ;; The language server fills in the one-time code from GitHub's
+    ;; device-code endpoint; an empty one means that request never
+    ;; reached GitHub (typically a proxy or TLS-inspecting firewall
+    ;; answering in its place), so there is no device flow to confirm.
+    ;; Bail out with a clear message instead of copying an empty code and
+    ;; timing out later on `signInConfirm'.
+    (when (or (null user-code) (string-empty-p user-code))
+      (user-error "Copilot: The language server could not get a device code \
+from GitHub, most likely because a proxy or firewall is blocking it.  See the \
+README \"Network proxy\" section"))
     (if (display-graphic-p)
         (progn
           (gui-set-selection 'CLIPBOARD user-code)

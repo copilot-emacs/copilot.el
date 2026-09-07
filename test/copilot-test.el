@@ -591,6 +591,33 @@ Return the resulting `user-error' message string."
                   :to-equal '(:fetch (:command "uvx"
                                       :args ["mcp-server-fetch"])))))))
 
+  (describe "copilot--notify-settings"
+    (before-each
+      (spy-on 'copilot--connection-alivep :and-return-value t)
+      (spy-on 'jsonrpc-notify))
+
+    (it "sends an empty object rather than null when nothing is configured"
+      (let ((copilot-completion-model nil)
+            (copilot-mcp-servers nil)
+            (copilot-lsp-settings nil)
+            (copilot--connection t))
+        (copilot--notify-settings)
+        (let* ((args (spy-calls-args-for 'jsonrpc-notify 0))
+               (settings (plist-get (nth 2 args) :settings)))
+          (expect (nth 1 args) :to-equal 'workspace/didChangeConfiguration)
+          (expect (hash-table-p settings) :to-be-truthy)
+          (expect (hash-table-count settings) :to-equal 0))))
+
+    (it "sends the effective settings when something is configured"
+      (let ((copilot-completion-model nil)
+            (copilot-mcp-servers nil)
+            (copilot-lsp-settings '(:foo "bar"))
+            (copilot--connection t))
+        (copilot--notify-settings)
+        (expect (plist-get (nth 2 (spy-calls-args-for 'jsonrpc-notify 0))
+                           :settings)
+                :to-equal '(:foo "bar")))))
+
   (describe "copilot--mcp-settings-json"
     (it "returns nil when no servers are configured"
       (let ((copilot-mcp-servers nil))

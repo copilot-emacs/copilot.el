@@ -215,8 +215,7 @@ will not be called."
   (let ((was-bound (boundp symbol)))
     (set-default symbol value)
     (when (and was-bound (copilot--connection-alivep))
-      (copilot--notify 'workspace/didChangeConfiguration
-                       `(:settings ,(copilot--effective-lsp-settings))))))
+      (copilot--notify-settings))))
 
 (defcustom copilot-lsp-settings nil
   "Settings for the Copilot LSP server.
@@ -776,6 +775,15 @@ Return nil when no servers are configured or encoding fails."
       (setq settings (plist-put settings :mcp mcp)))
     settings))
 
+(defun copilot--notify-settings ()
+  "Send the effective LSP settings to the server.
+With nothing configured the settings plist is nil, which the JSON-RPC
+layer serializes as null; the server dereferences the settings object
+and logs a TypeError on every start.  Send an empty object instead."
+  (copilot--notify 'workspace/didChangeConfiguration
+                   (list :settings (or (copilot--effective-lsp-settings)
+                                       (make-hash-table)))))
+
 (defun copilot--client-capabilities ()
   "Return the client capabilities sent in the `initialize' request.
 The `copilot' block opts into server features the user has enabled:
@@ -826,7 +834,7 @@ You can change the installed version with `M-x copilot-reinstall-server` or remo
           ,@(when copilot-network-proxy
               `(:networkProxy ,copilot-network-proxy))))))
     (copilot--notify 'initialized '())
-    (copilot--notify 'workspace/didChangeConfiguration `(:settings ,(copilot--effective-lsp-settings)))
+    (copilot--notify-settings)
     (add-hook 'kill-emacs-hook #'copilot--shutdown-server-at-exit))))
 
 ;;
@@ -932,14 +940,12 @@ on success, or an error/timeout message on failure."
     (if (= (length choices) 1)
         (let ((model-id (cdar choices)))
           (setq copilot-completion-model model-id)
-          (copilot--notify 'workspace/didChangeConfiguration
-                           `(:settings ,(copilot--effective-lsp-settings)))
+          (copilot--notify-settings)
           (message "Copilot: Only one completion model available: %s" model-id))
       (let* ((choice (completing-read "Completion model: " choices nil t))
              (model-id (cdr (assoc choice choices))))
         (setq copilot-completion-model model-id)
-        (copilot--notify 'workspace/didChangeConfiguration
-                         `(:settings ,(copilot--effective-lsp-settings)))
+        (copilot--notify-settings)
         (copilot--log 'info "Completion model set to %s" model-id)))))
 
 ;;

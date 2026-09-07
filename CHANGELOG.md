@@ -10,6 +10,7 @@
 ### Bug Fixes
 
 - Describe every input property of the agent-mode client tools, as the language server now rejects the whole tool registration (`-32602 Schema validation failed`) when any is missing, leaving agent mode without `run_in_terminal`, `create_file`, `get_errors`, and `fetch_web_page`. ([#543](https://github.com/copilot-emacs/copilot.el/issues/543))
+- Send an empty settings object instead of `null` to the language server when nothing is configured, which made it log a `TypeError` on every start. ([#543](https://github.com/copilot-emacs/copilot.el/issues/543))
 
 ## 0.9.0 (2026-07-06)
 

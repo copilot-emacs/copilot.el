@@ -1209,6 +1209,24 @@
               (expect (buffer-local-value 'copilot-chat--source-buffer
                                           (get-buffer copilot-chat--buffer-name))
                       :to-be nil))
+          (kill-buffer src))))
+
+    ;; Issue #543: the chat buffer's default-directory is frozen at its
+    ;; creation, so the project must be captured where the command runs.
+    (it "captures the invoking buffer's workspace for the chat"
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name))
+      (spy-on 'copilot-chat--create)
+      (spy-on 'copilot-chat--send-turn)
+      (spy-on 'display-buffer)
+      (spy-on 'copilot--buffer-workspace-root :and-return-value "/dired/")
+      (let ((src (get-buffer-create "*copilot-chat-test-dired*")))
+        (unwind-protect
+            (with-current-buffer src
+              (copilot-chat "hello")
+              (expect (buffer-local-value 'copilot-chat--workspace
+                                          (get-buffer copilot-chat--buffer-name))
+                      :to-equal "/dired/"))
           (kill-buffer src)))))
 
   (describe "copilot-chat-send"
@@ -1295,6 +1313,28 @@
   (describe "copilot-chat--create"
     ;; copilot--async-request is a macro that expands to
     ;; jsonrpc--async-request-1, so we spy on the latter to capture params.
+    ;; Issue #543: the request is issued from the chat buffer, which
+    ;; visits no file, so the workspace must be the captured one.
+    (it "sends the workspace folder captured on the chat buffer"
+      (let ((captured-params nil)
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--workspace "/proj/"))
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (with-current-buffer buf
+                (copilot-chat--create "hello" #'ignore))
+              (expect (plist-get captured-params :workspaceFolders)
+                      :to-equal [(:uri "file:///proj/" :name "proj")]))
+          (kill-buffer buf))))
+
     (it "sends allSkills as a boolean"
       (let ((captured-params nil)
             (buf (get-buffer-create copilot-chat--buffer-name)))
@@ -1513,7 +1553,10 @@
   (describe "chat session persistence"
     :var (history-dir)
     (before-each
-      (setq history-dir (make-temp-file "copilot-chat-history" t)))
+      (setq history-dir (make-temp-file "copilot-chat-history" t))
+      ;; The test buffers' default-directory is this repository, which is
+      ;; itself a project; keep the history global unless a spec says so.
+      (spy-on 'copilot--directory-workspace-root :and-return-value nil))
     (after-each
       (delete-directory history-dir t))
 
@@ -2131,6 +2174,72 @@
             (expect (stringp (plist-get (cadr props) :description))
                     :to-be-truthy)
             (setq props (cddr props)))))))
+
+  ;;
+  ;; Workspace resolution
+  ;;
+
+  (describe "copilot-chat--workspace-root"
+    (it "returns the current buffer's workspace root when it has one"
+      (spy-on 'copilot--workspace-root :and-return-value "/here/")
+      (with-temp-buffer
+        (expect (copilot-chat--workspace-root) :to-equal "/here/")))
+
+    (it "falls back to the workspace captured on the chat buffer"
+      ;; Tool requests arrive in a scratch buffer that belongs to no
+      ;; project; they must still see the conversation's workspace.
+      (spy-on 'copilot--workspace-root :and-return-value nil)
+      (let ((chat (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer chat
+                (setq-local copilot-chat--workspace "/chat/"))
+              (with-temp-buffer
+                (expect (copilot-chat--workspace-root) :to-equal "/chat/")))
+          (kill-buffer chat))))
+
+    (it "returns nil when nothing resolves"
+      (spy-on 'copilot--workspace-root :and-return-value nil)
+      (when (get-buffer copilot-chat--buffer-name)
+        (kill-buffer copilot-chat--buffer-name))
+      (with-temp-buffer
+        (expect (copilot-chat--workspace-root) :to-be nil))))
+
+  (describe "copilot-chat--history-root"
+    (it "is the chat's own workspace inside the chat buffer"
+      (spy-on 'copilot--buffer-workspace-root :and-return-value "/wrong/")
+      (with-temp-buffer
+        (copilot-chat-mode)
+        (setq-local copilot-chat--workspace "/chat/")
+        (expect (copilot-chat--history-root) :to-equal "/chat/")))
+
+    (it "is the invoking buffer's workspace elsewhere"
+      (spy-on 'copilot--buffer-workspace-root :and-return-value "/dired/")
+      (with-temp-buffer
+        (expect (copilot-chat--history-root) :to-equal "/dired/"))))
+
+  (describe "copilot-chat--workspace-folders-param"
+    (it "builds a percent-encoded folder entry from the resolved root"
+      (spy-on 'copilot-chat--workspace-root :and-return-value "/my proj/")
+      (expect (copilot-chat--workspace-folders-param)
+              :to-equal '(:workspaceFolders
+                          [(:uri "file:///my%20proj/" :name "my proj")])))
+
+    (it "sends an empty vector without a workspace"
+      (spy-on 'copilot-chat--workspace-root :and-return-value nil)
+      (expect (copilot-chat--workspace-folders-param)
+              :to-equal '(:workspaceFolders []))))
+
+  (describe "copilot-chat--workspace-folders-query-param"
+    (it "omits the parameter without a workspace"
+      (spy-on 'copilot-chat--workspace-root :and-return-value nil)
+      (expect (copilot-chat--workspace-folders-query-param) :to-be nil))
+
+    (it "carries the folder when there is a workspace"
+      (spy-on 'copilot-chat--workspace-root :and-return-value "/proj/")
+      (expect (plist-get (copilot-chat--workspace-folders-query-param)
+                         :workspaceFolders)
+              :to-equal [(:uri "file:///proj/" :name "proj")])))
 
   ;;
   ;; Tool result helper
@@ -2880,6 +2989,19 @@
 
   (describe "copilot-chat--execute-run-in-terminal"
     (before-each (spy-on 'copilot-chat--insert-tool-status))
+
+    (it "runs the command in the chat's workspace"
+      ;; The request is handled in a scratch buffer; the cwd must still
+      ;; be the conversation's workspace.
+      (spy-on 'copilot-chat--workspace-root :and-return-value "/proj/")
+      (spy-on 'copilot-chat--run-process :and-call-fake
+              (lambda (_command)
+                (list :output default-directory :status 'success
+                      :exit-code 0)))
+      (let ((result (copilot-chat--execute-run-in-terminal
+                     (list :command "pwd"))))
+        (expect (plist-get (aref (plist-get result :content) 0) :value)
+                :to-equal "/proj/")))
 
     (it "runs shell command and returns output"
       (let ((result (copilot-chat--execute-run-in-terminal
@@ -4447,7 +4569,41 @@
         (expect copilot-chat--active-buffers :not :to-be-truthy)
         (expect copilot-chat--one-shot-requests :not :to-be-truthy))))
 
+  (describe "copilot-chat--insert-commit-message-fallback"
+    (it "starts the one-shot from the commit buffer, not the error handler's"
+      (let ((commit-buf (generate-new-buffer "*copilot-chat-test-commit*"))
+            (seen nil))
+        (unwind-protect
+            (progn
+              (spy-on 'copilot-chat--commit-message-request
+                      :and-return-value "prompt")
+              (spy-on 'copilot-chat--one-shot :and-call-fake
+                      (lambda (&rest _) (setq seen (current-buffer))))
+              (with-temp-buffer
+                (copilot-chat--insert-commit-message-fallback
+                 commit-buf (with-current-buffer commit-buf (point-marker))))
+              (expect seen :to-be commit-buf))
+          (kill-buffer commit-buf)))))
+
   (describe "copilot-chat--one-shot"
+    (it "sends the caller's workspace folder, not the hidden buffer's"
+      (let ((captured nil))
+        (spy-on 'copilot--connection-alivep :and-return-value t)
+        (spy-on 'copilot-chat--default-model :and-return-value nil)
+        (spy-on 'copilot--workspace-root :and-call-fake
+                (lambda () (when buffer-file-name "/proj/")))
+        (spy-on 'jsonrpc--async-request-1
+                :and-call-fake
+                (lambda (_conn method params &rest _args)
+                  (when (eq method 'conversation/create)
+                    (setq captured params))
+                  (cons 1 nil)))
+        (with-temp-buffer
+          (setq buffer-file-name "/proj/COMMIT_EDITMSG")
+          (copilot-chat--one-shot "hello" #'ignore))
+        (expect (plist-get captured :workspaceFolders)
+                :to-equal [(:uri "file:///proj/" :name "proj")])))
+
     (it "collects the streamed reply and destroys the conversation"
       (let ((copilot-chat--active-buffers nil)
             (requests '())

@@ -734,6 +734,53 @@ Return the resulting `user-error' message string."
   ;; Workspace root
   ;;
 
+  (describe "copilot--directory-workspace-root"
+    (before-each
+      (spy-on 'projectile-project-root :and-return-value nil)
+      (spy-on 'file-truename :and-call-fake #'identity))
+
+    (it "returns the root of the project containing the directory"
+      (spy-on 'project-current :and-return-value '(vc Git "/proj/"))
+      (spy-on 'project-root :and-return-value "/proj/")
+      (expect (copilot--directory-workspace-root "/proj/src/")
+              :to-equal "/proj/")
+      (expect 'project-current :to-have-been-called-with nil "/proj/src/"))
+
+    (it "falls back to the VC root of the directory itself"
+      ;; `vc-root-dir' ignores `default-directory' outside file-visiting
+      ;; buffers, so the VC leg must be asked about the directory.
+      (spy-on 'project-current :and-return-value nil)
+      (spy-on 'vc-responsible-backend :and-return-value 'Git)
+      (spy-on 'vc-call-backend :and-return-value "/repo/")
+      (expect (copilot--directory-workspace-root "/repo/src/")
+              :to-equal "/repo/")
+      (expect 'vc-call-backend
+              :to-have-been-called-with 'Git 'root "/repo/src/"))
+
+    (it "returns nil outside any project"
+      (let ((dir (make-temp-file "copilot-test-dir" t)))
+        (unwind-protect
+            (progn
+              (spy-on 'project-current :and-return-value nil)
+              (expect (copilot--directory-workspace-root dir) :to-be nil))
+          (delete-directory dir)))))
+
+  (describe "copilot--buffer-workspace-root"
+    (it "uses the file buffer's workspace when it has one"
+      (spy-on 'copilot--workspace-root :and-return-value "/file/")
+      (spy-on 'copilot--directory-workspace-root)
+      (expect (copilot--buffer-workspace-root) :to-equal "/file/")
+      (expect 'copilot--directory-workspace-root :not :to-have-been-called))
+
+    (it "resolves a non-file buffer from its default-directory"
+      (spy-on 'copilot--workspace-root :and-return-value nil)
+      (spy-on 'copilot--directory-workspace-root :and-return-value "/dir/")
+      (with-temp-buffer
+        (setq default-directory "/dir/sub/")
+        (expect (copilot--buffer-workspace-root) :to-equal "/dir/"))
+      (expect 'copilot--directory-workspace-root
+              :to-have-been-called-with "/dir/sub/")))
+
   (describe "copilot--workspace-root"
     (it "returns nil for non-file buffers"
       (with-temp-buffer

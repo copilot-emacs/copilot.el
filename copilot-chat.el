@@ -371,6 +371,12 @@ which may be slightly after `copilot-chat--request-id' is set.")
 (defvar-local copilot-chat--source-buffer nil
   "The code buffer providing context for this chat.")
 
+(defvar-local copilot-chat--workspace nil
+  "Workspace root captured when `copilot-chat' was last invoked, or nil.
+Resolved in the invoking buffer, because the chat buffer's own
+`default-directory' is frozen at its creation and so cannot tell which
+project a later invocation came from.  See `copilot-chat--workspace-root'.")
+
 (defvar-local copilot-chat--references nil
   "References to attach to the next chat turn.
 A list of plists like (:type \"file\" :uri URI), sent as the turn's
@@ -573,14 +579,7 @@ it can be retried once the connection is up."
   (or copilot-chat--modes
       (setq copilot-chat--modes
             (condition-case err
-                (let* ((root (copilot--workspace-root))
-                       (params
-                        (when root
-                          (list :workspaceFolders
-                                (vector (list :uri (copilot--path-to-uri root)
-                                              :name (file-name-nondirectory
-                                                     (directory-file-name
-                                                      root)))))))
+                (let* ((params (copilot-chat--workspace-folders-query-param))
                        (modes (append (copilot--request 'conversation/modes
                                                         params)
                                       nil)))
@@ -1509,7 +1508,8 @@ truncated to `copilot-chat--terminal-max-output'."
         ;; Run in the workspace root rather than whatever buffer was
         ;; current when the request arrived, so relative paths and build
         ;; commands behave the way the user expects.
-        (default-directory (or (copilot--workspace-root) default-directory)))
+        (default-directory (or (copilot-chat--workspace-root)
+                               default-directory)))
     (copilot-chat--insert-tool-status "run_in_terminal" (format "Running: %s" command))
     (condition-case err
         (let* ((result (copilot-chat--run-process command))
@@ -1686,7 +1686,7 @@ requests, `:uri' for `copilot/watchedFiles'), else the workspace root."
       (copilot--uri-to-path base))
      ;; The root is already a path, so use it directly rather than
      ;; round-tripping through a URI (which would munge a literal `%').
-     ((copilot--workspace-root)))))
+     ((copilot-chat--workspace-root)))))
 
 (defun copilot-chat--search-max-results (msg)
   "Return the result cap for request MSG."
@@ -2005,6 +2005,45 @@ description and PR link) in the coding agent buffer."
         (insert "\n" (copilot-chat--format-error error-msg))
         (copilot-chat--scroll-to-bottom)))))
 
+(defun copilot-chat--workspace-root ()
+  "Return the workspace root the chat belongs to, or nil.
+That is the current buffer's own workspace when it visits a file, else
+the one `copilot-chat' captured on the chat buffer.  Conversation
+requests are issued from the chat buffer and tool requests arrive in a
+scratch buffer, neither of which visits a file; without the captured
+root the conversation would carry no workspace folder and agent mode
+would report that it cannot find one."
+  (or (copilot--workspace-root)
+      (when-let* ((chat (get-buffer copilot-chat--buffer-name)))
+        (buffer-local-value 'copilot-chat--workspace chat))))
+
+(defun copilot-chat--history-root ()
+  "Return the workspace root whose saved history a command targets, or nil.
+In the chat buffer that is the chat's own workspace; elsewhere it is the
+invoking buffer's, file-visiting or not, so restoring from a Dired or
+Magit buffer picks that project."
+  (if (derived-mode-p 'copilot-chat-mode)
+      copilot-chat--workspace
+    (copilot--buffer-workspace-root)))
+
+(defun copilot-chat--workspace-folders-param ()
+  "Return the `:workspaceFolders' parameter for a conversation request.
+The vector is empty when no workspace can be resolved."
+  (list :workspaceFolders
+        (vconcat
+         (when-let* ((root (copilot-chat--workspace-root)))
+           (list (list :uri (copilot--path-to-uri root)
+                       :name (file-name-nondirectory
+                              (directory-file-name root))))))))
+
+(defun copilot-chat--workspace-folders-query-param ()
+  "Return the `:workspaceFolders' parameter for a server query, or nil.
+Unlike `copilot-chat--workspace-folders-param', omit the parameter
+altogether when no workspace can be resolved."
+  (let ((param (copilot-chat--workspace-folders-param)))
+    (unless (seq-empty-p (cadr param))
+      param)))
+
 ;;
 ;; Tool registration
 ;;
@@ -2104,12 +2143,7 @@ of MESSAGE, so the new conversation picks up the saved context."
                                        :allSkills t)
                    :source "panel")
              (copilot-chat--model-param)
-             (list :workspaceFolders
-                   (vconcat
-                    (when-let* ((root (copilot--workspace-root)))
-                      (list (list :uri (concat "file://" root)
-                                  :name (file-name-nondirectory
-                                         (directory-file-name root)))))))
+             (copilot-chat--workspace-folders-param)
              (copilot-chat--mode-create-params)
              (copilot-chat--references-param))
             :success-fn (lambda (result)
@@ -2234,6 +2268,10 @@ the conversation is destroyed.  Cancellable with `copilot-chat-stop'."
                           (unless called
                             (setq called t)
                             (funcall callback reply error-msg))))
+         ;; Resolve the workspace here, in the caller's buffer: the
+         ;; request below is issued from a hidden buffer that belongs to
+         ;; no project.
+         (workspace (copilot-chat--workspace-folders-param))
          (request-id
           ;; Issue the request BEFORE registering the sink: starting the
           ;; server can signal (e.g. binary not installed), and nothing
@@ -2263,12 +2301,7 @@ the conversation is destroyed.  Cancellable with `copilot-chat-stop'."
                                         :allSkills :json-false)
                     :source "panel")
               (copilot-chat--model-param)
-              (list :workspaceFolders
-                    (vconcat
-                     (when-let* ((root (copilot--workspace-root)))
-                       (list (list :uri (concat "file://" root)
-                                   :name (file-name-nondirectory
-                                          (directory-file-name root))))))))
+              workspace)
              :success-fn (lambda (result)
                            (setq conversation-id
                                  (plist-get result :conversationId))
@@ -2542,25 +2575,15 @@ The context points at the current file with the region's range."
 ;; Session persistence
 ;;
 
-(defun copilot-chat--history-root ()
-  "Return the workspace root the chat session belongs to, or nil.
-The chat buffer visits no file, so `copilot--workspace-root' returns
-nil there; fall back to the root of the live source buffer in that
-case."
-  (or (copilot--workspace-root)
-      (when (buffer-live-p copilot-chat--source-buffer)
-        (with-current-buffer copilot-chat--source-buffer
-          (copilot--workspace-root)))))
-
 (defun copilot-chat--ensure-session-root ()
   "Return the history root this session is pinned to, resolving once.
 Return a workspace root string, or nil for the global history.  The
-first call resolves via `copilot-chat--history-root' and pins the
+first call resolves via `copilot-chat--workspace-root' and pins the
 result in `copilot-chat--session-root'; later calls (and saves after a
 restore, which pins the root itself) reuse it."
   (unless copilot-chat--session-root
     (setq copilot-chat--session-root
-          (or (copilot-chat--history-root) 'global)))
+          (or (copilot-chat--workspace-root) 'global)))
   (unless (eq copilot-chat--session-root 'global)
     copilot-chat--session-root))
 
@@ -2804,12 +2827,15 @@ is salvaged to the kill ring."
 Used when the server lacks the native `git/commitGenerate' method.  The
 reply is a chat message, so strip any code fences the model adds; insert
 it at POS in BUF via `copilot-chat--insert-commit-message-at'."
-  (copilot-chat--one-shot
-   (copilot-chat--commit-message-request)
-   (lambda (reply error-msg)
-     (copilot-chat--insert-commit-message-at
-      (and reply (copilot-chat--strip-code-fences reply))
-      error-msg buf pos))))
+  ;; This runs from the failed request's error handler, in a buffer that
+  ;; belongs to no project; resolve the workspace in the commit buffer.
+  (with-current-buffer (if (buffer-live-p buf) buf (current-buffer))
+    (copilot-chat--one-shot
+     (copilot-chat--commit-message-request)
+     (lambda (reply error-msg)
+       (copilot-chat--insert-commit-message-at
+        (and reply (copilot-chat--strip-code-fences reply))
+        error-msg buf pos)))))
 
 ;;;###autoload
 (defun copilot-chat-insert-commit-message ()
@@ -3631,6 +3657,7 @@ Otherwise, create a new conversation."
   ;; (dired, *scratch*, the chat buffer itself, ...), and sending an
   ;; unrelated buffer as context is just noise.  See issue #470.
   (let ((source-buf (when (buffer-file-name) (current-buffer)))
+        (workspace (copilot--buffer-workspace-root))
         (chat-buf (get-buffer-create copilot-chat--buffer-name)))
     (with-current-buffer chat-buf
       (unless (derived-mode-p 'copilot-chat-mode)
@@ -3641,7 +3668,8 @@ Otherwise, create a new conversation."
       ;; session log (and lose the new turn's answer entirely).
       (when (or copilot-chat--streaming-p copilot-chat--current-request)
         (user-error "Copilot Chat: A response is currently being streamed"))
-      (setq copilot-chat--source-buffer source-buf))
+      (setq copilot-chat--source-buffer source-buf
+            copilot-chat--workspace workspace))
     (display-buffer chat-buf)
     (with-current-buffer chat-buf
       (copilot-chat--insert-prompt message)
@@ -3825,12 +3853,7 @@ rather than an error."
   (unless copilot-chat--templates
     (setq copilot-chat--templates
           (condition-case err
-              (let* ((root (copilot--workspace-root))
-                     (params (when root
-                               (list :workspaceFolders
-                                     (vector (list :uri (copilot--path-to-uri root)
-                                                   :name (file-name-nondirectory
-                                                          (directory-file-name root))))))))
+              (let ((params (copilot-chat--workspace-folders-query-param)))
                 (or (append (copilot--request 'conversation/templates params)
                             nil)
                     ;; Distinguish "fetched, none" from "not fetched yet".

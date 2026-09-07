@@ -1033,18 +1033,47 @@ Sends `$/cancelRequest' to the server and resets the stored request ID."
           (setq-local copilot--indent-warning-printed-p t))
         tab-width)))
 
+(defun copilot--project-root (directory)
+  "Return the project.el or Projectile root containing DIRECTORY, or nil."
+  (or (and (fboundp 'project-current)
+           (when-let* ((proj (project-current nil directory)))
+             (project-root proj)))
+      (and (fboundp 'projectile-project-root)
+           (projectile-project-root directory))))
+
 (defun copilot--workspace-root ()
-  "Return the root directory of the current workspace, or nil."
+  "Return the root directory of the current workspace, or nil.
+Only file-visiting buffers belong to a workspace; see
+`copilot--buffer-workspace-root' for one that also resolves Dired-like
+buffers from their directory."
   (when buffer-file-name
-    (let ((root (or (and (fboundp 'project-current)
-                         (when-let* ((proj (project-current)))
-                           (project-root proj)))
-                    (and (fboundp 'projectile-project-root)
-                         (projectile-project-root))
-                    (and (fboundp 'vc-root-dir)
-                         (vc-root-dir)))))
-      (when root
-        (file-truename root)))))
+    (when-let* ((root (or (copilot--project-root default-directory)
+                          ;; Cheap here: VC caches the backend per file.
+                          (and (fboundp 'vc-root-dir)
+                               (vc-root-dir)))))
+      (file-truename root))))
+
+(defun copilot--directory-workspace-root (directory)
+  "Return the root of the project containing DIRECTORY, or nil.
+Try project.el, then Projectile, then VC.  This is the interactive-only
+counterpart of `copilot--workspace-root': the VC leg probes every
+handled backend, so keep it off the completion path."
+  (when-let* ((root (or (copilot--project-root directory)
+                        ;; Not `vc-root-dir': outside a file-visiting (or
+                        ;; Dired-like) buffer it ignores the directory
+                        ;; and returns nil.
+                        (when-let* ((backend (ignore-errors
+                                               (vc-responsible-backend
+                                                directory))))
+                          (vc-call-backend backend 'root directory)))))
+    (file-truename root)))
+
+(defun copilot--buffer-workspace-root ()
+  "Return the workspace root of the current buffer, file-visiting or not.
+A buffer without a file (Dired, Magit, ...) is resolved from its
+`default-directory'.  Return nil outside any project."
+  (or (copilot--workspace-root)
+      (copilot--directory-workspace-root default-directory)))
 
 (defun copilot--get-relative-path ()
   "Get relative path to current buffer."

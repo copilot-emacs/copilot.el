@@ -7,6 +7,10 @@
 - `copilot-login` waits longer for the language server to authenticate with GitHub, and when it times out it points you at proxy/TLS setup (`copilot-network-proxy`, `NODE_EXTRA_CA_CERTS`) instead of only reporting `Authentication failure: Timed out`, which reads like a credential problem when it is usually a TLS-inspecting proxy or firewall.
 - `copilot-login` now stops early with a clear message when the language server returns an empty device code (a sign the request to GitHub was blocked by a proxy or firewall), rather than copying an empty code and timing out later.
 
+### Bug Fixes
+
+- Describe every input property of the agent-mode client tools, as the language server now rejects the whole tool registration (`-32602 Schema validation failed`) when any is missing, leaving agent mode without `run_in_terminal`, `create_file`, `get_errors`, and `fetch_web_page`. ([#543](https://github.com/copilot-emacs/copilot.el/issues/543))
+
 ## 0.9.0 (2026-07-06)
 
 ### New Features

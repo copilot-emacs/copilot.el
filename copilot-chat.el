@@ -2012,30 +2012,54 @@ description and PR link) in the coding agent buffer."
 (defun copilot-chat--tool-definitions ()
   "Return the list of client tool definitions for agent mode."
   (vector
+   ;; The server validates the schemas on registration and requires a
+   ;; description on every property, not just on the tool.
    (list :name "run_in_terminal"
          :description "Run a shell command in the terminal."
-         :inputSchema (list :type "object"
-                            :properties (list :command (list :type "string")
-                                              :explanation (list :type "string"))
-                            :required ["command"]))
+         :inputSchema
+         (list :type "object"
+               :properties
+               (list :command
+                     (list :type "string"
+                           :description "The shell command to run.")
+                     :explanation
+                     (list :type "string"
+                           :description
+                           "A one-sentence description of what the command does."))
+               :required ["command"]))
    (list :name "create_file"
          :description "Create a new file with the given content."
-         :inputSchema (list :type "object"
-                            :properties (list :filePath (list :type "string")
-                                              :content (list :type "string"))
-                            :required ["filePath" "content"]))
+         :inputSchema
+         (list :type "object"
+               :properties
+               (list :filePath
+                     (list :type "string"
+                           :description "Absolute path of the file to create.")
+                     :content
+                     (list :type "string"
+                           :description "The content to write to the file."))
+               :required ["filePath" "content"]))
    (list :name "get_errors"
          :description "Get diagnostics/errors for the given files."
-         :inputSchema (list :type "object"
-                            :properties (list :filePaths (list :type "array"
-                                                               :items (list :type "string")))
-                            :required ["filePaths"]))
+         :inputSchema
+         (list :type "object"
+               :properties
+               (list :filePaths
+                     (list :type "array"
+                           :items (list :type "string")
+                           :description
+                           "Absolute paths of the files to get diagnostics for."))
+               :required ["filePaths"]))
    (list :name "fetch_web_page"
          :description "Fetch the content of web pages."
-         :inputSchema (list :type "object"
-                            :properties (list :urls (list :type "array"
-                                                          :items (list :type "string")))
-                            :required ["urls"]))))
+         :inputSchema
+         (list :type "object"
+               :properties
+               (list :urls
+                     (list :type "array"
+                           :items (list :type "string")
+                           :description "The URLs of the web pages to fetch."))
+               :required ["urls"]))))
 
 (defun copilot-chat--register-tools ()
   "Register client tools with the server for agent mode."

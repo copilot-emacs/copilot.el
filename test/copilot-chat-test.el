@@ -2119,7 +2119,18 @@
                             :test #'equal)))
         (expect tool :to-be-truthy)
         (expect (plist-get tool :description) :to-be-truthy)
-        (expect (plist-get tool :inputSchema) :to-be-truthy))))
+        (expect (plist-get tool :inputSchema) :to-be-truthy)))
+
+    ;; Issue #543: the server rejects the whole registration with
+    ;; -32602 when any input property lacks a description.
+    (it "describes every input property"
+      (dolist (tool (append (copilot-chat--tool-definitions) nil))
+        (let ((props (plist-get (plist-get tool :inputSchema) :properties)))
+          (expect props :to-be-truthy)
+          (while props
+            (expect (stringp (plist-get (cadr props) :description))
+                    :to-be-truthy)
+            (setq props (cddr props)))))))
 
   ;;
   ;; Tool result helper

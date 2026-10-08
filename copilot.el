@@ -525,29 +525,41 @@ The lookup is always local, even from a buffer visiting a remote file."
 
 (defvar copilot--executable-version-cache nil
   "Cached version of the resolved Copilot server executable.
-A cons cell of (EXECUTABLE-PATH . VERSION) so a change to
-`copilot-server-executable' is picked up automatically.  Cleared by
+A cons cell of ((TRUENAME . MTIME) . VERSION).  Keying on the file the
+executable resolves to and its modification time picks up a change to
+`copilot-server-executable' as well as an upgrade in place (a reinstall,
+a package manager upgrade or a Nix profile switch).  Cleared by
 `copilot-uninstall-server'.")
 
 (defun copilot--executable-version ()
   "Return the version reported by the resolved server executable.
 Run the executable returned by `copilot-server-executable' with
-`--version' and parse a semantic version from its output.  Return nil
-when the executable cannot be found or run, or when its output has no
-recognizable version.  The result is cached per executable path in
-`copilot--executable-version-cache'."
-  (when-let* ((executable (ignore-errors (copilot-server-executable))))
-    (if (equal (car copilot--executable-version-cache) executable)
+`--version', the way the server itself is started (same arguments and
+`copilot-node-executable'), and parse a semantic version from its
+output.  Return nil when the executable cannot be found or run, or when
+its output has no recognizable version.  A version found is cached in
+`copilot--executable-version-cache'; a failure is not, so a later call
+can still succeed."
+  (when-let* ((executable (ignore-errors (copilot-server-executable)))
+              (truename (file-truename executable))
+              (key (cons truename
+                         (file-attribute-modification-time
+                          (file-attributes truename)))))
+    (if (equal (car copilot--executable-version-cache) key)
         (cdr copilot--executable-version-cache)
       (let ((version
              (with-temp-buffer
                (when (ignore-errors
-                       (eq 0 (call-process executable nil t nil "--version")))
+                       (eq 0 (copilot--with-node-path
+                               (apply #'call-process executable nil '(t nil) nil
+                                      (append (remove "--stdio" copilot-server-args)
+                                              '("--version"))))))
                  (goto-char (point-min))
                  (when (re-search-forward
                         "\\([0-9]+\\.[0-9]+\\.[0-9]+\\)" nil t)
                    (match-string 1))))))
-        (setq copilot--executable-version-cache (cons executable version))
+        (when version
+          (setq copilot--executable-version-cache (cons key version)))
         version))))
 
 (defun copilot-installed-version ()

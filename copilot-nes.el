@@ -175,46 +175,115 @@ pending."
 
 (add-to-list 'copilot-disable-display-predicates #'copilot-nes--shadow-completion-p)
 
+(defun copilot-nes--joins-previous-p (string index)
+  "Return non-nil if the character at INDEX in STRING joins the one before.
+That is a combining mark, an emoji modifier, a zero-width joiner or the
+character after one: a hunk boundary at INDEX would split what is
+displayed as a single character."
+  (and (< 0 index (length string))
+       (let ((char (aref string index)))
+         (or (memq (get-char-code-property char 'general-category) '(Mn Me))
+             (<= #x1F3FB char #x1F3FF)
+             (eq char #x200D)
+             (eq (aref string (1- index)) #x200D)))))
+
+(defun copilot-nes--trim-hunk (old new offset)
+  "Return the minimal hunk that turns OLD into NEW, or nil if they match.
+OFFSET is the buffer position where OLD starts.  The hunk is a list
+\(BEG END TEXT) meaning the buffer text from BEG to END becomes TEXT;
+the text OLD and NEW share at either end is left out of it, short of
+splitting a character from the marks or modifiers attached to it."
+  (unless (string= old new)
+    (let ((prefix (length (copilot--string-common-prefix old new)))
+          (suffix 0))
+      (while (and (> prefix 0)
+                  (or (copilot-nes--joins-previous-p old prefix)
+                      (copilot-nes--joins-previous-p new prefix)))
+        (setq prefix (1- prefix)))
+      ;; Don't let the suffix reclaim characters already in the prefix
+      ;; (e.g. "aa" -> "aaa").
+      (setq suffix (min (length (copilot--string-common-prefix (reverse old)
+                                                               (reverse new)))
+                        (- (min (length old) (length new)) prefix)))
+      (while (and (> suffix 0)
+                  (or (copilot-nes--joins-previous-p old (- (length old) suffix))
+                      (copilot-nes--joins-previous-p new (- (length new) suffix))))
+        (setq suffix (1- suffix)))
+      (list (+ offset prefix)
+            (+ offset (- (length old) suffix))
+            (substring new prefix (- (length new) suffix))))))
+
+(defun copilot-nes--hunks (beg old new)
+  "Return the hunks that turn OLD, starting at buffer position BEG, into NEW.
+Each is a (BEG END TEXT) list as built by `copilot-nes--trim-hunk'.
+When OLD and NEW have the same number of lines, each changed line gets
+its own hunk, so an edit touching a few characters on several lines
+reads as a few small changes rather than one block deletion followed by
+one block insertion.  Otherwise return a single hunk with the unchanged
+text at either end trimmed off."
+  (let ((old-lines (split-string old "\n"))
+        (new-lines (split-string new "\n")))
+    (if (= (length old-lines) (length new-lines))
+        (let ((pos beg)
+              (hunks nil))
+          (cl-loop for old-line in old-lines
+                   for new-line in new-lines
+                   do (when-let* ((hunk (copilot-nes--trim-hunk old-line new-line pos)))
+                        (push hunk hunks))
+                   (setq pos (+ pos (length old-line) 1)))
+          (nreverse hunks))
+      (delq nil (list (copilot-nes--trim-hunk old new beg))))))
+
+(defun copilot-nes--display-hunk (beg end text)
+  "Show the hunk replacing the buffer text from BEG to END with TEXT."
+  ;; Deletion overlay: highlight replaced text with strikethrough
+  (when (> end beg)
+    (let ((ov (make-overlay beg end nil nil nil)))
+      (overlay-put ov 'face 'copilot-nes-deletion-face)
+      (overlay-put ov 'copilot-nes t)
+      (overlay-put ov 'evaporate t)
+      (overlay-put ov 'priority 100)
+      (push ov copilot-nes--overlays)))
+  ;; Insertion overlay: show new text.  The overlay is zero-width
+  ;; (it only carries an `after-string'), so it must NOT be marked
+  ;; `evaporate' — Emacs deletes an empty overlay the moment that
+  ;; property is set, which would make the insertion invisible.
+  (unless (string-empty-p text)
+    (let ((ov (make-overlay end end nil nil nil)))
+      (overlay-put ov 'after-string
+                   (propertize text 'face 'copilot-nes-insertion-face))
+      (overlay-put ov 'copilot-nes t)
+      (overlay-put ov 'priority 100)
+      (push ov copilot-nes--overlays))))
+
 (defun copilot-nes--display (edit)
-  "Display EDIT as overlays in the buffer."
+  "Display EDIT as overlays in the buffer.
+Only the parts that actually change are highlighted (see
+`copilot-nes--hunks'); accepting the suggestion still applies EDIT as a
+whole.  An EDIT that changes nothing is dropped rather than left
+pending, invisible."
   (copilot-nes--clear)
-  (setq copilot-nes--edit edit)
-  (copilot--dbind (text range) edit
-    (let* ((region (copilot-nes--range-to-region range))
-           (beg (car region))
-           (end (cdr region))
-           (has-deletion (> end beg))
-           (has-insertion (and text (not (string-empty-p text)))))
-      ;; Deletion overlay: highlight replaced text with strikethrough
-      (when has-deletion
-        (let ((ov (make-overlay beg end nil nil nil)))
-          (overlay-put ov 'face 'copilot-nes-deletion-face)
-          (overlay-put ov 'copilot-nes t)
-          (overlay-put ov 'evaporate t)
-          (overlay-put ov 'priority 100)
-          (push ov copilot-nes--overlays)))
-      ;; Insertion overlay: show new text.  The overlay is zero-width
-      ;; (it only carries an `after-string'), so it must NOT be marked
-      ;; `evaporate' — Emacs deletes an empty overlay the moment that
-      ;; property is set, which would make the insertion invisible.
-      (when has-insertion
-        (let* ((insertion-text (propertize text 'face 'copilot-nes-insertion-face))
-               (ov (make-overlay end end nil nil nil)))
-          (overlay-put ov 'after-string insertion-text)
-          (overlay-put ov 'copilot-nes t)
-          (overlay-put ov 'priority 100)
-          (push ov copilot-nes--overlays)))))
-  ;; Shadow any completion that is already on screen; the disable-display
-  ;; predicate keeps `copilot-mode' from re-showing one while the suggestion
-  ;; is pending.
-  (copilot-clear-overlay)
-  ;; Record point so the post-command hook can detect actual movement
-  (setq copilot-nes--last-point (point))
-  ;; Notify server that we showed the suggestion
-  (copilot--dbind (command) edit
-    (when command
-      (copilot--notify 'textDocument/didShowInlineEdit
-                       (list :item (list :command command))))))
+  (when-let* ((hunks (copilot--dbind (text range) edit
+                       (let* ((region (copilot-nes--range-to-region range))
+                              (beg (car region)))
+                         (copilot-nes--hunks
+                          beg
+                          (buffer-substring-no-properties beg (cdr region))
+                          (or text ""))))))
+    (setq copilot-nes--edit edit)
+    (pcase-dolist (`(,hunk-beg ,hunk-end ,hunk-text) hunks)
+      (copilot-nes--display-hunk hunk-beg hunk-end hunk-text))
+    ;; Shadow any completion that is already on screen; the disable-display
+    ;; predicate keeps `copilot-mode' from re-showing one while the suggestion
+    ;; is pending.
+    (copilot-clear-overlay)
+    ;; Record point so the post-command hook can detect actual movement
+    (setq copilot-nes--last-point (point))
+    ;; Notify server that we showed the suggestion
+    (copilot--dbind (command) edit
+      (when command
+        (copilot--notify 'textDocument/didShowInlineEdit
+                         (list :item (list :command command)))))))
 
 ;;
 ;; Request

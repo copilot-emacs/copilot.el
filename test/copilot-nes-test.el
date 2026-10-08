@@ -9,6 +9,21 @@
 (require 'buttercup)
 (require 'copilot-nes)
 
+(defun copilot-nes-test--hunks ()
+  "Describe the overlays of the pending NES suggestion in buffer order.
+Each is (delete LINE TEXT) for struck-out text or (insert LINE TEXT)
+for text shown after it."
+  (mapcar (lambda (ov)
+            (let ((after (overlay-get ov 'after-string)))
+              (list (if after 'insert 'delete)
+                    (line-number-at-pos (overlay-start ov))
+                    (if after
+                        (substring-no-properties after)
+                      (buffer-substring-no-properties
+                       (overlay-start ov) (overlay-end ov))))))
+          (sort (copy-sequence copilot-nes--overlays)
+                (lambda (a b) (< (overlay-start a) (overlay-start b))))))
+
 (describe "copilot-nes"
   (describe "loading"
     (it "provides the copilot-nes feature"
@@ -113,6 +128,128 @@
           (spy-on 'jsonrpc-notify)
           (copilot-nes--display edit)
           (expect 'jsonrpc-notify :to-have-been-called)))))
+
+  (describe "copilot-nes--display hunks"
+    (before-each
+      (spy-on 'copilot--notify))
+
+    (it "shows one small hunk per changed line"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (insert "    \"a_8\": \"a8\",\n"
+                "    \"a_9\": \"a9\",\n"
+                "    \"a_10\": \"a10\"\n")
+        (copilot-nes--display
+         (list :text (concat "    \"b_8\": \"a8\",\n"
+                             "    \"b_9\": \"a9\",\n"
+                             "    \"b_10\": \"a10\"")
+               :range (list :start (list :line 0 :character 0)
+                            :end (list :line 2 :character 17))
+               :command nil))
+        (expect (copilot-nes-test--hunks)
+                :to-equal '((delete 1 "a") (insert 1 "b")
+                            (delete 2 "a") (insert 2 "b")
+                            (delete 3 "a") (insert 3 "b")))))
+
+    (it "shows only the new text when the edit retypes the indentation"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (insert "def f():\n    \n")
+        (copilot-nes--display
+         (list :text "    return 42"
+               :range (list :start (list :line 1 :character 0)
+                            :end (list :line 1 :character 4))
+               :command nil))
+        (expect (copilot-nes-test--hunks)
+                :to-equal '((insert 2 "return 42")))
+        ;; After the indentation, not in front of it.
+        (expect (overlay-start (car copilot-nes--overlays))
+                :to-equal (1- (point-max)))))
+
+    (it "leaves unchanged lines alone"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (insert "one\ntwo\nthree\n")
+        (copilot-nes--display
+         (list :text "one\n2\nthree"
+               :range (list :start (list :line 0 :character 0)
+                            :end (list :line 2 :character 5))
+               :command nil))
+        (expect (copilot-nes-test--hunks)
+                :to-equal '((delete 2 "two") (insert 2 "2")))))
+
+    (it "falls back to a single trimmed hunk when the line count changes"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (insert "one\nthree\n")
+        (copilot-nes--display
+         (list :text "one\nfour\nthree"
+               :range (list :start (list :line 0 :character 0)
+                            :end (list :line 1 :character 5))
+               :command nil))
+        (expect (copilot-nes-test--hunks)
+                :to-equal '((insert 2 "four\n")))))
+
+    (it "ignores an edit that changes nothing"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (insert "hello\n")
+        (spy-on 'copilot-clear-overlay)
+        (copilot-nes--display
+         (list :text "hello"
+               :range (list :start (list :line 0 :character 0)
+                            :end (list :line 0 :character 5))
+               :command (list :title "test" :command "test-cmd")))
+        (expect copilot-nes--overlays :to-equal nil)
+        ;; Nothing pending, so TAB and completions are left alone and the
+        ;; server isn't told a suggestion was shown.
+        (expect copilot-nes--edit :to-be nil)
+        (expect 'copilot-clear-overlay :not :to-have-been-called)
+        (expect 'copilot--notify :not :to-have-been-called)))
+
+    (it "doesn't split a character with a modifier"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (insert "ok \U0001F44D\U0001F3FB\n")
+        (copilot-nes--display
+         (list :text "ok \U0001F44D\U0001F3FD"
+               :range (list :start (list :line 0 :character 0)
+                            :end (list :line 0 :character 7))
+               :command nil))
+        (expect (copilot-nes-test--hunks)
+                :to-equal '((delete 1 "\U0001F44D\U0001F3FB")
+                            (insert 1 "\U0001F44D\U0001F3FD")))))
+
+    (it "doesn't split a character with a combining mark"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (insert "cafe\u0301\n")
+        (copilot-nes--display
+         (list :text "cafe\u0300"
+               :range (list :start (list :line 0 :character 0)
+                            :end (list :line 0 :character 5))
+               :command nil))
+        (expect (copilot-nes-test--hunks)
+                :to-equal '((delete 1 "e\u0301") (insert 1 "e\u0300")))))
+
+    (it "still applies the whole edit on accept"
+      (with-temp-buffer
+        (setq-local copilot--line-bias 1)
+        (insert "    \"a_8\": \"a8\",\n"
+                "    \"a_9\": \"a9\"\n")
+        (goto-char (point-min))
+        (copilot-nes--display
+         (list :text (concat "    \"b_8\": \"a8\",\n"
+                             "    \"b_9\": \"a9\"")
+               :range (list :start (list :line 0 :character 0)
+                            :end (list :line 1 :character 15))
+               :command nil))
+        (expect (length copilot-nes--overlays) :to-equal 4)
+        (copilot-nes-accept)
+        (expect (buffer-substring-no-properties (point-min) (point-max))
+                :to-equal (concat "    \"b_8\": \"a8\",\n"
+                                  "    \"b_9\": \"a9\"\n"))
+        (expect copilot-nes--overlays :to-equal nil))))
 
   ;;
   ;; Clear

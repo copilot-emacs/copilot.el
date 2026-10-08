@@ -3589,17 +3589,43 @@ server."
 (defvar org-font-lock-keywords)
 (defvar org-inhibit-startup)
 
+(defconst copilot-chat--markdown-local-variables
+  '(font-lock-defaults
+    syntax-propertize-function
+    syntax-propertize-extend-region-functions
+    jit-lock-after-change-extend-region-functions
+    font-lock-extend-region-functions)
+  "Local variables the markdown frontend copies from a `gfm-mode' buffer.
+Besides the font-lock keywords, these are the syntax propertization they
+depend on and the hooks that widen refontification to a whole code
+block.")
+
 (defun copilot-chat--setup-markdown-font-lock ()
   "Set up GFM font-lock for the markdown frontend.
-When `markdown-mode' is available, borrow its GFM `font-lock-defaults'
-and enable native code-block fontification; otherwise leave the basic
-highlighting in place."
+When `markdown-mode' is available, borrow its GFM font-lock setup along
+with the syntax propertization it depends on, and enable native
+code-block fontification; otherwise leave the basic highlighting in
+place."
   (when (require 'markdown-mode nil t)
     (setq-local markdown-fontify-code-blocks-natively t)
-    (setq-local font-lock-defaults
-                (with-temp-buffer
-                  (gfm-mode)
-                  font-lock-defaults))
+    ;; The GFM keywords recognize fenced code blocks by text properties
+    ;; that markdown's syntax propertization puts on them.  Without it
+    ;; the blocks are never seen as code blocks, so they miss native
+    ;; fontification and the inline-code matcher claims each whole fence
+    ;; instead.  The extend-region hooks let a closing fence that streams
+    ;; in later refontify the block from its opening line.  Copy all of
+    ;; it from a real GFM buffer rather than naming markdown-mode's
+    ;; internals, which differ between its releases.
+    (pcase-let ((`(,table . ,locals)
+                 (with-temp-buffer
+                   (gfm-mode)
+                   (cons (syntax-table)
+                         (mapcar (lambda (var) (cons var (symbol-value var)))
+                                 (seq-filter #'local-variable-p
+                                             copilot-chat--markdown-local-variables))))))
+      (set-syntax-table table)
+      (pcase-dolist (`(,var . ,value) locals)
+        (set (make-local-variable var) value)))
     (font-lock-flush)))
 
 (defun copilot-chat--org-outline-level ()

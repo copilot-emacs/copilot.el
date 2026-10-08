@@ -474,6 +474,14 @@ Tracked separately from `copilot-chat--resolved-model' so that a nil
 result (no usable default) is cached too and not re-queried on every
 message.")
 
+(defvar copilot-chat--model-retry-time nil
+  "Time before which a failed default model lookup is not retried, or nil.
+A lookup blocks for up to its timeout, so a server that keeps failing
+it must not stall every message.")
+
+(defconst copilot-chat--model-retry-delay 30
+  "Seconds to wait after a failed default model lookup before retrying.")
+
 (defvar copilot-chat--model-provider nil
   "Provider name of the selected BYOK model, or nil for a Copilot model.
 Set alongside `copilot-chat-model' by `copilot-chat-select-model' when a
@@ -499,36 +507,48 @@ model selection still works."
                              :models))
     (error nil)))
 
+(defconst copilot-chat--fallback-model "auto"
+  "Chat model id sent when no default model could be resolved.
+Current servers reject a conversation that names no model, and `auto' is
+the server's router model, so it is a better bet than sending nothing.")
+
 (defun copilot-chat--resolve-default-model ()
   "Query the server for a default chat model id, or nil.
 Prefer the model the server marks as the chat default, then an `auto'
-model, then the first available chat model."
-  (condition-case err
-      (let ((models (copilot-chat--chat-models)))
-        (or (plist-get (seq-find (lambda (m)
-                                   (eq (plist-get m :isChatDefault) t))
-                                 models)
-                       :id)
-            ;; "auto" is the server's catch-all router model; it has no
-            ;; dedicated flag, so match it by its stable id.
-            (plist-get (seq-find (lambda (m)
-                                   (equal (plist-get m :id) "auto"))
-                                 models)
-                       :id)
-            (plist-get (car models) :id)))
-    (error
-     (copilot--log 'warn "Could not resolve a default chat model: %S" err)
-     nil)))
+model, then the first available chat model.  Signal an error when the
+model list can't be fetched."
+  (let ((models (copilot-chat--chat-models)))
+    (or (plist-get (seq-find (lambda (m)
+                               (eq (plist-get m :isChatDefault) t))
+                             models)
+                   :id)
+        ;; "auto" is the server's catch-all router model; it has no
+        ;; dedicated flag, so match it by its stable id.
+        (plist-get (seq-find (lambda (m)
+                               (equal (plist-get m :id) "auto"))
+                             models)
+                   :id)
+        (plist-get (car models) :id))))
 
 (defun copilot-chat--default-model ()
   "Return a server-resolved default chat model id, or nil.
-The server is queried at most once per session, and only when the
-connection is already up so chat never blocks on starting it.  The
-result, including nil, is cached."
+The server is queried only when the connection is already up so chat
+never blocks on starting it.  A successful lookup is cached for the
+session, even one that finds no model.  A failed one (say, a freshly
+started server timing out while it fetches its model list) is not: it is
+retried once `copilot-chat--model-retry-delay' seconds have passed,
+instead of leaving chat without a model for the rest of the session."
   (when (and (not copilot-chat--model-resolved)
+             (not (and copilot-chat--model-retry-time
+                       (< (float-time) copilot-chat--model-retry-time)))
              (copilot--connection-alivep))
-    (setq copilot-chat--resolved-model (copilot-chat--resolve-default-model)
-          copilot-chat--model-resolved t))
+    (condition-case err
+        (setq copilot-chat--resolved-model (copilot-chat--resolve-default-model)
+              copilot-chat--model-resolved t)
+      (error
+       (setq copilot-chat--model-retry-time
+             (+ (float-time) copilot-chat--model-retry-delay))
+       (copilot--log 'warn "Could not resolve a default chat model: %S" err))))
   copilot-chat--resolved-model)
 
 (defun copilot-chat--model ()
@@ -685,9 +705,9 @@ never blocks starting a conversation."
 Send the modern `modelInfo' object alongside the deprecated `model'
 field so both current and older language servers resolve a model.  For a
 Bring Your Own Key model, attach `modelInfo.providerName' so the server
-routes the turn to that provider.  Return nil when no model can be
-resolved, letting the server pick."
-  (when-let* ((model (copilot-chat--model)))
+routes the turn to that provider.  When no model can be resolved, send
+`copilot-chat--fallback-model', as the server refuses a turn without one."
+  (let ((model (or (copilot-chat--model) copilot-chat--fallback-model)))
     (list :modelInfo (append
                       (list :id model)
                       ;; Only tag the provider for an explicit BYOK

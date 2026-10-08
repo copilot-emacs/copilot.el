@@ -102,6 +102,62 @@
                 :to-contain "/usr/bin/npm")
         (expect (file-remote-p install-dir) :not :to-be-truthy))))
 
+  (describe "copilot-node-executable"
+    :var (path-at-spawn node-dir)
+    (before-each
+      (setq path-at-spawn nil
+            ;; Windows puts a drive letter in front.
+            node-dir (file-name-directory
+                      (expand-file-name "/opt/node22/bin/node"))))
+
+    (it "puts the configured Node first on PATH for the server"
+      (let ((copilot-node-executable "/opt/node22/bin/node"))
+        (spy-on 'copilot--command :and-return-value '("true"))
+        (let ((dummy (start-process "dummy" nil "true")))
+          (spy-on 'make-process :and-call-fake
+                  (lambda (&rest _)
+                    (setq path-at-spawn (getenv "PATH"))
+                    dummy)))
+        (spy-on 'make-instance)
+        (copilot--make-connection)
+        (expect path-at-spawn :to-match (concat "\\`" (regexp-quote node-dir)))))
+
+    (it "runs the npm next to the configured Node when installing"
+      (let ((copilot-node-executable "/opt/node22/bin/node")
+            (copilot-install-dir "/opt/copilot"))
+        (spy-on 'executable-find :and-call-fake
+                (lambda (command &optional _remote)
+                  (concat (car exec-path) command)))
+        (spy-on 'make-directory)
+        (spy-on 'copilot-async-start-process :and-call-fake
+                (lambda (&rest _)
+                  (setq path-at-spawn (getenv "PATH"))))
+        (copilot-install-server)
+        (expect (spy-calls-args-for 'copilot-async-start-process 0)
+                :to-contain (concat node-dir "npm"))
+        (expect path-at-spawn :to-match (concat "\\`" (regexp-quote node-dir)))))
+
+    (it "looks up a bare node name on exec-path"
+      (let ((copilot-node-executable "node")
+            (default-directory "/tmp/project/"))
+        (spy-on 'executable-find :and-call-fake
+                (lambda (command &optional _remote)
+                  (when (equal command "node") "/usr/local/bin/node")))
+        (expect (copilot--node-directory) :to-equal "/usr/local/bin/")))
+
+    (it "leaves PATH alone when unset"
+      (let ((copilot-node-executable nil)
+            (path (getenv "PATH")))
+        (spy-on 'copilot--command :and-return-value '("true"))
+        (let ((dummy (start-process "dummy" nil "true")))
+          (spy-on 'make-process :and-call-fake
+                  (lambda (&rest _)
+                    (setq path-at-spawn (getenv "PATH"))
+                    dummy)))
+        (spy-on 'make-instance)
+        (copilot--make-connection)
+        (expect path-at-spawn :to-equal path))))
+
   (describe "copilot--request"
     (it "sends empty object when params is nil"
       (let ((sent-params nil))

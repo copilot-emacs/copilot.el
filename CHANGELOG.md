@@ -17,6 +17,7 @@
 - Bring back `copilot-node-executable`, dropped without notice in 0.1.0, so the server and `copilot-install-server` can run under a different Node than the first one on `PATH`. ([#467](https://github.com/copilot-emacs/copilot.el/issues/467))
 - Report the version of the language server actually in use, by asking `copilot-server-executable` for its `--version`, so a server installed outside `copilot-install-dir` (e.g. by a system package manager) no longer triggers spurious "tested for version X" and NES version warnings. ([#511](https://github.com/copilot-emacs/copilot.el/pull/511))
 - Fontify code blocks in the chat buffer natively with the markdown frontend, instead of rendering most of them (and, once a reply finishes, sometimes all of them) as one inline-code span. ([#545](https://github.com/copilot-emacs/copilot.el/issues/545))
+- Report why the server went into a warning or error state (e.g. "Completions limit reached" once the plan's quota is used up) in `*Messages*` instead of only showing `Copilot:Error` in the mode line, and stop painting informational lines in `*copilot-language-server-log*` green, which made failed requests look like successes. ([#468](https://github.com/copilot-emacs/copilot.el/issues/468))
 
 ## 0.9.0 (2026-07-06)
 

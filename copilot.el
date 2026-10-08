@@ -327,6 +327,12 @@ Incremented after each change.")
   "Current server status from `didChangeStatus' notification.
 Plist with keys :kind, :busy, and :message.")
 
+(defvar copilot--reported-status nil
+  "The last warning or error status logged, as (KIND . MESSAGE), or nil.
+Kept apart from `copilot--status' because the server drops back to
+Normal around every completion request, so a persisting warning would
+otherwise look new each time it is re-sent.")
+
 (defvar copilot--quota nil
   "Latest quota snapshot from the `copilot/quotaChange' notification.
 A plist with keys such as :chat, :completions, :premium_interactions
@@ -815,6 +821,7 @@ reaped by Emacs anyway, so the `exit' notification is enough."
     (setq copilot--opened-buffers nil)
     (setq copilot--workspace-folders nil)
     (setq copilot--status nil)
+    (setq copilot--reported-status nil)
     (setq copilot--quota nil)))
 
 (defun copilot--shutdown-server-at-exit ()
@@ -1447,10 +1454,12 @@ Each request METHOD can have only one HANDLER."
      (with-current-buffer (get-buffer-create "*copilot-language-server-log*")
        (save-excursion
          (goto-char (point-max))
+         ;; Info (3) is left unstyled: the server logs request outcomes
+         ;; there, failures such as a 402 included, so painting it green
+         ;; made those look like successes.
          (insert (propertize (concat log-msg "\n")
                              'face (pcase log-level
                                      (4 'shadow)
-                                     (3 'success)
                                      (2 'warning)
                                      (1 'error)))))))))
 
@@ -1492,6 +1501,16 @@ Each request METHOD can have only one HANDLER."
  'didChangeStatus
  (lambda (msg)
    (copilot--dbind (kind busy message) msg
+     ;; The mode line only says "Copilot:Error", so report the reason
+     ;; (e.g. "Completions limit reached" when the plan's quota is used
+     ;; up).  The server re-sends its status around every request, so do
+     ;; it only when the problem first shows up, not on each repeat.
+     (when (and (member kind '("Warning" "Error"))
+                (stringp message)
+                (not (string-empty-p message))
+                (not (equal (cons kind message) copilot--reported-status)))
+       (setq copilot--reported-status (cons kind message))
+       (copilot--log (if (equal kind "Error") 'error 'warning) "%s" message))
      (setq copilot--status (list :kind kind :busy (eq busy t) :message message))
      (force-mode-line-update t))))
 

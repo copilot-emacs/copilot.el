@@ -1079,6 +1079,9 @@ Return the resulting `user-error' message string."
   ;;
 
   (describe "didChangeStatus handler"
+    (before-each
+      (setq copilot--reported-status nil))
+
     (it "sets copilot--status from notification"
       (let ((copilot--status nil))
         (spy-on 'force-mode-line-update)
@@ -1098,7 +1101,107 @@ Return the resulting `user-error' message string."
         (let ((handlers (gethash 'didChangeStatus copilot--notification-handlers)))
           (funcall (car handlers)
                    '(:kind "Normal" :busy :json-false :message nil))
-          (expect (plist-get copilot--status :busy) :to-equal nil)))))
+          (expect (plist-get copilot--status :busy) :to-equal nil))))
+
+    (it "logs the message when the server reports an error"
+      (let ((copilot--status '(:kind "Normal" :busy nil :message "")))
+        (spy-on 'force-mode-line-update)
+        (spy-on 'copilot--log)
+        (funcall (car (gethash 'didChangeStatus copilot--notification-handlers))
+                 '(:kind "Error" :busy :json-false
+                   :message "Completions limit reached"))
+        (expect 'copilot--log :to-have-been-called-with
+                'error "%s" "Completions limit reached")))
+
+    (it "logs a warning status at warning level"
+      (let ((copilot--status nil))
+        (spy-on 'force-mode-line-update)
+        (spy-on 'copilot--log)
+        (funcall (car (gethash 'didChangeStatus copilot--notification-handlers))
+                 '(:kind "Warning" :busy :json-false :message "Quota low"))
+        (expect 'copilot--log :to-have-been-called-with
+                'warning "%s" "Quota low")))
+
+    (it "logs an error only once while it persists"
+      (let ((copilot--status nil)
+            (handler (car (gethash 'didChangeStatus
+                                   copilot--notification-handlers))))
+        (spy-on 'force-mode-line-update)
+        (spy-on 'copilot--log)
+        (funcall handler '(:kind "Error" :busy t
+                           :message "Completions limit reached"))
+        (funcall handler '(:kind "Error" :busy :json-false
+                           :message "Completions limit reached"))
+        (expect 'copilot--log :to-have-been-called-times 1)))
+
+    (it "logs a warning once while it flaps around completion requests"
+      ;; The server forces its status back to Normal before every
+      ;; completion request and re-sends the warning when it fails again.
+      (let ((copilot--status nil)
+            (handler (car (gethash 'didChangeStatus
+                                   copilot--notification-handlers))))
+        (spy-on 'force-mode-line-update)
+        (spy-on 'copilot--log)
+        (dotimes (_ 3)
+          (funcall handler '(:kind "Warning" :busy :json-false
+                             :message "Network exception"))
+          (funcall handler '(:kind "Normal" :busy :json-false :message ""))
+          (funcall handler '(:kind "Normal" :busy t :message "")))
+        (expect 'copilot--log :to-have-been-called-times 1)))
+
+    (it "logs the same warning again after the server restarts"
+      (let ((copilot--status nil)
+            (copilot--connection nil)
+            (handler (car (gethash 'didChangeStatus
+                                   copilot--notification-handlers))))
+        (spy-on 'force-mode-line-update)
+        (spy-on 'copilot--log)
+        (funcall handler '(:kind "Warning" :busy :json-false
+                           :message "Network exception"))
+        ;; Stand in for a live connection so the shutdown resets state.
+        (setq copilot--connection 'fake)
+        (spy-on 'jsonrpc-request)
+        (spy-on 'jsonrpc-notify)
+        (spy-on 'jsonrpc-shutdown)
+        (copilot--shutdown-server)
+        (funcall handler '(:kind "Warning" :busy :json-false
+                           :message "Network exception"))
+        (expect 'copilot--log :to-have-been-called-times 2)))
+
+    (it "does not log a normal status"
+      (let ((copilot--status '(:kind "Error" :busy nil :message "boom")))
+        (spy-on 'force-mode-line-update)
+        (spy-on 'copilot--log)
+        (funcall (car (gethash 'didChangeStatus copilot--notification-handlers))
+                 '(:kind "Normal" :busy :json-false :message "Ready"))
+        (expect 'copilot--log :not :to-have-been-called))))
+
+  ;;
+  ;; window/logMessage notification
+  ;;
+
+  (describe "window/logMessage handler"
+    :var (handler)
+    (before-each
+      (setq handler (car (gethash 'window/logMessage
+                                  copilot--notification-handlers)))
+      (when (get-buffer "*copilot-language-server-log*")
+        (kill-buffer "*copilot-language-server-log*")))
+
+    (after-each
+      (when (get-buffer "*copilot-language-server-log*")
+        (kill-buffer "*copilot-language-server-log*")))
+
+    (it "leaves info lines unstyled"
+      (funcall handler '(:type 3 :message "finished with 402 status"))
+      (with-current-buffer "*copilot-language-server-log*"
+        (expect (buffer-string) :to-equal "finished with 402 status\n")
+        (expect (get-text-property (point-min) 'face) :to-be nil)))
+
+    (it "styles error lines with the error face"
+      (funcall handler '(:type 1 :message "boom"))
+      (with-current-buffer "*copilot-language-server-log*"
+        (expect (get-text-property (point-min) 'face) :to-be 'error))))
 
   ;;
   ;; window/showMessageRequest handler

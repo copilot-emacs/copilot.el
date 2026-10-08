@@ -1013,6 +1013,68 @@
                   :not :to-be nil)))))
 
   ;;
+  ;; Markdown frontend
+  ;;
+
+  (describe "markdown frontend"
+    :var (buf)
+    (before-each
+      (setq buf (get-buffer-create "*copilot-chat-test-markdown*"))
+      (with-current-buffer buf
+        (let ((copilot-chat-frontend 'markdown))
+          (copilot-chat-mode))
+        (setq copilot-chat--streaming-p t)))
+
+    (after-each
+      (kill-buffer buf))
+
+    (it "natively fontifies a fenced code block streamed in chunks"
+      (assume (require 'markdown-mode nil t) "markdown-mode is not available")
+      ;; Feed the reply in small pieces, fontifying only what each one
+      ;; added, the way redisplay does after a change, so the closing
+      ;; fence arrives after the rest of the block was already fontified
+      ;; and has to widen the refontification back to the opening one.
+      (let ((copilot-chat--active-buffers (list (cons "test-token" buf)))
+            (reply (concat "Try:\n\n```elisp\n(defun foo () 1)\n```\n\n"
+                           "Or:\n\n```python\ndef foo():\n    return 1\n```\n")))
+        (dotimes (i (ceiling (length reply) 3.0))
+          (let ((start (with-current-buffer buf (point-max))))
+            (copilot-chat--handle-progress
+             (list :token "test-token"
+                   :value (list :kind "report"
+                                :reply (substring reply (* i 3)
+                                                  (min (length reply)
+                                                       (* (1+ i) 3))))))
+            (with-current-buffer buf
+              (font-lock-fontify-region (min start (point-max))
+                                        (point-max))))))
+      (with-current-buffer buf
+        (goto-char (point-min))
+        (dolist (keyword '("defun" "return"))
+          (search-forward keyword)
+          (let* ((f (get-text-property (match-beginning 0) 'face))
+                 (faces (if (listp f) f (list f))))
+            (expect (memq 'font-lock-keyword-face faces) :to-be-truthy)
+            (expect (memq 'markdown-inline-code-face faces)
+                    :not :to-be-truthy)))))
+
+    (it "keeps a fenced code block native when it is refontified"
+      (assume (require 'markdown-mode nil t) "markdown-mode is not available")
+      (with-current-buffer buf
+        (let ((inhibit-read-only t))
+          (insert "```elisp\n(defun foo () 1)\n```\n"))
+        (font-lock-ensure)
+        (font-lock-flush)
+        (font-lock-ensure)
+        (goto-char (point-min))
+        (search-forward "defun")
+        (let* ((f (get-text-property (match-beginning 0) 'face))
+               (faces (if (listp f) f (list f))))
+          (expect (memq 'font-lock-keyword-face faces) :to-be-truthy)
+          (expect (memq 'markdown-inline-code-face faces)
+                  :not :to-be-truthy)))))
+
+  ;;
   ;; Mode-line lighter
   ;;
 

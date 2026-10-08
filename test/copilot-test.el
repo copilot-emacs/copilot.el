@@ -1504,7 +1504,49 @@ Return the resulting `user-error' message string."
               (lambda (&rest _) (insert "1.504.0\n") 0))
       (copilot--executable-version)
       (copilot--executable-version)
-      (expect 'call-process :to-have-been-called-times 1)))
+      (expect 'call-process :to-have-been-called-times 1))
+
+    (it "queries again when the executable is upgraded in place"
+      (let ((file (make-temp-file "copilot-language-server"))
+            (version "1.533.0"))
+        (unwind-protect
+            (progn
+              (spy-on 'copilot-server-executable :and-return-value file)
+              (spy-on 'call-process :and-call-fake
+                      (lambda (&rest _) (insert version "\n") 0))
+              (expect (copilot--executable-version) :to-equal "1.533.0")
+              ;; What a reinstall over the existing file looks like.
+              (setq version "1.551.2")
+              (set-file-times file (time-add (current-time) 60))
+              (expect (copilot--executable-version) :to-equal "1.551.2"))
+          (delete-file file))))
+
+    (it "does not cache a failed query"
+      (let ((exit 1))
+        (spy-on 'copilot-server-executable :and-return-value "/opt/copilot-language-server")
+        (spy-on 'call-process :and-call-fake
+                (lambda (&rest _) (insert "1.504.0\n") exit))
+        (expect (copilot--executable-version) :to-be nil)
+        (setq exit 0)
+        (expect (copilot--executable-version) :to-equal "1.504.0")))
+
+    (it "runs the server the way it is started"
+      (let ((copilot-server-args '("--stdio" "--debug"))
+            (copilot-node-executable "/opt/node22/bin/node")
+            (path nil))
+        (spy-on 'copilot-server-executable :and-return-value "/opt/copilot-language-server")
+        (spy-on 'call-process :and-call-fake
+                (lambda (&rest _)
+                  (setq path (getenv "PATH"))
+                  (insert "1.504.0\n")
+                  0))
+        (copilot--executable-version)
+        (expect (nthcdr 4 (spy-calls-args-for 'call-process 0))
+                :to-equal '("--debug" "--version"))
+        (expect path :to-match
+                (concat "\\`" (regexp-quote
+                                 (file-name-directory
+                                  (expand-file-name copilot-node-executable))))))))
 
   (describe "copilot-installed-version"
     (it "prefers the resolved executable version"

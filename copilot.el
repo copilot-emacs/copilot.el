@@ -194,6 +194,19 @@ Set to nil to use completions from the server verbatim."
   :group 'copilot
   :package-version '(copilot . "0.1"))
 
+(defcustom copilot-node-executable nil
+  "Node.js executable to run the server and npm with, or nil.
+The npm-installed server and npm itself both start through `env node',
+so they run whichever `node' comes first on PATH.  Set this when that
+one is too old for the server, say an nvm default pinned to an old
+release: its directory is then put first on PATH for the server process
+and for `copilot-install-server'.  When nil, PATH is left alone.  The
+native server binary doesn't need Node."
+  :type '(choice (const :tag "Node on PATH" nil) file)
+  :risky t
+  :group 'copilot
+  :package-version '(copilot . "0.10"))
+
 (defcustom copilot-lsp-server-version nil
   "Copilot LSP server version.
 
@@ -464,6 +477,32 @@ spawned processes."
                               default-directory)))
      ,@body))
 
+(defun copilot--node-directory ()
+  "Return the directory of `copilot-node-executable', or nil when unset.
+A bare name such as \"node\" is looked up on the variable `exec-path'
+rather than expanded against `default-directory'."
+  (when-let* ((node (and copilot-node-executable
+                         (if (file-name-absolute-p copilot-node-executable)
+                             (expand-file-name copilot-node-executable)
+                           (executable-find copilot-node-executable)))))
+    (file-name-directory node)))
+
+(defmacro copilot--with-node-path (&rest body)
+  "Run BODY with the directory of `copilot-node-executable' first on PATH.
+Covers both the variable `exec-path', for executable lookups, and the
+PATH handed to child processes, so that their `env node' picks the
+configured Node."
+  (declare (indent 0) (debug t))
+  (let ((dir (make-symbol "node-dir")))
+    `(let* ((,dir (copilot--node-directory))
+            (exec-path (if ,dir (cons ,dir exec-path) exec-path))
+            (process-environment
+             (if ,dir
+                 (cons (concat "PATH=" ,dir path-separator (getenv "PATH"))
+                       process-environment)
+               process-environment)))
+       ,@body)))
+
 (defun copilot-server-executable ()
   "Return the location of the `copilot-server-executable' file.
 The lookup is always local, even from a buffer visiting a remote file."
@@ -603,16 +642,17 @@ When npm is available, install using npm.  Otherwise, fall back to
 downloading precompiled native binaries from the npm registry."
   (interactive)
   (copilot--with-local-directory
-    (if-let* ((npm-binary (executable-find "npm")))
-        (progn
-          (make-directory copilot-install-dir 'parents)
-          (copilot-async-start-process
-           nil nil
-           npm-binary
-           "-g" "--prefix" copilot-install-dir
-           "install" (concat copilot-server-package-name
-                             (when copilot-lsp-server-version (format "@%s" copilot-lsp-server-version)))))
-      (copilot--install-server-native))))
+    (copilot--with-node-path
+      (if-let* ((npm-binary (executable-find "npm")))
+          (progn
+            (make-directory copilot-install-dir 'parents)
+            (copilot-async-start-process
+             nil nil
+             npm-binary
+             "-g" "--prefix" copilot-install-dir
+             "install" (concat copilot-server-package-name
+                               (when copilot-lsp-server-version (format "@%s" copilot-lsp-server-version)))))
+        (copilot--install-server-native)))))
 
 ;;;###autoload
 (defun copilot-uninstall-server ()
@@ -743,12 +783,17 @@ hanging.  See `copilot--shutdown-server'."
                   :name "copilot"
                   :request-dispatcher #'copilot--handle-request
                   :notification-dispatcher #'copilot--handle-notification
-                  :process (make-process :name "copilot server"
-                                         :command (copilot--command)
-                                         :coding 'utf-8-emacs-unix
-                                         :connection-type 'pipe
-                                         :stderr (get-buffer-create "*copilot stderr*")
-                                         :noquery t))))
+                  ;; Resolve the command outside the PATH change, so the
+                  ;; server spawned is the one `copilot--start-server'
+                  ;; checked for.
+                  :process (let ((command (copilot--command)))
+                             (copilot--with-node-path
+                               (make-process :name "copilot server"
+                                             :command command
+                                             :coding 'utf-8-emacs-unix
+                                             :connection-type 'pipe
+                                             :stderr (get-buffer-create "*copilot stderr*")
+                                             :noquery t))))))
     (condition-case nil
         (funcall make-fn :events-buffer-config `(:size ,copilot-log-max))
       (invalid-slot-name

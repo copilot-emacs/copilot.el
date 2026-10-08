@@ -31,7 +31,7 @@ single global server is shared across all buffers and projects. See
 - `compat`
 - `track-changes`
 
-[@github/copilot-language-server][] ships precompiled native binaries for macOS (Apple Silicon & Intel), Linux (x64 & ARM64), and Windows (x64).  When npm is not available, `copilot-install-server` automatically downloads and installs the native binary, so Node.js is not required.  If you prefer to install via npm, Node.js 22+ is needed.
+[@github/copilot-language-server][] ships precompiled native binaries for macOS (Apple Silicon & Intel), Linux (x64 & ARM64), and Windows (x64).  When npm is not available, `copilot-install-server` automatically downloads and installs the native binary, so Node.js is not required.  If you prefer to install via npm, Node.js 22+ is needed.  When the `node` first on your `PATH` is older than that (say, an nvm default pinned to an old release), point `copilot-node-executable` at a newer one; both the server and `copilot-install-server` will use it.
 
 ## Quick Start
 

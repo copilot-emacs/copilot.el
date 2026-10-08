@@ -16,6 +16,7 @@
   (before-each
     (setq copilot-chat--resolved-model nil
           copilot-chat--model-resolved nil
+          copilot-chat--model-retry-time nil
           copilot-chat--session-approved-tools nil)
     (spy-on 'jsonrpc-request :and-return-value nil))
 
@@ -1440,7 +1441,7 @@
                       :to-equal "auto"))
           (kill-buffer buf))))
 
-    (it "omits model when no default can be resolved"
+    (it "falls back to the auto model when no default can be resolved"
       (let ((captured-params nil)
             (copilot-chat-model nil)
             (buf (get-buffer-create copilot-chat--buffer-name)))
@@ -1456,9 +1457,9 @@
                         (setq captured-params params)
                         (cons nil nil)))
               (copilot-chat--create "hello" #'ignore)
-              (expect (plist-member captured-params :model) :not :to-be-truthy)
-              (expect (plist-member captured-params :modelInfo)
-                      :not :to-be-truthy))
+              (expect (plist-get captured-params :model) :to-equal "auto")
+              (expect (plist-get (plist-get captured-params :modelInfo) :id)
+                      :to-equal "auto"))
           (kill-buffer buf))))
 
     (it "clears session tool approvals for a new conversation"
@@ -1524,7 +1525,7 @@
                       :to-equal "auto"))
           (kill-buffer buf))))
 
-    (it "omits model when no default can be resolved"
+    (it "falls back to the auto model when no default can be resolved"
       (let ((captured-params nil)
             (copilot-chat-model nil)
             (buf (get-buffer-create copilot-chat--buffer-name)))
@@ -1541,9 +1542,9 @@
                         (setq captured-params params)
                         (cons nil nil)))
               (copilot-chat--send-turn "follow-up")
-              (expect (plist-member captured-params :model) :not :to-be-truthy)
-              (expect (plist-member captured-params :modelInfo)
-                      :not :to-be-truthy))
+              (expect (plist-get captured-params :model) :to-equal "auto")
+              (expect (plist-get (plist-get captured-params :modelInfo) :id)
+                      :to-equal "auto"))
           (kill-buffer buf)))))
 
   ;;
@@ -2049,7 +2050,20 @@
       (spy-on 'copilot-chat--chat-models :and-return-value nil)
       (copilot-chat--default-model)
       (copilot-chat--default-model)
-      (expect 'copilot-chat--chat-models :to-have-been-called-times 1)))
+      (expect 'copilot-chat--chat-models :to-have-been-called-times 1))
+
+    (it "retries a failed lookup after a delay instead of caching it"
+      (let ((now 1000.0))
+        (spy-on 'float-time :and-call-fake (lambda (&rest _) now))
+        (spy-on 'copilot-chat--chat-models :and-throw-error 'error)
+        (expect (copilot-chat--default-model) :to-be nil)
+        (spy-on 'copilot-chat--chat-models :and-return-value
+                (list (list :id "gpt-4o" :isChatDefault t)))
+        ;; Too soon: a failing server must not stall every message.
+        (expect (copilot-chat--default-model) :to-be nil)
+        (expect 'copilot-chat--chat-models :not :to-have-been-called)
+        (setq now (+ now copilot-chat--model-retry-delay))
+        (expect (copilot-chat--default-model) :to-equal "gpt-4o"))))
 
   (describe "copilot-chat--model-supports-tools-p"
     (it "returns non-nil when the model reports tool support"

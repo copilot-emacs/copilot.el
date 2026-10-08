@@ -13,6 +13,7 @@
 - Describe every input property of the agent-mode client tools, as the language server now rejects the whole tool registration (`-32602 Schema validation failed`) when any is missing, leaving agent mode without `run_in_terminal`, `create_file`, `get_errors`, and `fetch_web_page`. ([#543](https://github.com/copilot-emacs/copilot.el/issues/543))
 - Send an empty settings object instead of `null` to the language server when nothing is configured, which made it log a `TypeError` on every start. ([#543](https://github.com/copilot-emacs/copilot.el/issues/543))
 - Stop chat from failing with "A model id is required" for the rest of the session when the default model lookup timed out on a freshly started server: a failed lookup is now retried after a short delay, and `auto` is sent in the meantime. ([#473](https://github.com/copilot-emacs/copilot.el/issues/473))
+- Find and install the language server on the local machine when the current buffer visits a remote (TRAMP) file, instead of searching the remote host, which failed with "Unable to find nil" on Emacs 31, or running the local `npm` in the remote shell. ([#403](https://github.com/copilot-emacs/copilot.el/issues/403))
 
 ## 0.9.0 (2026-07-06)
 

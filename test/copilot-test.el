@@ -11,6 +11,12 @@
 ;; `copilot--client-capabilities' reads a chat-side option; load it so the
 ;; variable is a known special for dynamic let-binding in the specs.
 (require 'copilot-chat)
+;; Load TRAMP before any spec binds a remote `default-directory'.  Loaded
+;; lazily from there, its own `require's search the relative `load-path'
+;; entries against the remote directory and recurse.
+(require 'tramp)
+(require 'tramp-sh)
+(require 'tramp-cache)
 
 (describe "copilot"
   (describe "loading"
@@ -47,6 +53,54 @@
             (copilot--make-connection)
           (invalid-slot-name nil))
         (expect (spy-calls-count 'make-instance) :to-be-greater-than 1))))
+
+  (describe "copilot-server-executable"
+    :var (lookup-dirs)
+    (before-each
+      (setq lookup-dirs nil)
+      ;; Only the installed server under /opt/copilot exists, and only
+      ;; when searched for from a local directory.
+      (spy-on 'executable-find :and-call-fake
+              (lambda (command &optional _remote)
+                (push default-directory lookup-dirs)
+                (when (and (not (file-remote-p default-directory))
+                           (string-prefix-p "/opt/copilot/" command))
+                  command))))
+
+    (it "finds the installed server from a buffer visiting a remote file"
+      (let ((system-type 'gnu/linux)
+            (default-directory "/ssh:example.com:/home/me/")
+            (copilot-server-executable "copilot-language-server")
+            (copilot-install-dir "/opt/copilot"))
+        (expect (copilot-server-executable)
+                :to-equal "/opt/copilot/bin/copilot-language-server")
+        (expect (seq-some #'file-remote-p lookup-dirs) :not :to-be-truthy)))
+
+    (it "names the expected path when the server is missing"
+      (let ((system-type 'gnu/linux)
+            (copilot-server-executable "copilot-language-server")
+            (copilot-install-dir "/nonexistent/copilot"))
+        (expect (copilot-server-executable)
+                :to-throw 'error
+                '("The package @github/copilot-language-server is not installed.  Unable to find /nonexistent/copilot/bin/copilot-language-server")))))
+
+  (describe "copilot-install-server"
+    (it "runs npm locally from a buffer visiting a remote file"
+      (let ((default-directory "/ssh:example.com:/home/me/")
+            (copilot-install-dir "/opt/copilot")
+            (install-dir nil))
+        (spy-on 'executable-find :and-call-fake
+                (lambda (command &optional _remote)
+                  (unless (file-remote-p default-directory)
+                    (concat "/usr/bin/" command))))
+        (spy-on 'make-directory)
+        (spy-on 'copilot-async-start-process :and-call-fake
+                (lambda (&rest _)
+                  (setq install-dir default-directory)))
+        (copilot-install-server)
+        (expect (spy-calls-args-for 'copilot-async-start-process 0)
+                :to-contain "/usr/bin/npm")
+        (expect (file-remote-p install-dir) :not :to-be-truthy))))
 
   (describe "copilot--request"
     (it "sends empty object when params is nil"

@@ -453,24 +453,34 @@ native binary from the npm package."
       "copilot-language-server.exe"
     "copilot-language-server"))
 
+(defmacro copilot--with-local-directory (&rest body)
+  "Run BODY with a local `default-directory'.
+The server and its installer always run on this machine, so the remote
+directory of a TRAMP buffer must not leak into executable lookups or
+spawned processes."
+  (declare (indent 0) (debug t))
+  `(let ((default-directory (if (file-remote-p default-directory)
+                                (expand-file-name "~/")
+                              default-directory)))
+     ,@body))
+
 (defun copilot-server-executable ()
-  "Return the location of the `copilot-server-executable' file."
-  (cond
-   ((and (file-name-absolute-p copilot-server-executable)
-         (file-exists-p copilot-server-executable))
-    copilot-server-executable)
-   ((executable-find copilot-server-executable t))
-   (t
-    (let ((path (executable-find
-                 (file-name-concat copilot-install-dir
-                                   (cond ((eq system-type 'windows-nt) "")
-                                         (t "bin"))
-                                   copilot-server-executable)
-                 t)))
-      (unless (and path (file-exists-p path))
-        (error "The package %s is not installed.  Unable to find %s"
-               copilot-server-package-name path))
-      path))))
+  "Return the location of the `copilot-server-executable' file.
+The lookup is always local, even from a buffer visiting a remote file."
+  (copilot--with-local-directory
+    (cond
+     ((and (file-name-absolute-p copilot-server-executable)
+           (file-exists-p copilot-server-executable))
+      copilot-server-executable)
+     ((executable-find copilot-server-executable))
+     (t
+      (let ((path (file-name-concat copilot-install-dir
+                                    (cond ((eq system-type 'windows-nt) "")
+                                          (t "bin"))
+                                    copilot-server-executable)))
+        (or (executable-find path)
+            (error "The package %s is not installed.  Unable to find %s"
+                   copilot-server-package-name path)))))))
 
 ;; XXX: This function is modified from `lsp-mode'; see `lsp-async-start-process'
 ;; function for more information.
@@ -592,16 +602,17 @@ Return a plist with `:version' and `:tarball' keys."
 When npm is available, install using npm.  Otherwise, fall back to
 downloading precompiled native binaries from the npm registry."
   (interactive)
-  (if-let* ((npm-binary (executable-find "npm")))
-      (progn
-        (make-directory copilot-install-dir 'parents)
-        (copilot-async-start-process
-         nil nil
-         npm-binary
-         "-g" "--prefix" copilot-install-dir
-         "install" (concat copilot-server-package-name
-                           (when copilot-lsp-server-version (format "@%s" copilot-lsp-server-version)))))
-    (copilot--install-server-native)))
+  (copilot--with-local-directory
+    (if-let* ((npm-binary (executable-find "npm")))
+        (progn
+          (make-directory copilot-install-dir 'parents)
+          (copilot-async-start-process
+           nil nil
+           npm-binary
+           "-g" "--prefix" copilot-install-dir
+           "install" (concat copilot-server-package-name
+                             (when copilot-lsp-server-version (format "@%s" copilot-lsp-server-version)))))
+      (copilot--install-server-native))))
 
 ;;;###autoload
 (defun copilot-uninstall-server ()

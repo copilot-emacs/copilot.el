@@ -276,7 +276,7 @@ On a long-running conversation, `copilot-chat-compact` asks the server to summar
 
 `copilot-chat-rewrite` rewrites the active region according to a free-form instruction (e.g. "make it iterative"). The rewritten code is shown as a diff-style preview against the region and applied only after you confirm, so nothing is changed behind your back; the region is tracked with markers, so edits elsewhere in the buffer while the request is in flight are fine, while edits to the region itself drop the rewrite. The instruction preamble can be customized via `copilot-chat-rewrite-prompt`, the applied code is re-indented unless `copilot-chat-rewrite-indent` is set to `nil`, and a pending rewrite can be cancelled with `copilot-chat-stop`. Like `copilot-chat-insert-commit-message`, it runs outside the chat panel and never disturbs an ongoing conversation.
 
-`copilot-chat-insert-commit-message` generates a commit message from the staged changes and inserts it at point. It is meant to be called from a commit message buffer (e.g. Magit's `COMMIT_EDITMSG` or any `git-commit` buffer), but works from any buffer inside a git repository. It uses the language server's native commit-message generator, which also sees your recent commit subjects (so the message matches your repository's style) and the repository's commit instructions. It runs outside the chat panel, so it never disturbs an ongoing conversation. On a server too old to provide the native generator, it falls back to a one-shot chat whose instruction can be customized via `copilot-chat-commit-message-prompt`.
+`copilot-chat-insert-commit-message` generates a commit message from the staged changes and inserts it at point. It is meant to be called from a commit message buffer (e.g. Magit's `COMMIT_EDITMSG` or any `git-commit` buffer), but works from any buffer inside a git repository. VC has no staging area, so in a VC log buffer (`C-x v v` from VC-Dir or a file buffer) it describes the changes to the files being checked in instead. It uses the language server's native commit-message generator, which also sees your recent commit subjects (so the message matches your repository's style) and the repository's commit instructions. It runs outside the chat panel, so it never disturbs an ongoing conversation. On a server too old to provide the native generator, it falls back to a one-shot chat whose instruction can be customized via `copilot-chat-commit-message-prompt`.
 
 Customization:
 - **`copilot-chat-model`** — model to use for chat (default `nil`, meaning a default chat model is resolved from the server)
@@ -585,7 +585,7 @@ releases are not installable) the rest of copilot.el works as usual and
 | `copilot-chat-compact` | Compact the conversation on the server to reclaim context |
 | `copilot-chat-restore` | Restore the saved chat for the current workspace |
 | `copilot-chat-clear-history` | Delete the saved chat history for the current workspace |
-| `copilot-chat-insert-commit-message` | Generate a commit message for the staged changes and insert it at point |
+| `copilot-chat-insert-commit-message` | Generate a commit message for the staged changes (or a VC check-in) and insert it at point |
 | `copilot-chat-apply-preset` | Switch to a named bundle of chat settings from `copilot-chat-presets` |
 | **Next Edit Suggestions** | |
 | `copilot-nes-mode` | Toggle NES in the current buffer |

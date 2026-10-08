@@ -8,6 +8,7 @@
 
 (require 'buttercup)
 (require 'copilot-chat)
+(require 'log-edit)
 
 (describe "copilot-chat"
   ;; Resolving a default model issues a synchronous request; keep it from
@@ -4462,6 +4463,137 @@
         (write-region "hello\n" nil (expand-file-name "f.txt") nil 'quiet)
         (process-file "git" nil nil nil "add" "f.txt")
         (expect (copilot-chat--staged-diff) :to-match "\\+hello"))))
+
+  (describe "copilot-chat--commit-diff"
+    ;; Real git again: VC commits straight from the working tree, so the
+    ;; repository below has unstaged edits and nothing staged.
+    :var (repo)
+    (before-each
+      (setq repo (file-name-as-directory (make-temp-file "copilot-repo" t)))
+      (let ((default-directory repo))
+        (process-file "git" nil nil nil "init" "-q")
+        (make-directory "sub")
+        (write-region "one\n" nil "a.txt" nil 'quiet)
+        (write-region "two\n" nil "sub/b.txt" nil 'quiet)
+        (process-file "git" nil nil nil "add" ".")
+        (process-file "git" nil nil nil
+                      "-c" "user.name=Test" "-c" "user.email=test@example.com"
+                      "-c" "commit.gpgsign=false"
+                      "commit" "-q" "--no-verify" "-m" "init")
+        (write-region "changed\n" nil "a.txt" 'append 'quiet)
+        (write-region "changed\n" nil "sub/b.txt" 'append 'quiet)))
+
+    (after-each
+      (delete-directory repo t))
+
+    (it "diffs the files VC is checking in against HEAD"
+      (with-temp-buffer
+        (log-edit-mode)
+        ;; A subdirectory, as when checking in from a nested file buffer.
+        (setq default-directory (expand-file-name "sub/" repo))
+        (setq-local vc-log-fileset (list (expand-file-name "a.txt" repo)))
+        (let ((diff (copilot-chat--commit-diff)))
+          (expect diff :to-match "a\\.txt")
+          (expect diff :to-match "\\+changed")
+          (expect diff :not :to-match "b\\.txt"))))
+
+    (it "sends the VC changes to git/commitGenerate"
+      (with-temp-buffer
+        (log-edit-mode)
+        (setq default-directory repo)
+        (setq-local vc-log-fileset (list (expand-file-name "a.txt" repo)))
+        (expect (aref (plist-get (copilot-chat--commit-generate-params)
+                                 :changes)
+                      0)
+                :to-match "\\+changed")))
+
+    (it "includes a file newly registered with VC"
+      (let ((default-directory repo))
+        (write-region "new\n" nil "new.txt" nil 'quiet)
+        (process-file "git" nil nil nil "add" "new.txt"))
+      (with-temp-buffer
+        (log-edit-mode)
+        (setq default-directory repo)
+        (setq-local vc-log-fileset (list (expand-file-name "new.txt" repo)))
+        (expect (copilot-chat--commit-diff) :to-match "\\+new")))
+
+    (it "diffs against the empty tree before the first commit"
+      (let ((fresh (file-name-as-directory (make-temp-file "copilot-repo" t))))
+        (unwind-protect
+            (progn
+              (let ((default-directory fresh))
+                (process-file "git" nil nil nil "init" "-q")
+                (write-region "first\n" nil "first.txt" nil 'quiet)
+                ;; What registering a file with VC does.
+                (process-file "git" nil nil nil "add" "first.txt"))
+              (with-temp-buffer
+                (log-edit-mode)
+                (setq default-directory fresh)
+                (setq-local vc-log-fileset
+                            (list (expand-file-name "first.txt" fresh)))
+                (expect (copilot-chat--commit-diff) :to-match "\\+first")))
+          (delete-directory fresh t))))
+
+    (it "treats the file names VC is checking in literally"
+      (let ((default-directory repo))
+        (write-region "one\n" nil "f[1].txt" nil 'quiet)
+        (write-region "one\n" nil "f1.txt" nil 'quiet)
+        (process-file "git" nil nil nil "add" "f[1].txt" "f1.txt")
+        (process-file "git" nil nil nil
+                      "-c" "user.name=Test" "-c" "user.email=test@example.com"
+                      "-c" "commit.gpgsign=false"
+                      "commit" "-q" "--no-verify" "-m" "more")
+        (write-region "changed\n" nil "f[1].txt" 'append 'quiet)
+        (write-region "changed\n" nil "f1.txt" 'append 'quiet))
+      (with-temp-buffer
+        (log-edit-mode)
+        (setq default-directory repo)
+        (setq-local vc-log-fileset (list (expand-file-name "f[1].txt" repo)))
+        (let ((diff (copilot-chat--commit-diff)))
+          (expect diff :to-match "f\\[1\\]\\.txt")
+          (expect diff :not :to-match "f1\\.txt"))))
+
+    (it "errors when the files VC is checking in are unchanged"
+      (let ((default-directory repo))
+        (process-file "git" nil nil nil "checkout" "-q" "--" "a.txt"))
+      (with-temp-buffer
+        (log-edit-mode)
+        (setq default-directory repo)
+        (setq-local vc-log-fileset (list (expand-file-name "a.txt" repo)))
+        (expect (copilot-chat--commit-diff) :to-throw 'user-error)))
+
+    (it "passes git the files without a TRAMP prefix"
+      (let ((args nil))
+        (spy-on 'process-file :and-call-fake
+                (lambda (&rest call-args)
+                  (setq args call-args)
+                  (insert "diff\n")
+                  0))
+        (with-temp-buffer
+          (log-edit-mode)
+          (setq-local vc-log-fileset '("/ssh:host:/repo/a.txt"))
+          (copilot-chat--commit-diff))
+        (expect (last args 2) :to-equal '("--" "/repo/a.txt"))))
+
+    (it "uses the patch when VC checks in a patch"
+      (spy-on 'process-file)
+      (with-temp-buffer
+        (log-edit-mode)
+        (setq-local vc-log-fileset (list (expand-file-name "a.txt" repo)))
+        (setq-local vc-patch-string "THE PATCH")
+        (expect (copilot-chat--commit-diff) :to-equal "THE PATCH"))
+      (expect 'process-file :not :to-have-been-called))
+
+    (it "uses the staged diff in a log buffer VC did not set up"
+      (spy-on 'copilot-chat--staged-diff :and-return-value "STAGED")
+      (with-temp-buffer
+        (log-edit-mode)
+        (expect (copilot-chat--commit-diff) :to-equal "STAGED")))
+
+    (it "uses the staged diff outside a log buffer"
+      (spy-on 'copilot-chat--staged-diff :and-return-value "STAGED")
+      (with-temp-buffer
+        (expect (copilot-chat--commit-diff) :to-equal "STAGED"))))
 
   (describe "copilot-chat--commit-message-request"
     (it "prepends the prompt to the staged diff"

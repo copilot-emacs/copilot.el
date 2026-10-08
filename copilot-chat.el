@@ -2744,31 +2744,79 @@ the file `copilot-chat-restore' would read."
 ;; Commit message generation
 ;;
 
-(defun copilot-chat--staged-diff ()
-  "Return the staged diff of the repository around `default-directory'.
+(defun copilot-chat--git-diff (empty-msg &rest args)
+  "Return the output of git diff with ARGS in `default-directory'.
 Run git in `default-directory' and let it resolve the repository
 itself: hunting for the root manually (e.g. `locate-dominating-file')
 picks the wrong index for linked worktrees, whose COMMIT_EDITMSG lives
 under the main checkout's .git directory.  Use `process-file' so remote
 \(TRAMP) buffers diff the remote repository rather than silently running
-git locally.  Signal a `user-error' when there is no repository, when
-git fails, or when nothing is staged."
+git locally.  Signal a `user-error' when there is no repository or git
+fails, and one saying EMPTY-MSG when the diff is empty."
   (let* ((exit nil)
          (diff (with-temp-buffer
-                 (setq exit (process-file "git" nil t nil
-                                          "diff" "--cached" "--no-color"))
+                 (setq exit (apply #'process-file "git" nil t nil
+                                   "diff" "--no-color" args))
                  (buffer-string))))
     (unless (eql exit 0)
       (user-error
        "Copilot Chat: git diff failed (%s); not inside a git repository?"
        exit))
     (when (string-empty-p (string-trim diff))
-      (user-error "Copilot Chat: No staged changes"))
+      (user-error "Copilot Chat: %s" empty-msg))
     diff))
 
+(defun copilot-chat--staged-diff ()
+  "Return the staged diff of the repository around `default-directory'.
+Signal a `user-error' when there is no repository, when git fails, or
+when nothing is staged."
+  (copilot-chat--git-diff "No staged changes" "--cached"))
+
+(defun copilot-chat--vc-diff-base ()
+  "Return the revision to diff a VC check-in against.
+That is HEAD, except before the repository's first commit, when there is
+no HEAD yet and the check-in is diffed against the empty tree."
+  (if (copilot-chat--git-lines "rev-parse" "--verify" "-q" "HEAD")
+      "HEAD"
+    ;; Hash an empty input (`process-file' reads the null device) rather
+    ;; than hardcoding the empty tree, which differs in SHA-256 repos.
+    (or (car (copilot-chat--git-lines "hash-object" "-t" "tree" "--stdin"))
+        "HEAD")))
+
+(defun copilot-chat--vc-checkin-diff ()
+  "Return the diff VC is about to check in from this log buffer, or nil.
+Only a VC log buffer (as popped up by \\[vc-next-action] in VC-Dir or a
+file buffer) yields a diff.  VC has no staging area: it commits its
+fileset straight from the working tree, so diff the fileset against
+HEAD, or it commits a patch when checking in from a diff buffer, so use
+that patch as is."
+  (when (derived-mode-p 'log-edit-mode)
+    (let ((patch (bound-and-true-p vc-patch-string))
+          (files (bound-and-true-p vc-log-fileset)))
+      (cond
+       (patch patch)
+       (files
+        (let ((base (copilot-chat--vc-diff-base))
+              ;; Like VC, hand git the file names as literal pathspecs,
+              ;; so one such as "f[1].txt" doesn't also match "f1.txt".
+              (process-environment (cons "GIT_LITERAL_PATHSPECS=1"
+                                         process-environment)))
+          (apply #'copilot-chat--git-diff "No changes to commit" base "--"
+                 ;; The fileset holds absolute names, which git accepts
+                 ;; from anywhere in the work tree; drop any TRAMP prefix
+                 ;; as git itself runs on the remote host.
+                 (mapcar #'file-local-name files))))))))
+
+(defun copilot-chat--commit-diff ()
+  "Return the diff of the changes about to be committed.
+In a VC log buffer that is what VC is checking in (see
+`copilot-chat--vc-checkin-diff'); anywhere else, such as Magit's
+COMMIT_EDITMSG, it is the staged diff."
+  (or (copilot-chat--vc-checkin-diff) (copilot-chat--staged-diff)))
+
 (defun copilot-chat--commit-message-request ()
-  "Return the chat message asking for a commit message for the staged diff."
-  (concat copilot-chat-commit-message-prompt "\n\n" (copilot-chat--staged-diff)))
+  "Return the chat message asking for a commit message for the changes."
+  (concat copilot-chat-commit-message-prompt "\n\n" (copilot-chat--commit-diff)))
 
 (defun copilot-chat--strip-code-fences (reply)
   "Return REPLY without enclosing markdown code fences, trimmed.
@@ -2790,12 +2838,12 @@ Use `process-file' so a TRAMP buffer runs git on the remote host."
       (split-string (buffer-string) "\n" t))))
 
 (defun copilot-chat--commit-generate-params ()
-  "Return the `git/commitGenerate' params for the staged diff.
-Signal a `user-error' when nothing is staged (via `copilot-chat--staged-diff').
+  "Return the `git/commitGenerate' params for the changes being committed.
+Signal a `user-error' when there are none (via `copilot-chat--commit-diff').
 Recent user and repository commit subjects are included so the server can
 match the repository's commit style; the workspace folder is passed so
 server-side commit instructions are picked up."
-  (let ((diff (copilot-chat--staged-diff))
+  (let ((diff (copilot-chat--commit-diff))
         (email (car (copilot-chat--git-lines "config" "user.email")))
         (root (car (copilot-chat--git-lines "rev-parse" "--show-toplevel"))))
     (append
@@ -2862,6 +2910,9 @@ it at POS in BUF via `copilot-chat--insert-commit-message-at'."
   "Generate a commit message from the staged diff and insert it at point.
 Meant to be called from a commit message buffer (e.g. Magit's
 COMMIT_EDITMSG), but works from any buffer inside a git repository.
+In a VC log buffer (\\[vc-next-action] from VC-Dir or a file), which has
+no staging area, describe the changes to the files being checked in
+instead.
 
 Use the language server's native `git/commitGenerate', which also sees
 your recent commit subjects (for style) and the repository's commit

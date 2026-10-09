@@ -41,11 +41,12 @@ jobs:
       with:
         version: 'snapshot'
 
+    # Packaging is covered by the lint job; `eask package' pulls in the
+    # latest package-build, which needs a newer Emacs than we support.
     - name: Run byte-compilation
       run: |
         eask clean all
-        eask package
-        eask install
+        eask install-deps
         eask compile
 
   # Version coverage on Linux (cheap, fast).  OS coverage on latest stable
@@ -87,7 +88,6 @@ jobs:
 
     - name: Run tests
       run: |
-        eask package
         eask install-deps --dev
         eask test buttercup
 

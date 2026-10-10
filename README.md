@@ -699,6 +699,17 @@ If you are using `whitespace-mode`, make sure to remove `newline-mark` from `whi
 
 Not necessarily. GitHub introduced a [free tier](https://github.com/features/copilot#pricing) for Copilot in early 2025 that includes a limited number of completions per month. A paid subscription (Individual or Business) removes these limits.
 
+### Can I use more than one GitHub account?
+
+One at a time per Emacs session. The language server keeps its GitHub credentials in `$XDG_CONFIG_HOME/github-copilot` (by default `~/.config/github-copilot`, or `%USERPROFILE%\AppData\Local\github-copilot` on Windows), so giving it a separate directory per account keeps the sign-ins apart. `copilot-server-environment` sets extra environment variables for the server process:
+
+```elisp
+(setq copilot-server-environment
+      (list (concat "XDG_CONFIG_HOME=" (expand-file-name "~/.config/copilot-work"))))
+```
+
+The path has to be absolute. Anything else the server finds through `XDG_CONFIG_HOME` moves with it, such as a git config in `~/.config/git` or the config of MCP servers it starts, so symlink those into the account's directory if you rely on them. Restart the server with `M-x copilot-diagnose` after changing it, and run `M-x copilot-login` the first time an account's directory is used. Two accounts can't be active in the same Emacs at once, since copilot.el talks to a single server.
+
 ### TAB doesn't accept the completion
 
 This is usually caused by another package binding TAB in a way that takes

@@ -158,6 +158,39 @@
         (copilot--make-connection)
         (expect path-at-spawn :to-equal path))))
 
+  (describe "copilot-server-environment"
+    :var (env-at-spawn)
+    (before-each
+      (setq env-at-spawn nil)
+      (spy-on 'copilot--command :and-return-value '("true"))
+      (let ((dummy (start-process "dummy" nil "true")))
+        (spy-on 'make-process :and-call-fake
+                (lambda (&rest _)
+                  (setq env-at-spawn process-environment)
+                  dummy)))
+      (spy-on 'make-instance))
+
+    (it "starts the server with its variables, ahead of the inherited ones"
+      (let ((process-environment (cons "XDG_CONFIG_HOME=/home/me/.config"
+                                       process-environment))
+            (copilot-server-environment
+             '("XDG_CONFIG_HOME=/home/me/.config/copilot-work")))
+        (copilot--make-connection)
+        (let ((process-environment env-at-spawn))
+          (expect (getenv "XDG_CONFIG_HOME")
+                  :to-equal "/home/me/.config/copilot-work"))
+        (expect (getenv "XDG_CONFIG_HOME") :to-equal "/home/me/.config")))
+
+    (it "keeps copilot-node-executable in front of its PATH"
+      (let* ((node-dir (file-name-directory
+                        (expand-file-name "/opt/node22/bin/node")))
+             (copilot-node-executable "/opt/node22/bin/node")
+             (copilot-server-environment '("PATH=/opt/tools/bin")))
+        (copilot--make-connection)
+        (let ((process-environment env-at-spawn))
+          (expect (getenv "PATH")
+                  :to-equal (concat node-dir path-separator "/opt/tools/bin"))))))
+
   (describe "copilot--request"
     (it "sends empty object when params is nil"
       (let ((sent-params nil))
@@ -1636,16 +1669,20 @@ Return the resulting `user-error' message string."
     (it "runs the server the way it is started"
       (let ((copilot-server-args '("--stdio" "--debug"))
             (copilot-node-executable "/opt/node22/bin/node")
-            (path nil))
+            (copilot-server-environment '("NODE_EXTRA_CA_CERTS=/etc/ca.pem"))
+            (path nil)
+            (ca nil))
         (spy-on 'copilot-server-executable :and-return-value "/opt/copilot-language-server")
         (spy-on 'call-process :and-call-fake
                 (lambda (&rest _)
-                  (setq path (getenv "PATH"))
+                  (setq path (getenv "PATH")
+                        ca (getenv "NODE_EXTRA_CA_CERTS"))
                   (insert "1.504.0\n")
                   0))
         (copilot--executable-version)
         (expect (nthcdr 4 (spy-calls-args-for 'call-process 0))
                 :to-equal '("--debug" "--version"))
+        (expect ca :to-equal "/etc/ca.pem")
         (expect path :to-match
                 (concat "\\`" (regexp-quote
                                  (file-name-directory

@@ -207,6 +207,20 @@ native server binary doesn't need Node."
   :group 'copilot
   :package-version '(copilot . "0.10"))
 
+(defcustom copilot-server-environment nil
+  "Extra environment variables for the Copilot server process.
+Each element is a \"VAR=VALUE\" string, as in `process-environment',
+and takes precedence over the environment Emacs passes down, though
+`copilot-node-executable' still goes in front of PATH.  The server keeps
+its GitHub credentials in $XDG_CONFIG_HOME/github-copilot, so an
+absolute XDG_CONFIG_HOME per GitHub account keeps their sign-ins apart.
+The value is read in the buffer that starts the server, and changes
+apply the next time it starts; `copilot-diagnose' restarts it."
+  :type '(repeat (string :tag "VAR=VALUE"))
+  :risky t
+  :group 'copilot
+  :package-version '(copilot . "0.10"))
+
 (defcustom copilot-lsp-server-version nil
   "Copilot LSP server version.
 
@@ -511,6 +525,16 @@ configured Node."
                process-environment)))
        ,@body)))
 
+(defmacro copilot--with-server-environment (&rest body)
+  "Run BODY with the environment the Copilot server is started in.
+That is `copilot-server-environment' in front of the inherited
+environment, plus the PATH change of `copilot--with-node-path'."
+  (declare (indent 0) (debug t))
+  `(let ((process-environment (append copilot-server-environment
+                                      process-environment)))
+     (copilot--with-node-path
+       ,@body)))
+
 (defun copilot-server-executable ()
   "Return the location of the `copilot-server-executable' file.
 The lookup is always local, even from a buffer visiting a remote file."
@@ -541,9 +565,9 @@ a package manager upgrade or a Nix profile switch).  Cleared by
   "Return the version reported by the resolved server executable.
 Run the executable returned by `copilot-server-executable' with
 `--version', the way the server itself is started (same arguments and
-`copilot-node-executable'), and parse a semantic version from its
-output.  Return nil when the executable cannot be found or run, or when
-its output has no recognizable version.  A version found is cached in
+environment), and parse a semantic version from its output.  Return nil
+when the executable cannot be found or run, or when its output has no
+recognizable version.  A version found is cached in
 `copilot--executable-version-cache'; a failure is not, so a later call
 can still succeed."
   (when-let* ((executable (ignore-errors (copilot-server-executable)))
@@ -556,7 +580,7 @@ can still succeed."
       (let ((version
              (with-temp-buffer
                (when (ignore-errors
-                       (eq 0 (copilot--with-node-path
+                       (eq 0 (copilot--with-server-environment
                                (apply #'call-process executable nil '(t nil) nil
                                       (append (remove "--stdio" copilot-server-args)
                                               '("--version"))))))
@@ -848,7 +872,7 @@ hanging.  See `copilot--shutdown-server'."
                   ;; server spawned is the one `copilot--start-server'
                   ;; checked for.
                   :process (let ((command (copilot--command)))
-                             (copilot--with-node-path
+                             (copilot--with-server-environment
                                (make-process :name "copilot server"
                                              :command command
                                              :coding 'utf-8-emacs-unix

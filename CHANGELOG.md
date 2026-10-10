@@ -2,6 +2,10 @@
 
 ## main (unreleased)
 
+### New Features
+
+- Add `copilot-server-environment` to pass extra environment variables to the language server, e.g. a per-account `XDG_CONFIG_HOME` to sign in with a different GitHub account without a wrapper script. ([#417](https://github.com/copilot-emacs/copilot.el/issues/417))
+
 ### Changes
 
 - `copilot-login` waits longer for the language server to authenticate with GitHub, and when it times out it points you at proxy/TLS setup (`copilot-network-proxy`, `NODE_EXTRA_CA_CERTS`) instead of only reporting `Authentication failure: Timed out`, which reads like a credential problem when it is usually a TLS-inspecting proxy or firewall.

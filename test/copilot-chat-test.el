@@ -866,6 +866,27 @@
                     (expect (plist-get result :source) :to-match "defun foo"))))
             (kill-buffer chat-buf))))))
 
+  (describe "copilot-chat--tuple-reply"
+    (it "wraps the handler result in a [result, error] pair"
+      (expect (funcall (copilot-chat--tuple-reply
+                        (lambda (msg) (list :result (plist-get msg :name))))
+                       (list :name "run_in_terminal"))
+              :to-equal (vector (list :result "run_in_terminal") nil)))
+
+    (it "is how the server's agent requests are answered"
+      (spy-on 'copilot-chat--handle-context :and-return-value nil)
+      (spy-on 'copilot-chat--handle-tool-confirmation
+              :and-return-value (list :result "accept"))
+      (spy-on 'copilot-chat--handle-tool-invocation
+              :and-return-value (list :status "success"))
+      (dolist (method '(conversation/context
+                        conversation/invokeClientToolConfirmation
+                        conversation/invokeClientTool))
+        (let ((reply (copilot--handle-request nil method (list :name "x"))))
+          (expect (vectorp reply) :to-be-truthy)
+          (expect (length reply) :to-equal 2)
+          (expect (aref reply 1) :to-be nil)))))
+
   ;;
   ;; Context doc generation
   ;;
@@ -1608,6 +1629,36 @@
               (expect (plist-get captured-params :model) :to-equal "auto")
               (expect (plist-get (plist-get captured-params :modelInfo) :id)
                       :to-equal "auto"))
+          (kill-buffer buf))))
+
+    (it "keeps the chat mode and workspace folders on follow-up turns"
+      (let ((captured-params nil)
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--conversation-id "conv-1"))
+              (spy-on 'copilot-chat--mode-params
+                      :and-return-value (list :chatMode "Agent"
+                                              :needToolCallConfirmation t))
+              (spy-on 'copilot-chat--workspace-root
+                      :and-return-value "/tmp/project/")
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--send-turn "follow-up")
+              (expect (plist-get captured-params :chatMode) :to-equal "Agent")
+              (expect (plist-get captured-params :needToolCallConfirmation)
+                      :to-be t)
+              (expect (plist-get (aref (plist-get captured-params
+                                                  :workspaceFolders)
+                                       0)
+                                 :name)
+                      :to-equal "project"))
           (kill-buffer buf)))))
 
   ;;

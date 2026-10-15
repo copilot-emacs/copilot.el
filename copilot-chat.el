@@ -637,8 +637,8 @@ confirmation, and the tool-support warning apply to both."
         name
       (plist-get (copilot-chat--effective-mode) :kind))))
 
-(defun copilot-chat--mode-create-params ()
-  "Return `conversation/create' params selecting the effective chat mode.
+(defun copilot-chat--mode-params ()
+  "Return conversation request params selecting the effective chat mode.
 Return nil for the default Ask mode so behavior is unchanged for users
 who never pick a mode; otherwise send `chatMode', a `customChatModeId'
 for a custom (non-built-in) mode, and `needToolCallConfirmation' for an
@@ -1054,6 +1054,14 @@ so it never disrupts the end of a turn."
 ;; Conversation context request handler
 ;;
 
+(defun copilot-chat--tuple-reply (handler)
+  "Wrap request HANDLER so it replies with a [result, error] pair.
+The server destructures the replies to `conversation/context',
+`conversation/invokeClientToolConfirmation' and
+`conversation/invokeClientTool' as a two-element array, and a plain
+object makes it fail with \"is not iterable\"."
+  (lambda (msg) (vector (funcall handler msg) nil)))
+
 (defun copilot-chat--handle-context (msg)
   "Handle `conversation/context' request MSG.
 Return editor context for the requested skill."
@@ -1063,7 +1071,8 @@ Return editor context for the requested skill."
       ;; Unknown skill — return empty context
       nil)))
 
-(copilot-on-request 'conversation/context #'copilot-chat--handle-context)
+(copilot-on-request 'conversation/context
+                    (copilot-chat--tuple-reply #'copilot-chat--handle-context))
 
 ;;
 ;; Tool invocation handlers
@@ -1432,7 +1441,8 @@ at the prompt remembers the tool for the rest of the conversation."
   (list :result "accept"))
 
 (copilot-on-request 'conversation/invokeClientToolConfirmation
-                    #'copilot-chat--handle-tool-confirmation)
+                    (copilot-chat--tuple-reply
+                     #'copilot-chat--handle-tool-confirmation))
 
 (defun copilot-chat--tool-result (status value)
   "Build a LanguageModelToolResult with STATUS and text VALUE."
@@ -1652,7 +1662,8 @@ Dispatch to the appropriate tool and return a LanguageModelToolResult."
                                     (format "Unknown tool: %s" name))))))
 
 (copilot-on-request 'conversation/invokeClientTool
-                    #'copilot-chat--handle-tool-invocation)
+                    (copilot-chat--tuple-reply
+                     #'copilot-chat--handle-tool-invocation))
 
 ;;
 ;; Workspace search (server -> client requests)
@@ -2162,10 +2173,7 @@ of MESSAGE, so the new conversation picks up the saved context."
                    :capabilities (list :skills (vector "current-editor")
                                        :allSkills t)
                    :source "panel")
-             (copilot-chat--model-param)
-             (copilot-chat--workspace-folders-param)
-             (copilot-chat--mode-create-params)
-             (copilot-chat--references-param))
+             (copilot-chat--conversation-params))
             :success-fn (lambda (result)
                           (when-let* ((buf (get-buffer
                                             copilot-chat--buffer-name)))
@@ -2209,9 +2217,10 @@ of MESSAGE, so the new conversation picks up the saved context."
                       :conversationId conv-id
                       :message message
                       :source "panel")
-                (copilot-chat--model-param)
                 (when doc (list :doc doc))
-                (copilot-chat--references-param))
+                ;; The server applies the chat mode per turn, so a
+                ;; follow-up without it drops back to Ask mode.
+                (copilot-chat--conversation-params))
                :success-fn (lambda (result)
                              (when (buffer-live-p chat-buf)
                                (with-current-buffer chat-buf
@@ -2546,6 +2555,14 @@ before the first message."
       (message (if added "Copilot Chat: Attached context for the next message (%d pending)"
                  "Copilot Chat: That context is already attached (%d pending)")
                (length copilot-chat--references)))))
+
+(defun copilot-chat--conversation-params ()
+  "Return the params shared by `conversation/create' and `conversation/turn'.
+That is the model, workspace folders, chat mode and pending references."
+  (append (copilot-chat--model-param)
+          (copilot-chat--workspace-folders-param)
+          (copilot-chat--mode-params)
+          (copilot-chat--references-param)))
 
 (defun copilot-chat--references-param ()
   "Return a (:references VECTOR) plist for the pending references, or nil.

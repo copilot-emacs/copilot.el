@@ -866,6 +866,27 @@
                     (expect (plist-get result :source) :to-match "defun foo"))))
             (kill-buffer chat-buf))))))
 
+  (describe "copilot-chat--tuple-reply"
+    (it "wraps the handler result in a [result, error] pair"
+      (expect (funcall (copilot-chat--tuple-reply
+                        (lambda (msg) (list :result (plist-get msg :name))))
+                       (list :name "run_in_terminal"))
+              :to-equal (vector (list :result "run_in_terminal") nil)))
+
+    (it "is how the server's agent requests are answered"
+      (spy-on 'copilot-chat--handle-context :and-return-value nil)
+      (spy-on 'copilot-chat--handle-tool-confirmation
+              :and-return-value (list :result "accept"))
+      (spy-on 'copilot-chat--handle-tool-invocation
+              :and-return-value (list :status "success"))
+      (dolist (method '(conversation/context
+                        conversation/invokeClientToolConfirmation
+                        conversation/invokeClientTool))
+        (let ((reply (copilot--handle-request nil method (list :name "x"))))
+          (expect (vectorp reply) :to-be-truthy)
+          (expect (length reply) :to-equal 2)
+          (expect (aref reply 1) :to-be nil)))))
+
   ;;
   ;; Context doc generation
   ;;

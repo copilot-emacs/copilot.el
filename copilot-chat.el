@@ -1054,6 +1054,14 @@ so it never disrupts the end of a turn."
 ;; Conversation context request handler
 ;;
 
+(defun copilot-chat--tuple-reply (handler)
+  "Wrap request HANDLER so it replies with a [result, error] pair.
+The server destructures the replies to `conversation/context',
+`conversation/invokeClientToolConfirmation' and
+`conversation/invokeClientTool' as a two-element array, and a plain
+object makes it fail with \"is not iterable\"."
+  (lambda (msg) (vector (funcall handler msg) nil)))
+
 (defun copilot-chat--handle-context (msg)
   "Handle `conversation/context' request MSG.
 Return editor context for the requested skill."
@@ -1063,7 +1071,8 @@ Return editor context for the requested skill."
       ;; Unknown skill — return empty context
       nil)))
 
-(copilot-on-request 'conversation/context #'copilot-chat--handle-context)
+(copilot-on-request 'conversation/context
+                    (copilot-chat--tuple-reply #'copilot-chat--handle-context))
 
 ;;
 ;; Tool invocation handlers
@@ -1432,7 +1441,8 @@ at the prompt remembers the tool for the rest of the conversation."
   (list :result "accept"))
 
 (copilot-on-request 'conversation/invokeClientToolConfirmation
-                    #'copilot-chat--handle-tool-confirmation)
+                    (copilot-chat--tuple-reply
+                     #'copilot-chat--handle-tool-confirmation))
 
 (defun copilot-chat--tool-result (status value)
   "Build a LanguageModelToolResult with STATUS and text VALUE."
@@ -1652,7 +1662,8 @@ Dispatch to the appropriate tool and return a LanguageModelToolResult."
                                     (format "Unknown tool: %s" name))))))
 
 (copilot-on-request 'conversation/invokeClientTool
-                    #'copilot-chat--handle-tool-invocation)
+                    (copilot-chat--tuple-reply
+                     #'copilot-chat--handle-tool-invocation))
 
 ;;
 ;; Workspace search (server -> client requests)

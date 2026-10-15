@@ -5,6 +5,7 @@
 ### Bug Fixes
 
 - Fix client tools (`run_in_terminal`, `create_file` and friends) failing in agent mode with `TypeError: c is not iterable`: the server expects replies to its tool and context requests as a `[result, error]` pair. ([#555](https://github.com/copilot-emacs/copilot.el/issues/555))
+- Keep agent mode (and the workspace folder) on follow-up chat messages; only the first message of a conversation sent them, so the server dropped back to Ask mode and the model claimed it had no tools. ([#555](https://github.com/copilot-emacs/copilot.el/issues/555))
 
 ## 0.10.0 (2026-10-10)
 

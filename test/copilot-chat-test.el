@@ -1629,6 +1629,36 @@
               (expect (plist-get captured-params :model) :to-equal "auto")
               (expect (plist-get (plist-get captured-params :modelInfo) :id)
                       :to-equal "auto"))
+          (kill-buffer buf))))
+
+    (it "keeps the chat mode and workspace folders on follow-up turns"
+      (let ((captured-params nil)
+            (buf (get-buffer-create copilot-chat--buffer-name)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf
+                (copilot-chat-mode)
+                (setq copilot-chat--conversation-id "conv-1"))
+              (spy-on 'copilot-chat--mode-params
+                      :and-return-value (list :chatMode "Agent"
+                                              :needToolCallConfirmation t))
+              (spy-on 'copilot-chat--workspace-root
+                      :and-return-value "/tmp/project/")
+              (spy-on 'copilot--connection-alivep :and-return-value t)
+              (spy-on 'jsonrpc--async-request-1
+                      :and-call-fake
+                      (lambda (_conn _method params &rest _args)
+                        (setq captured-params params)
+                        (cons nil nil)))
+              (copilot-chat--send-turn "follow-up")
+              (expect (plist-get captured-params :chatMode) :to-equal "Agent")
+              (expect (plist-get captured-params :needToolCallConfirmation)
+                      :to-be t)
+              (expect (plist-get (aref (plist-get captured-params
+                                                  :workspaceFolders)
+                                       0)
+                                 :name)
+                      :to-equal "project"))
           (kill-buffer buf)))))
 
   ;;

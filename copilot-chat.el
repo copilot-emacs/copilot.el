@@ -637,8 +637,8 @@ confirmation, and the tool-support warning apply to both."
         name
       (plist-get (copilot-chat--effective-mode) :kind))))
 
-(defun copilot-chat--mode-create-params ()
-  "Return `conversation/create' params selecting the effective chat mode.
+(defun copilot-chat--mode-params ()
+  "Return conversation request params selecting the effective chat mode.
 Return nil for the default Ask mode so behavior is unchanged for users
 who never pick a mode; otherwise send `chatMode', a `customChatModeId'
 for a custom (non-built-in) mode, and `needToolCallConfirmation' for an
@@ -2173,10 +2173,7 @@ of MESSAGE, so the new conversation picks up the saved context."
                    :capabilities (list :skills (vector "current-editor")
                                        :allSkills t)
                    :source "panel")
-             (copilot-chat--model-param)
-             (copilot-chat--workspace-folders-param)
-             (copilot-chat--mode-create-params)
-             (copilot-chat--references-param))
+             (copilot-chat--conversation-params))
             :success-fn (lambda (result)
                           (when-let* ((buf (get-buffer
                                             copilot-chat--buffer-name)))
@@ -2220,9 +2217,10 @@ of MESSAGE, so the new conversation picks up the saved context."
                       :conversationId conv-id
                       :message message
                       :source "panel")
-                (copilot-chat--model-param)
                 (when doc (list :doc doc))
-                (copilot-chat--references-param))
+                ;; The server applies the chat mode per turn, so a
+                ;; follow-up without it drops back to Ask mode.
+                (copilot-chat--conversation-params))
                :success-fn (lambda (result)
                              (when (buffer-live-p chat-buf)
                                (with-current-buffer chat-buf
@@ -2557,6 +2555,14 @@ before the first message."
       (message (if added "Copilot Chat: Attached context for the next message (%d pending)"
                  "Copilot Chat: That context is already attached (%d pending)")
                (length copilot-chat--references)))))
+
+(defun copilot-chat--conversation-params ()
+  "Return the params shared by `conversation/create' and `conversation/turn'.
+That is the model, workspace folders, chat mode and pending references."
+  (append (copilot-chat--model-param)
+          (copilot-chat--workspace-folders-param)
+          (copilot-chat--mode-params)
+          (copilot-chat--references-param)))
 
 (defun copilot-chat--references-param ()
   "Return a (:references VECTOR) plist for the pending references, or nil.
